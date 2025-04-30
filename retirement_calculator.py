@@ -1,6 +1,7 @@
 import pandas as pd
 import datetime as dt
 import numpy as np
+import matplotlib.pyplot as plt
 
 # constants
 inflation_rate = 0.06
@@ -38,16 +39,33 @@ df2 = pd.DataFrame(
     {
         "YEAR" : list(range(1,user_inp["years_in_retirement"]+1)),
         "ANNUAL EXPENSE" : expenses,
-        "MONTHLY EXPENSE" : np.round(expenses / 12,2)        
+        "MONTHLY EXPENSE" : np.round(expenses / 12,2),  
+        "DEBT PF YR START" : 0.0, 
+        "EQUITY PF YR START" : 0.0,
+        "DEBT PF YEAR END" : 0.0,
+        "EQUITY PF YEAR END" : 0.0
     }
 )
+    
+debt_pf_value_upd = user_inp["debt_pf_value"]
+equity_pf_value_upd = user_inp["equity_pf_value"]
 
-print(df2.count)
-df2["DEBT PF YR START"] = 4000000
-df2["EQUITY PF YR START"] = 6000000
+for index, row in df2.iterrows():    
+    df2.loc[index,"DEBT PF YR START"] = debt_pf_value_upd
+    df2.loc[index,"EQUITY PF YR START"] = equity_pf_value_upd
 
-df2["DEBT PF YEAR END"] = np.round((df2["DEBT PF YR START"]-(debt_allocation*df2["ANNUAL EXPENSE"]))*(1+debt_returns),2)
-df2["EQUITY PF YEAR END"] = np.round((df2["EQUITY PF YR START"]-(equity_allocation*df2["ANNUAL EXPENSE"]))*(1+equity_returns),2)
+    df2.loc[index,"DEBT PF YEAR END"] = np.round((df2["DEBT PF YR START"].iloc[index]-(debt_allocation*df2["ANNUAL EXPENSE"].iloc[index]))*(1+debt_returns),2)
+    df2.loc[index,"EQUITY PF YEAR END"] = np.round((df2["EQUITY PF YR START"].iloc[index]-(equity_allocation*df2["ANNUAL EXPENSE"].iloc[index]))*(1+equity_returns),2)
 
-#print(df2)
-#df2.to_csv("Template_"+str(dt.date.today())+".csv",index=False)
+    debt_pf_value_upd = df2.loc[index,"DEBT PF YEAR END"]
+    equity_pf_value_upd = df2.loc[index,"EQUITY PF YEAR END"]
+     
+df2.to_csv("Template_"+str(dt.date.today())+".csv",index=False)
+
+# Plot
+plt.plot(df2['YEAR'], df2['EQUITY PF YEAR END'])
+plt.title('Utilisation of Retirement Corpus')
+plt.xlabel('Retirement Years')
+plt.ylabel('Corpus')
+plt.grid(True)
+#plt.show()
