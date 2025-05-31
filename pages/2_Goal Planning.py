@@ -5,6 +5,7 @@ import pandas as pd
 import datetime as dt
 import matplotlib.pyplot as plt
 import numpy_financial as npf
+import numpy as np
 
 st.markdown("## How To Use This Tool")
 
@@ -38,3 +39,30 @@ if (goal_value_today and inflation_rate and years_to_goal):
 else:
     future_goal_value = 0
     annual_sip = 0
+
+df = pd.DataFrame({
+    "YEAR" : list(range(1,int(years_to_goal))),
+    "CORPUS VALUE" : float(0)
+})
+
+for i in range(1,len(df)):
+    df.loc[i,"CORPUS VALUE"] = float(annual_sip * i)
+        
+# Streamlit app title
+st.title("Corpus Value Growth")
+
+# Generate sample data
+x = df["YEAR"]
+y = df["CORPUS VALUE"]
+
+# Create Matplotlib figure
+fig, ax = plt.subplots()
+ax.plot(x, y, label="CORPUS GROWTH", color="blue")
+ax.set_title("Goal Corpus Value")
+ax.set_xlabel("YEAR")
+ax.set_ylabel("CORPUS VALUE")
+ax.legend()
+ax.grid(True)
+
+# Display the plot in Streamlit
+st.pyplot(fig)
