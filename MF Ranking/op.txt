@@ -1,0 +1,170 @@
+Fund Type - FC
+Last Day of Previous Month - 2025-05-30
+Starting from 2025-05-30, 10 previous yearly dates:
+2025-05-30
+2024-05-31
+2023-05-31
+2022-05-31
+2021-05-31
+2020-05-29
+2019-05-31
+2018-05-31
+2017-05-31
+2016-05-31
+
+--- Calculating returns for Parag Parikh Long Term Equity Direct Growth---
+YF.download() has changed argument auto_adjust default to True
+Warning: No valid start price found on or before 2017-05-31 for 0P0000YWL1.BO. Skipping period.
+Warning: No valid start price found on or before 2016-05-31 for 0P0000YWL1.BO. Skipping period.
+
+Yearly Returns for Parag Parikh Long Term Equity Direct Growth (Period-wise):
+  2025-05-30 to 2024-05-31: 15.45
+  2024-05-31 to 2023-05-31: 33.31
+  2023-05-31 to 2022-05-31: 17.71
+  2022-05-31 to 2021-05-31: 12.85
+  2021-05-31 to 2020-05-29: 67.8
+  2020-05-29 to 2019-05-31: 1.08
+  2019-05-31 to 2018-05-31: 6.59
+
+--- Calculating returns for HDFC Flexi Cap Fund---
+Warning: No valid start price found on or before 2017-05-31 for 0P00005WLZ.BO. Skipping period.
+Warning: No valid start price found on or before 2016-05-31 for 0P00005WLZ.BO. Skipping period.
+
+Yearly Returns for HDFC Flexi Cap Fund (Period-wise):
+  2025-05-30 to 2024-05-31: 14.94
+  2024-05-31 to 2023-05-31: 41.55
+  2023-05-31 to 2022-05-31: 19.9
+  2022-05-31 to 2021-05-31: 13.9
+  2021-05-31 to 2020-05-29: 75.33
+  2020-05-29 to 2019-05-31: -28.27
+  2019-05-31 to 2018-05-31: 13.74
+
+--- Calculating returns for Aditya BSL Flexi Cap Dir Gr---
+Warning: No valid start price found on or before 2017-05-31 for 0P0000XVWD.BO. Skipping period.
+Warning: No valid start price found on or before 2016-05-31 for 0P0000XVWD.BO. Skipping period.
+
+Yearly Returns for Aditya BSL Flexi Cap Dir Gr (Period-wise):
+  2025-05-30 to 2024-05-31: 14.63
+  2024-05-31 to 2023-05-31: 33.14
+  2023-05-31 to 2022-05-31: 12.59
+  2022-05-31 to 2021-05-31: 4.23
+  2021-05-31 to 2020-05-29: 70.02
+  2020-05-29 to 2019-05-31: -17.64
+  2019-05-31 to 2018-05-31: 4.86
+
+--- Calculating returns for WhiteOak Capital Flexi Cap Fund Direct Growth---
+Warning: No valid start price found on or before 2022-05-31 for 0P0001OSOW.BO. Skipping period.
+Warning: No valid start price found on or before 2021-05-31 for 0P0001OSOW.BO. Skipping period.
+Warning: No valid start price found on or before 2020-05-29 for 0P0001OSOW.BO. Skipping period.
+Warning: No valid start price found on or before 2019-05-31 for 0P0001OSOW.BO. Skipping period.
+Warning: No valid start price found on or before 2018-05-31 for 0P0001OSOW.BO. Skipping period.
+Warning: No valid start price found on or before 2017-05-31 for 0P0001OSOW.BO. Skipping period.
+Warning: No valid start price found on or before 2016-05-31 for 0P0001OSOW.BO. Skipping period.
+
+Yearly Returns for WhiteOak Capital Flexi Cap Fund Direct Growth (Period-wise):
+  2025-05-30 to 2024-05-31: 16.46
+  2024-05-31 to 2023-05-31: 36.68
+
+--- Calculating returns for ICICI Pru Flexicap Dir Gr---
+Warning: No valid start price found on or before 2021-05-31 for 0P0001M23B.BO. Skipping period.
+Warning: No valid start price found on or before 2020-05-29 for 0P0001M23B.BO. Skipping period.
+Warning: No valid start price found on or before 2019-05-31 for 0P0001M23B.BO. Skipping period.
+Warning: No valid start price found on or before 2018-05-31 for 0P0001M23B.BO. Skipping period.
+Warning: No valid start price found on or before 2017-05-31 for 0P0001M23B.BO. Skipping period.
+Warning: No valid start price found on or before 2016-05-31 for 0P0001M23B.BO. Skipping period.
+
+Yearly Returns for ICICI Pru Flexicap Dir Gr (Period-wise):
+  2025-05-30 to 2024-05-31: 11.62
+  2024-05-31 to 2023-05-31: 37.7
+  2023-05-31 to 2022-05-31: 16.81
+
+--- Calculating returns for Sundaram Flexi Cap Dir Gr---
+Warning: No valid start price found on or before 2022-05-31 for 0P0001PKHA.BO. Skipping period.
+Warning: No valid start price found on or before 2021-05-31 for 0P0001PKHA.BO. Skipping period.
+Warning: No valid start price found on or before 2020-05-29 for 0P0001PKHA.BO. Skipping period.
+Warning: No valid start price found on or before 2019-05-31 for 0P0001PKHA.BO. Skipping period.
+Warning: No valid start price found on or before 2018-05-31 for 0P0001PKHA.BO. Skipping period.
+Warning: No valid start price found on or before 2017-05-31 for 0P0001PKHA.BO. Skipping period.
+Warning: No valid start price found on or before 2016-05-31 for 0P0001PKHA.BO. Skipping period.
+
+Yearly Returns for Sundaram Flexi Cap Dir Gr (Period-wise):
+  2025-05-30 to 2024-05-31: 13.25
+  2024-05-31 to 2023-05-31: 26.76
+
+--- Calculating returns for 360 ONE Flexicap Dir Gr---
+Warning: No valid start price found on or before 2023-05-31 for 0P0001R3NQ.BO. Skipping period.
+Warning: No valid start price found on or before 2022-05-31 for 0P0001R3NQ.BO. Skipping period.
+Warning: No valid start price found on or before 2021-05-31 for 0P0001R3NQ.BO. Skipping period.
+Warning: No valid start price found on or before 2020-05-29 for 0P0001R3NQ.BO. Skipping period.
+Warning: No valid start price found on or before 2019-05-31 for 0P0001R3NQ.BO. Skipping period.
+Warning: No valid start price found on or before 2018-05-31 for 0P0001R3NQ.BO. Skipping period.
+Warning: No valid start price found on or before 2017-05-31 for 0P0001R3NQ.BO. Skipping period.
+Warning: No valid start price found on or before 2016-05-31 for 0P0001R3NQ.BO. Skipping period.
+
+Yearly Returns for 360 ONE Flexicap Dir Gr (Period-wise):
+  2025-05-30 to 2024-05-31: 9.78
+
+--- Calculating returns for Axis Flexi Cap Dir Gr---
+Warning: No valid start price found on or before 2017-05-31 for 0P0001BURF.BO. Skipping period.
+Warning: No valid start price found on or before 2016-05-31 for 0P0001BURF.BO. Skipping period.
+
+Yearly Returns for Axis Flexi Cap Dir Gr (Period-wise):
+  2025-05-30 to 2024-05-31: 12.2
+  2024-05-31 to 2023-05-31: 30.39
+  2023-05-31 to 2022-05-31: 8.97
+  2022-05-31 to 2021-05-31: 4.33
+  2021-05-31 to 2020-05-29: 54.28
+  2020-05-29 to 2019-05-31: -7.96
+  2019-05-31 to 2018-05-31: 11.22
+
+--- Calculating returns for Bajaj Finserv Flexi Cap Dir Gr---
+Warning: No valid start price found on or before 2023-05-31 for 0P0001RCB9.BO. Skipping period.
+Warning: No valid start price found on or before 2022-05-31 for 0P0001RCB9.BO. Skipping period.
+Warning: No valid start price found on or before 2021-05-31 for 0P0001RCB9.BO. Skipping period.
+Warning: No valid start price found on or before 2020-05-29 for 0P0001RCB9.BO. Skipping period.
+Warning: No valid start price found on or before 2019-05-31 for 0P0001RCB9.BO. Skipping period.
+Warning: No valid start price found on or before 2018-05-31 for 0P0001RCB9.BO. Skipping period.
+Warning: No valid start price found on or before 2017-05-31 for 0P0001RCB9.BO. Skipping period.
+Warning: No valid start price found on or before 2016-05-31 for 0P0001RCB9.BO. Skipping period.
+
+Yearly Returns for Bajaj Finserv Flexi Cap Dir Gr (Period-wise):
+  2025-05-30 to 2024-05-31: 13.99
+
+--- Calculating returns for Bandhan Flexi Cap Dir Gr---
+Warning: No valid start price found on or before 2017-05-31 for 0P0000XV16.BO. Skipping period.
+Warning: No valid start price found on or before 2016-05-31 for 0P0000XV16.BO. Skipping period.
+
+Yearly Returns for Bandhan Flexi Cap Dir Gr (Period-wise):
+  2025-05-30 to 2024-05-31: 10.44
+  2024-05-31 to 2023-05-31: 34.41
+  2023-05-31 to 2022-05-31: 11.88
+  2022-05-31 to 2021-05-31: 6.17
+  2021-05-31 to 2020-05-29: 56.01
+  2020-05-29 to 2019-05-31: -17.67
+  2019-05-31 to 2018-05-31: 0.01
+
+--- Calculating returns for Bank of India Flexi Cap Fund---
+Warning: No valid start price found on or before 2020-05-29 for 0P0001K2WX.BO. Skipping period.
+Warning: No valid start price found on or before 2019-05-31 for 0P0001K2WX.BO. Skipping period.
+Warning: No valid start price found on or before 2018-05-31 for 0P0001K2WX.BO. Skipping period.
+Warning: No valid start price found on or before 2017-05-31 for 0P0001K2WX.BO. Skipping period.
+Warning: No valid start price found on or before 2016-05-31 for 0P0001K2WX.BO. Skipping period.
+
+Yearly Returns for Bank of India Flexi Cap Fund (Period-wise):
+  2025-05-30 to 2024-05-31: 1.82
+  2024-05-31 to 2023-05-31: 63.59
+  2023-05-31 to 2022-05-31: 12.52
+  2022-05-31 to 2021-05-31: 2.17
+
+--- Calculating returns for Baroda BNP Paribas Flexi Cap Dir Gr---
+Warning: No valid start price found on or before 2022-05-31 for 0P0001PF2K.BO. Skipping period.
+Warning: No valid start price found on or before 2021-05-31 for 0P0001PF2K.BO. Skipping period.
+Warning: No valid start price found on or before 2020-05-29 for 0P0001PF2K.BO. Skipping period.
+Warning: No valid start price found on or before 2019-05-31 for 0P0001PF2K.BO. Skipping period.
+Warning: No valid start price found on or before 2018-05-31 for 0P0001PF2K.BO. Skipping period.
+Warning: No valid start price found on or before 2017-05-31 for 0P0001PF2K.BO. Skipping period.
+Warning: No valid start price found on or before 2016-05-31 for 0P0001PF2K.BO. Skipping period.
+
+Yearly Returns for Baroda BNP Paribas Flexi Cap Dir Gr (Period-wise):
+  2025-05-30 to 2024-05-31: 8.55
+  2024-05-31 to 2023-05-31: 40.18
