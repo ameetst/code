@@ -2,106 +2,146 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import datetime as dt
+import matplotlib.pyplot as plt
 
-# constants initialisation
-inflation_rate = 0.06
-equity_returns = 0.12
-debt_returns = 0.06
-years_in_retirement = 30
-annual_expense = 1200000
-debt_pf_value = 10000000
-equity_pf_value = 10000000
-
-st.markdown("## How To Use This Tool")
-
-st.markdown("""
-Using this tool, you can calculate the required retirement corpus by providing a few inputs. 
-These are as follows (default value mentioned in brackets):
-            
-1) Inflation Rate - Expected rate of inflation in the retirement years (6%)
-2) Equity Rate of Return - Expected rate of returns for equity invesments (12%)
-3) Debt Rate of Returns - Expexted rate of returns for debt investments in retirement (6%)
-4) Years in Retirement - # of Years in Retirement (30)
-5) Annual Expenses - Estimated annual expense estimated at time of retirement (INR 1.2m)
-6) Debt Portfolio - Estimated value of debt portfolio at time of retirement (INR 10m)
-7) Equity Portfolio - Estimated value of equity portfolio at time of retirement (INR 10m) 
-
-Output
-            
-The ouput of the calculation consists of two components which are displayed in two tabs:
-            
-1) Chart - This is a plot of time (years in retirement, on X axis) against corpus (amount in INR, on Y axis). Reading from left to write, the corpus 
-will get consumed over time and trend towards the X axis. 
-            
-2) Data - This is the calculated figures that are used to plot the graph, and available for download 
-
-""")
-            
-def run_calculations():
-    
-    try:
-        debt_withdrawal = np.round(float(debt_pf_value)/(float(equity_pf_value)+float(debt_pf_value)),2)
-    except:
-        debt_withdrawal = 0.4
-
-    equity_withdrawal = 1 - debt_withdrawal
-
-    expenses = np.round(int(annual_expense) * ((1 + inflation_rate) ** np.arange(years_in_retirement)),2)
-
-    df2 = pd.DataFrame(
-        {
-            "YEAR" : list(range(0,years_in_retirement)),
-            "ANNUAL EXPENSE" : expenses,
-            "MONTHLY EXPENSE" : np.round(expenses / 12,2),
-            "AMT TO WDRAW FROM DEBT" : 0.0,
-            "AMT TO WDRAW FROM EQTY" : 0.0,
-            "DEBT PF YEAR END" : float(debt_pf_value),
-            "EQUITY PF YEAR END" : float(equity_pf_value),
-            "TOTAL CORPUS REMAINING" : float(debt_pf_value + equity_pf_value)
-        }
-    )
-
-    df2["AMT TO WDRAW FROM DEBT"] = np.round(debt_withdrawal * df2["ANNUAL EXPENSE"],2)
-    df2["AMT TO WDRAW FROM EQTY"] = np.round(equity_withdrawal * df2["ANNUAL EXPENSE"],2)
-
-    df2.loc[1,"DEBT PF YEAR END"] = np.round(debt_pf_value - df2.loc[1,"AMT TO WDRAW FROM DEBT"],2)
-    df2.loc[1,"EQUITY PF YEAR END"] = np.round(equity_pf_value - df2.loc[1,"AMT TO WDRAW FROM EQTY"],2)
-    df2.loc[1,"TOTAL CORPUS REMAINING"] = df2.loc[1,"DEBT PF YEAR END"] + df2.loc[1,"EQUITY PF YEAR END"]
-
-    for i in range(2,len(df2)) :
-        df2.loc[i,"DEBT PF YEAR END"] = np.round(df2.loc[i-1,"DEBT PF YEAR END"] - df2.loc[i,"AMT TO WDRAW FROM DEBT"],2)
-        df2.loc[i,"EQUITY PF YEAR END"] = np.round(df2.loc[i-1,"EQUITY PF YEAR END"] - df2.loc[i,"AMT TO WDRAW FROM EQTY"],2)
-        df2.loc[i,"TOTAL CORPUS REMAINING"] = df2.loc[i,"DEBT PF YEAR END"] + df2.loc[i,"EQUITY PF YEAR END"]
-        if(df2.loc[i,"TOTAL CORPUS REMAINING"] <= 0):
-            df2.loc[i,"TOTAL CORPUS REMAINING"] = 0
-            df2 = df2.iloc[:i+1]
+def run_calculations(inflation_rate, equity_returns, debt_returns, years_in_retirement, annual_expense, debt_pf_value, equity_pf_value):
+    df2 = []
+    # Add initial corpus at year 0 (before any withdrawal)
+    df2.append({
+        "YEAR": 0,
+        "ANNUAL EXPENSE": 0,
+        "MONTHLY EXPENSE": 0,
+        "AMT TO WDRAW FROM DEBT": 0,
+        "AMT TO WDRAW FROM EQTY": 0,
+        "DEBT PF YEAR END": debt_pf_value,
+        "EQUITY PF YEAR END": equity_pf_value,
+        "TOTAL CORPUS REMAINING": debt_pf_value + equity_pf_value
+    })
+    for year in range(1, int(years_in_retirement) + 1):
+        debt = df2[-1]['DEBT PF YEAR END']
+        equity = df2[-1]['EQUITY PF YEAR END']
+        total = debt + equity
+        if total <= 0:
             break
+        expense = annual_expense * ((1 + inflation_rate) ** (year - 1))
+        debt_withdrawal = round(debt / total, 2) if total > 0 else 0.4
+        equity_withdrawal = 1 - debt_withdrawal
+        amt_debt = round(debt_withdrawal * expense, 2)
+        amt_equity = round(equity_withdrawal * expense, 2)
+        debt_end = max(0, (debt - amt_debt) * (1 + debt_returns))
+        equity_end = max(0, (equity - amt_equity) * (1 + equity_returns))
+        total_end = debt_end + equity_end
+        df2.append({
+            "YEAR": year,
+            "ANNUAL EXPENSE": round(expense, 2),
+            "MONTHLY EXPENSE": round(expense / 12, 2),
+            "AMT TO WDRAW FROM DEBT": amt_debt,
+            "AMT TO WDRAW FROM EQTY": amt_equity,
+            "DEBT PF YEAR END": round(debt_end, 2),
+            "EQUITY PF YEAR END": round(equity_end, 2),
+            "TOTAL CORPUS REMAINING": round(total_end, 2)
+        })
+        if total_end <= 0:
+            break
+    return pd.DataFrame(df2)
 
-    # df2.to_csv("Template_"+str(dt.date.today())+".csv",index=False)
-    return df2
-# End of Calculation =====================================
+def safe_float(val, default):
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
 
-if 'df2' not in st.session_state:
-    st.session_state.df2 = run_calculations()
-st.session_state.df2 = run_calculations()
+def safe_int(val, default):
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
+
+# Default values
+DEFAULTS = {
+    "inflation_rate": 6.0,
+    "equity_returns": 12.0,
+    "debt_returns": 6.0,
+    "years_in_retirement": 30,
+    "annual_expense": 1200000,
+    "debt_pf_value": 10000000,
+    "equity_pf_value": 10000000
+}
+
+st.markdown("## Retirement Corpus Calculator")
+st.markdown("""
+**How To Use This Tool**
+
+- **Inflation Rate (%):** Expected annual inflation during retirement.
+- **Equity Returns (%):** Expected annual return on equity corpus during retirement.
+- **Debt Returns (%):** Expected annual return on debt corpus during retirement.
+- **Years in Retirement:** Number of years you expect to be in retirement.
+- **Annual Expenses (INR):** Estimated annual expenses at the start of retirement.
+- **Debt Portfolio (INR):** Starting corpus in debt investments at retirement.
+- **Equity Portfolio (INR):** Starting corpus in equity investments at retirement.
+
+**Outputs:**
+- **Chart:** Corpus value over time (years in retirement).
+- **Data:** Table of yearly corpus, expenses, and withdrawals. Downloadable as CSV.
+- **Summary:** How many years your corpus lasts.
+""")
 
 with st.form("input_form"):
-    inflation_rate = int(st.text_input("Inflation Rate in post retirement years (in %)", value = 6))
-    equity_returns = int(st.text_input("Estimated rate of equity returns in retirement (in %)", value = 12))
-    debt_returns = int(st.text_input("Estimated rate of debt returns in retirement (in %)", value = 6))
-    years_in_retirement = int(st.text_input("Years in retirement",value = 50))
-    annual_expense = st.text_input("Estimated annual expense estimated at time of retirement",value = annual_expense)
-    debt_pf_value = int(st.text_input("Estimated value of debt portfolio at time of retirement",value = debt_pf_value))
-    equity_pf_value = int(st.text_input("Estimated value of equity portfolio at time of retirement",value = equity_pf_value))
+    inflation_rate = st.slider("Inflation Rate during retirement (%)", min_value=0.0, max_value=20.0, value=DEFAULTS["inflation_rate"], step=0.1) / 100
+    equity_returns = st.slider("Expected equity returns during retirement (%)", min_value=0.0, max_value=20.0, value=DEFAULTS["equity_returns"], step=0.1) / 100
+    debt_returns = st.slider("Expected debt returns during retirement (%)", min_value=0.0, max_value=20.0, value=DEFAULTS["debt_returns"], step=0.1) / 100
+    years_in_retirement = st.slider("Years in retirement", min_value=0, max_value=50, value=DEFAULTS["years_in_retirement"], step=1)
+    annual_expense = safe_float(st.text_input("Annual expenses at start of retirement (INR)", value=str(DEFAULTS["annual_expense"])), DEFAULTS["annual_expense"])
+    debt_pf_value = safe_float(st.text_input("Debt portfolio at start of retirement (INR)", value=str(DEFAULTS["debt_pf_value"])), DEFAULTS["debt_pf_value"])
+    equity_pf_value = safe_float(st.text_input("Equity portfolio at start of retirement (INR)", value=str(DEFAULTS["equity_pf_value"])), DEFAULTS["equity_pf_value"])
+    submitted = st.form_submit_button("Update Chart")
 
-    st.form_submit_button("Update Chart")
+if "df2" not in st.session_state:
+    st.session_state.df2 = run_calculations(
+        inflation_rate, equity_returns, debt_returns, years_in_retirement, annual_expense, debt_pf_value, equity_pf_value
+    )
 
-# Start of Calculation =====================================
+if submitted:
+    st.session_state.df2 = run_calculations(
+        inflation_rate, equity_returns, debt_returns, years_in_retirement, annual_expense, debt_pf_value, equity_pf_value
+    )
 
-tab1, tab2 = st.tabs(["Chart", "Data"])
+df2 = st.session_state.df2
+
+tab3, tab1, tab2 = st.tabs(["Summary", "Chart", "Data"])
 
 with tab1:
-    st.line_chart(pd.DataFrame(st.session_state.df2["TOTAL CORPUS REMAINING"],st.session_state.df2["YEAR"]), height=500, width=1500)
+    if not df2.empty:
+        df_plot = df2.set_index("YEAR")
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(df_plot.index, df_plot["TOTAL CORPUS REMAINING"], marker='o', color='tab:blue', label='Corpus Remaining')
+        ax.set_xlabel("Year in Retirement")
+        ax.set_ylabel("Corpus Remaining (INR)")
+        ax.set_title("Retirement Corpus Depletion Over Time")
+        ax.grid(True, linestyle='--', alpha=0.6)
+        # Highlight depletion point
+        depleted = df_plot["TOTAL CORPUS REMAINING"] == 0
+        if depleted.any():
+            first_depleted = df_plot[depleted].index.tolist()[0]
+            ax.axvline(first_depleted, color='red', linestyle=':', label='Corpus Depleted')
+        ax.legend()
+        st.pyplot(fig)
+    else:
+        st.warning("No data to plot. Please check your inputs.")
 
 with tab2:
-    st.dataframe(st.session_state.df2,height=500, width=1500, hide_index=True)
+    if not df2.empty:
+        st.dataframe(df2.iloc[1:], height=500, width=1500, hide_index=True)
+        csv = df2.iloc[1:].to_csv(index=False).encode('utf-8')
+        st.download_button("Download Data as CSV", data=csv, file_name="retirement_corpus_projection.csv", mime="text/csv")
+
+with tab3:
+    if not df2.empty:
+        years_lasted = df2["YEAR"].iloc[-1] + 1
+        st.markdown(f"**Your corpus lasts for:** {years_lasted} year(s)")
+        if df2["TOTAL CORPUS REMAINING"].iloc[-1] > 0:
+            st.success("Your corpus lasts the entire planned retirement period!")
+        else:
+            st.error("Your corpus is depleted before the end of the planned retirement period.")
+    else:
+        st.warning("No summary available. Please check your inputs.")

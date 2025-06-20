@@ -41,3 +41,18 @@ for d in result_dates:
 
 dates_chronological = result_dates
 
+# Example of using get_rolling_returns_for_scheme
+sbi_blue_chip_code = "119598"  # Example scheme code
+start_date_for_returns = "2020-01-01"
+print(f"\n--- Calculating 1-year rolling returns for scheme code: {sbi_blue_chip_code} ---")
+rolling_returns_df = mfapi_utils.get_rolling_returns_for_scheme(sbi_blue_chip_code, start_date_for_returns)
+
+if rolling_returns_df is not None and not rolling_returns_df.empty:
+    print(f"Successfully calculated rolling returns from {start_date_for_returns}.")
+    print("Latest 5 rolling return entries:")
+    print(rolling_returns_df.tail())
+    print("\nFirst 5 rolling return entries:")
+    print(rolling_returns_df.head())
+else:
+    print(f"Could not calculate rolling returns for scheme {sbi_blue_chip_code}.")
+
