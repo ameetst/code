@@ -33,7 +33,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="card">', unsafe_allow_html=True)
 st.markdown('<div class="big-title">💰 Financial Planning Suite</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Your one-stop solution for financial goal planning, retirement, and smart investing.</div>', unsafe_allow_html=True)
 
