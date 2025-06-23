@@ -351,126 +351,97 @@ def get_5y_rolling_returns(scheme_code: str, start_date_str: str) -> pd.DataFram
     """
     return get_rolling_returns(scheme_code, start_date_str, years=5)
 
-# --- Example Usage ---
-if __name__ == "__main__":
-    # print("--- Getting all scheme codes ---")
-    # all_schemes = get_all_scheme_codes()
-    # if all_schemes:
-    #     print(f"Found {len(all_schemes)} schemes.")
-    #     # Print a few examples
-    #     for i,scheme_details in enumerate(all_schemes):
-    #         print(f"Scheme Name - {scheme_details['schemeName']}, Scheme Code - {scheme_details['schemeCode']}")
-    #     df = pd.DataFrame(all_schemes)
-    #     df.to_csv("all_schemes.csv", index=False)
-    #     print("Saved all_schemes to all_schemes.csv")
-    # else:
-    #     print("Failed to retrieve all scheme codes.")
+def calculate_yoy_consistency_rank(df_results: pd.DataFrame, ranking_methodology: str) -> pd.DataFrame:
+    """
+    Calculates the Year-On-Year Consistency Rank for a DataFrame of mutual fund returns.
+    """
+    headers = df_results.columns.tolist()
 
+    # Highlight top quartile for each period
+    for i in range(2, len(headers)):
+        returns_col = df_results.iloc[:, i].copy()
+        numeric_returns = []
+        valid_indices = {}
+
+        for idx, val in enumerate(returns_col):
+            if isinstance(val, str) and val.endswith('%') and val != 'N/A' and val != 'Error':
+                try:
+                    numeric_val = float(val.replace('%', ''))
+                    valid_indices[idx] = len(numeric_returns)
+                    numeric_returns.append(numeric_val)
+                except (ValueError, TypeError):
+                    pass
+        
+        if numeric_returns:
+            top_quartile_threshold = pd.Series(numeric_returns).quantile(0.75)
+            
+            for idx in valid_indices:
+                try:
+                    val = returns_col.iloc[idx]
+                    if isinstance(val, str) and val.endswith('%'):
+                        numeric_val = float(val.replace('%', ''))
+                        if numeric_val >= top_quartile_threshold:
+                            df_results.iloc[idx, i] = f"🟢 {val}"
+                except (ValueError, TypeError):
+                    pass
+
+    # Count the number of top-quartile appearances for each fund
+    top_quartile_counts = []
+    for index, row in df_results.iterrows():
+        count = sum(1 for i in range(2, len(row)) if str(row[i]).startswith('🟢'))
+        top_quartile_counts.append(count)
+
+    # Rank funds based on the count
+    df_results['quartile_count'] = top_quartile_counts
+    df_results['final_rank'] = df_results['quartile_count'].rank(method='min', ascending=False).astype(int)
     
-    print("\n" + "="*50 + "\n")
-   
-    # Example: Get NAV for a specific scheme
-    # You'll need a valid scheme code. You can find them from the 'get_all_scheme_codes()' output
-    # or by searching on mfapi.in or AMFI India website.
-    # Let's use a common one, e.g., SBI Blue Chip Fund - Direct Plan - Growth (example code from searches)
-    sbi_blue_chip_code = "119598"
-    print(f"--- Getting NAV data for scheme code: {sbi_blue_chip_code} ---")
-    scheme_data = get_mf_data_direct(sbi_blue_chip_code)
+    # Assign the rank and drop temporary columns
+    df_results.iloc[:, 1] = df_results['final_rank']
+    df_results.drop(columns=['quartile_count', 'final_rank'], inplace=True)
 
-    if scheme_data:
-        scheme_name = scheme_data.get('meta', {}).get('scheme_name', 'N/A')
-        print(f"Scheme Name: {scheme_name}")
+    return df_results
 
-        # The 'data' key contains a list of dictionaries with 'date' and 'nav'
-        nav_history = scheme_data.get('data', [])
+def calculate_rolling_period_returns(df_results: pd.DataFrame, dates_chronological: list, ranking_methodology: str) -> pd.DataFrame:
+    """
+    Calculates rolling returns, highlights top performers, and ranks funds based on the number of top-quartile appearances.
+    """
+    headers = df_results.columns.tolist()
 
-        if nav_history:
-            print(f"Found {len(nav_history)} NAV entries.")
-            # Convert to Pandas DataFrame for easier analysis
-            df = pd.DataFrame(nav_history)
-            df['date'] = pd.to_datetime(df['date'], format='%d-%m-%Y')
-            df['nav'] = pd.to_numeric(df['nav'])
-            df = df.set_index('date').sort_index()
+    # Highlight top quartile performers in each period
+    for i in range(2, len(headers)):
+        returns_col = df_results.iloc[:, i].copy()
+        numeric_returns = []
+        valid_indices = {}
 
-            print("\nLatest 5 NAV entries (DataFrame):")
-            print(df.tail())
-            print("\nFirst 5 NAV entries (DataFrame):")
-            print(df.head())
-        else:
-            print("No NAV data found for this scheme.")
-    else:
-        print(f"Failed to retrieve data for scheme code {sbi_blue_chip_code}.")
-
-    # Step 1: Discover available categories (optional, but highly recommended first time)
-    # print("--- Discovering all unique mutual fund categories ---")
-    # categories = get_all_unique_categories()
-    # if categories:
-    #     print("\nAvailable Categories:")
-    #     for cat in categories:
-    #         print(f"- {cat}")
-    # else:
-    #     print("Could not retrieve categories.")
-
-    # print("\n" + "="*50 + "\n")
-
-    print("\n" + "="*50 + "\n")
-
-    target_category_2 = "Equity - Large Cap Fund" # Another example
-    large_cap_funds_df = get_funds_by_category(target_category_2)
-
-    if not large_cap_funds_df.empty:
-        print(f"\n--- Funds in category: '{target_category_2}' ---")
-        print(f"Total unique funds found: {len(large_cap_funds_df)}")
-        print(large_cap_funds_df.head(15).to_string())
-
-    print("\n" + "="*50 + "\n")
-
-    # Step 3: Use the specific function for Mid Cap funds
-    target_category = "Equity - Mid Cap Fund"
-    all_mid_cap_funds = get_mid_cap_funds()
-    if not all_mid_cap_funds.empty:
-        print(f"Total unique mid cap funds found: {len(all_mid_cap_funds)}")
-        print("--- Top 15 Mid Cap Funds ---")
-        print(all_mid_cap_funds.head(15).to_string())
-        all_mid_cap_funds.to_csv(f"{target_category.replace(' - ', '_').replace(' ', '_').lower()}_funds.csv", index=False)
-        print(f"\nSaved {len(all_mid_cap_funds)} funds to CSV.")
+        for idx, val in enumerate(returns_col):
+            if isinstance(val, str) and val.endswith('%') and val != 'N/A' and val != 'Error':
+                try:
+                    numeric_val = float(val.replace('%', ''))
+                    valid_indices[idx] = len(numeric_returns)
+                    numeric_returns.append(numeric_val)
+                except (ValueError, TypeError):
+                    pass
         
-        # Example of getting just the scheme codes
-        mid_cap_scheme_codes = all_mid_cap_funds['scheme_code'].tolist()
-        print("\n--- Example Scheme Codes for Mid Cap Funds ---")
-        print(mid_cap_scheme_codes[:5]) # Print first 5 codes
-        
-    print("\n" + "="*50 + "\n")
+        if numeric_returns:
+            top_quartile_threshold = pd.Series(numeric_returns).quantile(0.75)
+            for original_idx, numeric_idx in valid_indices.items():
+                if numeric_returns[numeric_idx] >= top_quartile_threshold:
+                    original_value = df_results.iloc[original_idx, i]
+                    df_results.iloc[original_idx, i] = f"🟢 {original_value}"
 
-    # Step 4: Use the specific function for Flexi Cap funds
-    target_category = "Equity - Flexi Cap Fund"
-    all_flexi_cap_funds_df = get_flexi_cap_funds()
-    if not all_flexi_cap_funds_df.empty:
-        all_flexi_cap_funds_df.to_csv(f"{target_category.replace(' - ', '_').replace(' ', '_').lower()}_funds.csv", index=False)
-        print(f"\nSaved {len(all_flexi_cap_funds_df)} funds to CSV.")
-        print(f"Total unique flexi cap funds found: {len(all_flexi_cap_funds_df)}")
-        print("--- Top 15 Flexi Cap Funds ---")
-        print(all_flexi_cap_funds_df.head(15).to_string())
+    # Count the number of top-quartile appearances for each fund
+    top_quartile_counts = []
+    for index, row in df_results.iterrows():
+        count = sum(1 for i in range(2, len(row)) if str(row[i]).startswith('🟢'))
+        top_quartile_counts.append(count)
 
-    print("\n" + "="*50 + "\n")
-
-    # Step 5: Use the specific function for Small Cap funds
-    target_category = "Equity - Small Cap Fund"
-    all_small_cap_funds = get_small_cap_funds()
-    if not all_small_cap_funds.empty:
-        all_small_cap_funds.to_csv(f"{target_category.replace(' - ', '_').replace(' ', '_').lower()}_funds.csv", index=False)
-        print(f"\nSaved {len(all_small_cap_funds)} funds to CSV.")
-        print(f"Total unique small cap funds found: {len(all_small_cap_funds)}")
-        print("--- Top 15 Small Cap Funds ---")
-        print(all_small_cap_funds.head(15).to_string())
-
-    print("\n" + "="*50 + "\n")
+    # Rank funds based on the count
+    df_results['quartile_count'] = top_quartile_counts
+    df_results['final_rank'] = df_results['quartile_count'].rank(method='min', ascending=False).astype(int)
     
-    # Step 6: Use the specific function for Focused funds
-    all_focused_funds = get_focused_funds()
-    if not all_focused_funds.empty:
-        print(f"Total unique focused funds found: {len(all_focused_funds)}")
-        print("--- Top 15 Focused Funds ---")
-        print(all_focused_funds.head(15).to_string())
-        
-    print("\n" + "="*50 + "\n")
+    # Assign the rank and drop temporary columns
+    df_results.iloc[:, 1] = df_results['final_rank']
+    df_results.drop(columns=['quartile_count', 'final_rank'], inplace=True)
+
+    return df_results
+
