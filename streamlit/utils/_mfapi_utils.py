@@ -356,49 +356,39 @@ def calculate_yoy_consistency_rank(df_results: pd.DataFrame, ranking_methodology
     Calculates the Year-On-Year Consistency Rank for a DataFrame of mutual fund returns.
     """
     headers = df_results.columns.tolist()
-
     # Highlight top quartile for each period
     for i in range(2, len(headers)):
         returns_col = df_results.iloc[:, i].copy()
         numeric_returns = []
         valid_indices = {}
-
         for idx, val in enumerate(returns_col):
-            if isinstance(val, str) and val.endswith('%') and val != 'N/A' and val != 'Error':
+            if isinstance(val, str) and val.replace('🟢', '').replace('%', '').strip() not in ('', 'Error'):
                 try:
-                    numeric_val = float(val.replace('%', ''))
+                    numeric_val = float(val.replace('🟢', '').replace('%', '').strip())
                     valid_indices[idx] = len(numeric_returns)
                     numeric_returns.append(numeric_val)
                 except (ValueError, TypeError):
                     pass
-        
         if numeric_returns:
             top_quartile_threshold = pd.Series(numeric_returns).quantile(0.75)
-            
-            for idx in valid_indices:
-                try:
-                    val = returns_col.iloc[idx]
-                    if isinstance(val, str) and val.endswith('%'):
-                        numeric_val = float(val.replace('%', ''))
-                        if numeric_val >= top_quartile_threshold:
-                            df_results.iloc[idx, i] = f"🟢 {val}"
-                except (ValueError, TypeError):
-                    pass
-
+            for original_idx, numeric_idx in valid_indices.items():
+                if numeric_returns[numeric_idx] >= top_quartile_threshold:
+                    original_value = df_results.iloc[original_idx, i]
+                    # Only add the icon for display, not in the DataFrame value
+                    df_results.iloc[original_idx, i] = f"🟢 {str(original_value).replace('🟢', '').replace('%', '').strip()}"
     # Count the number of top-quartile appearances for each fund
     top_quartile_counts = []
     for index, row in df_results.iterrows():
         count = sum(1 for i in range(2, len(row)) if str(row[i]).startswith('🟢'))
         top_quartile_counts.append(count)
-
     # Rank funds based on the count
     df_results['quartile_count'] = top_quartile_counts
     df_results['final_rank'] = df_results['quartile_count'].rank(method='min', ascending=False).astype(int)
-    
-    # Assign the rank and drop temporary columns
     df_results.iloc[:, 1] = df_results['final_rank']
     df_results.drop(columns=['quartile_count', 'final_rank'], inplace=True)
-
+    # Remove '🟢' and '%' for sorting, keep as float or blank
+    for i in range(2, len(headers)):
+        df_results.iloc[:, i] = df_results.iloc[:, i].apply(lambda x: float(str(x).replace('🟢', '').replace('%', '').strip()) if str(x).replace('🟢', '').replace('%', '').strip() not in ('', 'Error') else '')
     return df_results
 
 def calculate_rolling_period_returns(df_results: pd.DataFrame, dates_chronological: list, ranking_methodology: str) -> pd.DataFrame:
@@ -406,42 +396,33 @@ def calculate_rolling_period_returns(df_results: pd.DataFrame, dates_chronologic
     Calculates rolling returns, highlights top performers, and ranks funds based on the number of top-quartile appearances.
     """
     headers = df_results.columns.tolist()
-
-    # Highlight top quartile performers in each period
     for i in range(2, len(headers)):
         returns_col = df_results.iloc[:, i].copy()
         numeric_returns = []
         valid_indices = {}
-
         for idx, val in enumerate(returns_col):
-            if isinstance(val, str) and val.endswith('%') and val != 'N/A' and val != 'Error':
+            if isinstance(val, str) and val.replace('🟢', '').replace('%', '').strip() not in ('', 'Error'):
                 try:
-                    numeric_val = float(val.replace('%', ''))
+                    numeric_val = float(val.replace('🟢', '').replace('%', '').strip())
                     valid_indices[idx] = len(numeric_returns)
                     numeric_returns.append(numeric_val)
                 except (ValueError, TypeError):
                     pass
-        
         if numeric_returns:
             top_quartile_threshold = pd.Series(numeric_returns).quantile(0.75)
             for original_idx, numeric_idx in valid_indices.items():
                 if numeric_returns[numeric_idx] >= top_quartile_threshold:
                     original_value = df_results.iloc[original_idx, i]
-                    df_results.iloc[original_idx, i] = f"🟢 {original_value}"
-
-    # Count the number of top-quartile appearances for each fund
+                    df_results.iloc[original_idx, i] = f"🟢 {str(original_value).replace('🟢', '').replace('%', '').strip()}"
     top_quartile_counts = []
     for index, row in df_results.iterrows():
         count = sum(1 for i in range(2, len(row)) if str(row[i]).startswith('🟢'))
         top_quartile_counts.append(count)
-
-    # Rank funds based on the count
     df_results['quartile_count'] = top_quartile_counts
     df_results['final_rank'] = df_results['quartile_count'].rank(method='min', ascending=False).astype(int)
-    
-    # Assign the rank and drop temporary columns
     df_results.iloc[:, 1] = df_results['final_rank']
     df_results.drop(columns=['quartile_count', 'final_rank'], inplace=True)
-
+    for i in range(2, len(headers)):
+        df_results.iloc[:, i] = df_results.iloc[:, i].apply(lambda x: float(str(x).replace('🟢', '').replace('%', '').strip()) if str(x).replace('🟢', '').replace('%', '').strip() not in ('', 'Error') else '')
     return df_results
 

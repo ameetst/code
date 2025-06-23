@@ -48,6 +48,9 @@ st.markdown("""
 - **Dual Momentum Strategy**  
   _Explore a classical dual momentum trading strategy with Indian ETFs._
 
+- **Mutual Fund Analyzer**  
+  _Compare mutual funds across categories, analyze rolling and year-on-year returns, and identify consistent top performers._
+
 ---
 """)
 
