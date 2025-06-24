@@ -8,6 +8,8 @@ from datetime import datetime, date, timedelta, time
 from mftool import Mftool
 import utils._mfapi_utils as mfapi_utils
 import streamlit as st 
+from tqdm import tqdm
+import os
 
 warnings.filterwarnings('ignore')
 
@@ -56,8 +58,10 @@ if selected_fund_type != "Select an Option" and ranking_methodology != "Select a
     result_dates = mfapi_utils.get_x_previous_yearly_dates(start_date, num_dates)
     dates_chronological = result_dates
 
-    # Use the correct path to the .txt files in the pages directory
-    mf_codes_file = f"pages/{fund_type}.txt"
+    # Get the correct path to the .txt files
+    # Get the directory where the current script is located
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    mf_codes_file = os.path.join(current_dir, f"{fund_type}.txt")
 
     try:
         with open(mf_codes_file, 'r') as file:
@@ -75,7 +79,16 @@ if selected_fund_type != "Select an Option" and ranking_methodology != "Select a
                         start_date, end_date = dates_chronological[i + 1], dates_chronological[i]
                         headers.append(f"{end_date.strftime('%Y-%m-%d')} to {start_date.strftime('%Y-%m-%d')}")
 
-                    for mf_code in filter(str.strip, ticker_list):
+                    # Create progress bar for mutual fund processing
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    for idx, mf_code in enumerate(tqdm(filter(str.strip, ticker_list), desc="Processing Mutual Funds")):
+                        # Update progress bar
+                        progress = (idx + 1) / len([x for x in ticker_list if x.strip()])
+                        progress_bar.progress(progress)
+                        status_text.text(f"Processing {idx + 1}/{len([x for x in ticker_list if x.strip()])}: {mf_code}")
+                        
                         try:
                             scheme_details = mfapi_utils.mf.get_scheme_details(mf_code)
                             mf_name = scheme_details['scheme_name'] if isinstance(scheme_details, dict) and 'scheme_name' in scheme_details else mf_code
@@ -105,6 +118,10 @@ if selected_fund_type != "Select an Option" and ranking_methodology != "Select a
                             else:
                                 row_data.append("")
                         results_data.append(row_data)
+                    
+                    # Clear progress indicators
+                    progress_bar.empty()
+                    status_text.empty()
 
                 elif ranking_methodology == "# of Years Consistency Rank":
                     st.write("**Calculating Rolling Returns...**")
@@ -112,7 +129,17 @@ if selected_fund_type != "Select an Option" and ranking_methodology != "Select a
                         headers.append(f"{i}-Year Return")
                     
                     end_date = dates_chronological[0]
-                    for mf_code in filter(str.strip, ticker_list):
+                    
+                    # Create progress bar for mutual fund processing
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    for idx, mf_code in enumerate(tqdm(filter(str.strip, ticker_list), desc="Processing Mutual Funds")):
+                        # Update progress bar
+                        progress = (idx + 1) / len([x for x in ticker_list if x.strip()])
+                        progress_bar.progress(progress)
+                        status_text.text(f"Processing {idx + 1}/{len([x for x in ticker_list if x.strip()])}: {mf_code}")
+                        
                         try:
                             scheme_details = mfapi_utils.mf.get_scheme_details(mf_code)
                             mf_name = scheme_details['scheme_name'] if isinstance(scheme_details, dict) and 'scheme_name' in scheme_details else mf_code
@@ -147,6 +174,10 @@ if selected_fund_type != "Select an Option" and ranking_methodology != "Select a
                             else:
                                 row_data.append("")
                         results_data.append(row_data)
+                    
+                    # Clear progress indicators
+                    progress_bar.empty()
+                    status_text.empty()
                 
                 # Add RANK column data to each row (placeholder values)
                 for row in results_data:
@@ -175,6 +206,9 @@ if selected_fund_type != "Select an Option" and ranking_methodology != "Select a
                     st.warning("No valid mutual fund codes found for calculation.")
     except FileNotFoundError:
         st.error(f"Error: The file '{mf_codes_file}' was not found.")
+        st.error(f"Current working directory: {os.getcwd()}")
+        st.error(f"Script directory: {current_dir}")
+        st.error(f"Attempted file path: {mf_codes_file}")
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
