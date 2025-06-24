@@ -114,8 +114,7 @@ def login_with_google():
 def handle_oauth_callback():
     """Handle OAuth callback from Google"""
     # Get the authorization code from URL parameters
-    query_params = st.experimental_get_query_params()
-    code = query_params.get("code", [None])[0]
+    code = st.query_params.get("code", None)
     
     if code:
         try:
@@ -145,7 +144,7 @@ def handle_oauth_callback():
                     st.session_state.login_time = datetime.now()
                     
                     # Clear the URL parameters
-                    st.experimental_set_query_params()
+                    st.query_params.clear()
                     
                     st.success(f"Welcome, {user_info.get('name', 'User')}!")
                     st.rerun()
