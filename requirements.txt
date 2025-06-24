@@ -7,3 +7,4 @@ yfinance
 numpy_financial
 mftool
 tqdm
+plotly

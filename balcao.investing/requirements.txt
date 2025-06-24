@@ -11,4 +11,5 @@ streamlit-authenticator
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
-requests 
+requests
+plotly 
