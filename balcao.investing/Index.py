@@ -41,80 +41,112 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Handle OAuth callback
-auth_utils.handle_oauth_callback()
+# AUTHENTICATION DISABLED - Uncomment the lines below to re-enable authentication
+# # Handle OAuth callback
+# auth_utils.handle_oauth_callback()
 
-# Check authentication status
-if auth_utils.is_authenticated():
-    # User is logged in
-    user_info = auth_utils.get_user_info()
+# # Check authentication status
+# if auth_utils.is_authenticated():
+#     # User is logged in
+#     user_info = auth_utils.get_user_info()
     
-    if user_info:
-        # Display user info
-        st.markdown(f"""
-        <div class="user-info">
-            <strong>Welcome, {user_info['name']}!</strong><br>
-            <small>Email: {user_info['email']}</small>
-        </div>
-        """, unsafe_allow_html=True)
+#     if user_info:
+#         # Display user info
+#         st.markdown(f"""
+#         <div class="user-info">
+#             <strong>Welcome, {user_info['name']}!</strong><br>
+#             <small>Email: {user_info['email']}</small>
+#         </div>
+#         """, unsafe_allow_html=True)
     
-    # Logout button
-    if st.button("🚪 Logout"):
-        auth_utils.logout()
+#     # Logout button
+#     if st.button("🚪 Logout"):
+#         auth_utils.logout()
     
-    st.markdown('<div class="big-title">💰 Financial Planning Suite</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">Your one-stop solution for financial goal planning, retirement, and smart investing.</div>', unsafe_allow_html=True)
+#     st.markdown('<div class="big-title">💰 Financial Planning Suite</div>', unsafe_allow_html=True)
+#     st.markdown('<div class="subtitle">Your one-stop solution for financial goal planning, retirement, and smart investing.</div>', unsafe_allow_html=True)
 
-    st.markdown("""
-    ### 📊 Available Tools
+#     st.markdown("""
+#     ### 📊 Available Tools
 
-    - **Retirement Corpus Calculator**  
-      _Calculate and visualize how long your retirement corpus will last._
+#     - **Retirement Corpus Calculator**  
+#       _Calculate and visualize how long your retirement corpus will last._
 
-    - **Goal Planning**  
-      _Find out the annual SIP needed to achieve your future financial goals._
+#     - **Goal Planning**  
+#       _Find out the annual SIP needed to achieve your future financial goals._
 
-    - **Dual Momentum Strategy**  
-      _Explore a classical dual momentum trading strategy with Indian ETFs._
+#     - **Dual Momentum Strategy**  
+#       _Explore a classical dual momentum trading strategy with Indian ETFs._
 
-    - **Mutual Fund Analyzer**  
-      _Compare mutual funds across categories, analyze rolling and year-on-year returns, and identify consistent top performers._
+#     - **Mutual Fund Analyzer**  
+#       _Compare mutual funds across categories, analyze rolling and year-on-year returns, and identify consistent top performers._
 
-    ---
-    """)
+#     ---
+#     """)
 
-    st.markdown('<span style="color: #616161;">Select a tool from the sidebar to get started!</span>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+#     st.markdown('<span style="color: #616161;">Select a tool from the sidebar to get started!</span>', unsafe_allow_html=True)
+#     st.markdown('</div>', unsafe_allow_html=True)
 
-else:
-    # User is not logged in - show login page
-    st.markdown('<div class="big-title">💰 Financial Planning Suite</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">Please sign in to access your financial planning tools.</div>', unsafe_allow_html=True)
+# else:
+#     # User is not logged in - show login page
+#     st.markdown('<div class="big-title">💰 Financial Planning Suite</div>', unsafe_allow_html=True)
+#     st.markdown('<div class="subtitle">Please sign in to access your financial planning tools.</div>', unsafe_allow_html=True)
     
-    st.markdown("""
-    ### 🔐 Secure Access
+#     st.markdown("""
+#     ### 🔐 Secure Access
     
-    This application requires authentication to access sensitive financial planning tools.
-    Please sign in with your Google account to continue.
+#     This application requires authentication to access sensitive financial planning tools.
+#     Please sign in with your Google account to continue.
     
-    ---
-    """)
+#     ---
+#     """)
     
-    # Show Google login button
-    auth_utils.login_with_google()
+#     # Show Google login button
+#     auth_utils.login_with_google()
     
-    st.markdown("""
-    ### 📊 Available Tools (After Login)
+#     st.markdown("""
+#     ### 📊 Available Tools (After Login)
     
-    - **Retirement Corpus Calculator**  
-      _Calculate and visualize how long your retirement corpus will last._
+#     - **Retirement Corpus Calculator**  
+#       _Calculate and visualize how long your retirement corpus will last._
     
-    - **Goal Planning**  
-      _Find out the annual SIP needed to achieve your future financial goals._
+#     - **Goal Planning**  
+#       _Find out the annual SIP needed to achieve your future financial goals._
     
-    - **Dual Momentum Strategy**  
-      _Explore a classical dual momentum trading strategy with Indian ETFs._
+#     - **Dual Momentum Strategy**  
+#       _Explore a classical dual momentum trading strategy with Indian ETFs._
     
-    - **Mutual Fund Analyzer**  
-      _Compare mutual funds across categories, analyze rolling and year-on-year returns, and identify consistent top performers._
-    """)
+#     - **Mutual Fund Analyzer**  
+#       _Compare mutual funds across categories, analyze rolling and year-on-year returns, and identify consistent top performers._
+#     """)
+
+# AUTHENTICATION DISABLED - Showing main content directly
+st.markdown('<div class="big-title">💰 Financial Planning Suite</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Your one-stop solution for financial goal planning, retirement, and smart investing.</div>', unsafe_allow_html=True)
+
+st.markdown("""
+### 📊 Available Tools
+
+- **Retirement Corpus Calculator**  
+  _Calculate and visualize how long your retirement corpus will last._
+
+- **Goal Planning**  
+  _Find out the annual SIP needed to achieve your future financial goals._
+
+- **Dual Momentum Strategy**  
+  _Explore a classical dual momentum trading strategy with Indian ETFs._
+
+- **Mutual Fund Analyzer**  
+  _Compare mutual funds across categories, analyze rolling and year-on-year returns, and identify consistent top performers._
+
+---
+""")
+
+st.markdown('<span style="color: #616161;">Select a tool from the sidebar to get started!</span>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Authentication status indicator (for development purposes)
+st.sidebar.markdown("---")
+st.sidebar.markdown("**🔧 Development Mode**")
+st.sidebar.markdown("*Authentication disabled*")
+st.sidebar.markdown("*All files preserved*")
