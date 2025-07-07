@@ -7,9 +7,18 @@ from dateutil.relativedelta import relativedelta
 from datetime import datetime, date, timedelta, time
 from mftool import Mftool
 from tqdm import tqdm # For a progress bar
+import yfinance as yf
 
 # Base URL for mfapi.in
 BASE_URL = "https://api.mfapi.in/mf/"
+
+# Benchmark ETF mapping for different fund types
+BENCHMARK_MAPPING = {
+    "FX": {"symbol": "152106", "name": "NIFTY 500", "description": "NIFTY 500 Index via Fund Code 152106"},
+    "FC": {"symbol": "152106", "name": "NIFTY 500", "description": "NIFTY 500 Index via Fund Code 152106"},
+    "MC": {"symbol": "146271", "name": "NIFTY MIDCAP 150", "description": "NIFTY MIDCAP 150 Index via Fund Code 146271"},
+    "SC": {"symbol": "151375", "name": "NIFTY SMALLCAP 250", "description": "NIFTY SMALLCAP 250 Index via Fund Code 151375"}
+}
 
 def get_mf_data_direct(scheme_code: str) -> dict | None:
     """
@@ -353,76 +362,398 @@ def get_5y_rolling_returns(scheme_code: str, start_date_str: str) -> pd.DataFram
 
 def calculate_yoy_consistency_rank(df_results: pd.DataFrame, ranking_methodology: str) -> pd.DataFrame:
     """
-    Calculates the Year-On-Year Consistency Rank for a DataFrame of mutual fund returns.
+    Calculates the Year-On-Year Consistency Rank for a DataFrame of mutual fund returns, based on top 10 appearances.
     """
     headers = df_results.columns.tolist()
-    # Highlight top quartile for each period
+    
+    # Separate benchmark rows from fund rows
+    benchmark_mask = df_results.iloc[:, 0].str.contains('📊', na=False)
+    fund_rows = df_results[~benchmark_mask].copy()
+    benchmark_rows = df_results[benchmark_mask].copy()
+    
+    # Highlight top 10 for each period (only for fund rows)
     for i in range(2, len(headers)):
-        returns_col = df_results.iloc[:, i].copy()
+        returns_col = fund_rows.iloc[:, i].copy()
         numeric_returns = []
         valid_indices = {}
         for idx, val in enumerate(returns_col):
-            if isinstance(val, str) and val.replace('🟢', '').replace('%', '').strip() not in ('', 'Error'):
+            if isinstance(val, str) and val.replace('🥇', '').replace('%', '').strip() not in ('', 'Error'):
                 try:
-                    numeric_val = float(val.replace('🟢', '').replace('%', '').strip())
+                    numeric_val = float(val.replace('🥇', '').replace('%', '').strip())
                     valid_indices[idx] = len(numeric_returns)
                     numeric_returns.append(numeric_val)
                 except (ValueError, TypeError):
                     pass
         if numeric_returns:
-            top_quartile_threshold = pd.Series(numeric_returns).quantile(0.75)
+            # Get indices of top 10 values (descending)
+            top_10_indices = pd.Series(numeric_returns).nlargest(10).index.tolist()
             for original_idx, numeric_idx in valid_indices.items():
-                if numeric_returns[numeric_idx] >= top_quartile_threshold:
-                    original_value = df_results.iloc[original_idx, i]
-                    # Only add the icon for display, not in the DataFrame value
-                    df_results.iloc[original_idx, i] = f"🟢 {str(original_value).replace('🟢', '').replace('%', '').strip()}"
-    # Count the number of top-quartile appearances for each fund
-    top_quartile_counts = []
-    for index, row in df_results.iterrows():
-        count = sum(1 for i in range(2, len(row)) if str(row[i]).startswith('🟢'))
-        top_quartile_counts.append(count)
-    # Rank funds based on the count
-    df_results['quartile_count'] = top_quartile_counts
-    df_results['final_rank'] = df_results['quartile_count'].rank(method='min', ascending=False).astype(int)
-    df_results.iloc[:, 1] = df_results['final_rank']
-    df_results.drop(columns=['quartile_count', 'final_rank'], inplace=True)
-    # Remove '🟢' and '%' for sorting, keep as float or blank
+                if numeric_idx in top_10_indices:
+                    original_value = fund_rows.iloc[original_idx, i]
+                    fund_rows.iloc[original_idx, i] = f"🥇 {str(original_value).replace('🥇', '').replace('%', '').strip()}"
+    
+    # Count the number of top-10 appearances for each fund
+    top_10_counts = []
+    for index, row in fund_rows.iterrows():
+        count = sum(1 for i in range(2, len(row)) if str(row[i]).startswith('🥇'))
+        top_10_counts.append(count)
+    
+    # Set the Rank column to the count
+    fund_rows.iloc[:, 1] = top_10_counts
+    
+    # Remove '🥇' and '%' for sorting, keep as float or blank
     for i in range(2, len(headers)):
-        df_results.iloc[:, i] = df_results.iloc[:, i].apply(lambda x: float(str(x).replace('🟢', '').replace('%', '').strip()) if str(x).replace('🟢', '').replace('%', '').strip() not in ('', 'Error') else '')
-    return df_results
+        fund_rows.iloc[:, i] = fund_rows.iloc[:, i].apply(lambda x: float(str(x).replace('🥇', '').replace('%', '').strip()) if str(x).replace('🥇', '').replace('%', '').strip() not in ('', 'Error') else '')
+    
+    # Set benchmark rank to "Benchmark"
+    benchmark_rows.iloc[:, 1] = "Benchmark"
+    
+    # Combine fund rows and benchmark rows
+    result_df = pd.concat([fund_rows, benchmark_rows], ignore_index=True)
+    return result_df
 
 def calculate_rolling_period_returns(df_results: pd.DataFrame, dates_chronological: list, ranking_methodology: str) -> pd.DataFrame:
     """
-    Calculates rolling returns, highlights top performers, and ranks funds based on the number of top-quartile appearances.
+    Calculates rolling returns, highlights top 10 performers, and counts top 10 appearances for each fund.
     """
     headers = df_results.columns.tolist()
+    
+    # Separate benchmark rows from fund rows
+    benchmark_mask = df_results.iloc[:, 0].str.contains('📊', na=False)
+    fund_rows = df_results[~benchmark_mask].copy()
+    benchmark_rows = df_results[benchmark_mask].copy()
+    
     for i in range(2, len(headers)):
-        returns_col = df_results.iloc[:, i].copy()
+        returns_col = fund_rows.iloc[:, i].copy()
         numeric_returns = []
         valid_indices = {}
         for idx, val in enumerate(returns_col):
-            if isinstance(val, str) and val.replace('🟢', '').replace('%', '').strip() not in ('', 'Error'):
+            if isinstance(val, str) and val.replace('🥇', '').replace('%', '').strip() not in ('', 'Error'):
                 try:
-                    numeric_val = float(val.replace('🟢', '').replace('%', '').strip())
+                    numeric_val = float(val.replace('🥇', '').replace('%', '').strip())
                     valid_indices[idx] = len(numeric_returns)
                     numeric_returns.append(numeric_val)
                 except (ValueError, TypeError):
                     pass
         if numeric_returns:
-            top_quartile_threshold = pd.Series(numeric_returns).quantile(0.75)
+            top_10_indices = pd.Series(numeric_returns).nlargest(10).index.tolist()
             for original_idx, numeric_idx in valid_indices.items():
-                if numeric_returns[numeric_idx] >= top_quartile_threshold:
-                    original_value = df_results.iloc[original_idx, i]
-                    df_results.iloc[original_idx, i] = f"🟢 {str(original_value).replace('🟢', '').replace('%', '').strip()}"
-    top_quartile_counts = []
-    for index, row in df_results.iterrows():
-        count = sum(1 for i in range(2, len(row)) if str(row[i]).startswith('🟢'))
-        top_quartile_counts.append(count)
-    df_results['quartile_count'] = top_quartile_counts
-    df_results['final_rank'] = df_results['quartile_count'].rank(method='min', ascending=False).astype(int)
-    df_results.iloc[:, 1] = df_results['final_rank']
-    df_results.drop(columns=['quartile_count', 'final_rank'], inplace=True)
+                if original_idx in top_10_indices:
+                    original_value = fund_rows.iloc[original_idx, i]
+                    fund_rows.iloc[original_idx, i] = f"🥇 {str(original_value).replace('🥇', '').replace('%', '').strip()}"
+    
+    top_10_counts = []
+    for index, row in fund_rows.iterrows():
+        count = sum(1 for i in range(2, len(row)) if str(row[i]).startswith('🥇'))
+        top_10_counts.append(count)
+    
+    fund_rows.iloc[:, 1] = top_10_counts
+    
     for i in range(2, len(headers)):
-        df_results.iloc[:, i] = df_results.iloc[:, i].apply(lambda x: float(str(x).replace('🟢', '').replace('%', '').strip()) if str(x).replace('🟢', '').replace('%', '').strip() not in ('', 'Error') else '')
-    return df_results
+        fund_rows.iloc[:, i] = fund_rows.iloc[:, i].apply(lambda x: float(str(x).replace('🥇', '').replace('%', '').strip()) if str(x).replace('🥇', '').replace('%', '').strip() not in ('', 'Error') else '')
+    
+    # Set benchmark rank to "Benchmark"
+    benchmark_rows.iloc[:, 1] = "Benchmark"
+    
+    # Combine fund rows and benchmark rows
+    result_df = pd.concat([fund_rows, benchmark_rows], ignore_index=True)
+    return result_df
+
+def calculate_benchmark_outperformance_rank(df_results: pd.DataFrame, dates_chronological: list, ranking_methodology: str) -> pd.DataFrame:
+    """
+    Calculates benchmark outperformance ranking based on year-by-year comparison.
+    Only includes funds with >5 years history and >2000 crores AUM.
+    """
+    headers = df_results.columns.tolist()
+    
+    # Separate benchmark rows from fund rows
+    benchmark_mask = df_results.iloc[:, 0].astype(str).str.contains('📊', na=False)
+    fund_rows = df_results[~benchmark_mask].copy()
+    benchmark_rows = df_results[benchmark_mask].copy()
+    
+    # Get benchmark returns for comparison
+    benchmark_returns = []
+    if not benchmark_rows.empty:
+        for i in range(2, len(headers)):
+            benchmark_val = benchmark_rows.iloc[0, i]
+            if isinstance(benchmark_val, str) and benchmark_val.replace('%', '').strip() not in ('', 'Error'):
+                try:
+                    benchmark_returns.append(float(benchmark_val.replace('%', '').strip()))
+                except (ValueError, TypeError):
+                    benchmark_returns.append(0.0)
+            else:
+                benchmark_returns.append(0.0)
+    
+    # Calculate outperformance for each fund
+    outperformance_data = []
+    for idx, row in fund_rows.iterrows():
+        fund_name = row.iloc[0]
+        outperformance_periods = 0
+        total_outperformance = 0.0
+        
+        for i in range(2, len(headers)):
+            fund_return_str = str(row.iloc[i])
+            if fund_return_str.replace('%', '').strip() not in ('', 'Error', 'nan'):
+                try:
+                    fund_return = float(fund_return_str.replace('%', '').strip())
+                    if i-2 < len(benchmark_returns) and benchmark_returns[i-2] != 0.0:
+                        outperformance = fund_return - benchmark_returns[i-2]
+                        if outperformance > 0:
+                            outperformance_periods += 1
+                        total_outperformance += outperformance
+                except (ValueError, TypeError):
+                    pass
+        
+        outperformance_data.append({
+            'fund_name': fund_name,
+            'outperformance_periods': outperformance_periods,
+            'total_outperformance': total_outperformance,
+            'avg_outperformance': total_outperformance / len(headers[2:]) if len(headers[2:]) > 0 else 0
+        })
+    
+    # Create outperformance DataFrame
+    outperformance_df = pd.DataFrame(outperformance_data)
+    
+    # Sort by outperformance periods (descending), then by average outperformance (descending)
+    outperformance_df = outperformance_df.sort_values(
+        ['outperformance_periods', 'avg_outperformance'], 
+        ascending=[False, False]
+    )
+    
+    # Add rank column
+    outperformance_df['rank'] = range(1, len(outperformance_df) + 1)
+    
+    # Highlight top performers
+    for idx, row in outperformance_df.iterrows():
+        if row['outperformance_periods'] >= len(headers[2:]) * 0.7:  # 70% of periods
+            fund_name = row['fund_name']
+            # Find the corresponding row in fund_rows and add highlight
+            fund_idx = fund_rows[fund_rows.iloc[:, 0] == fund_name].index
+            if len(fund_idx) > 0:
+                fund_rows.iloc[fund_idx[0], 1] = f"🥇 {row['rank']}"
+    
+    # Set benchmark rank to "Benchmark"
+    benchmark_rows.iloc[:, 1] = "Benchmark"
+    
+    # Combine fund rows and benchmark rows
+    result_df = pd.concat([fund_rows, benchmark_rows], ignore_index=True)
+    return result_df
+
+def get_benchmark_data(benchmark_symbol: str, start_date: date, end_date: date) -> pd.DataFrame | None:
+    """
+    Fetches historical data for a benchmark index/ETF using yfinance.
+    
+    Args:
+        benchmark_symbol (str): The benchmark symbol (e.g., "^NSEI" for NIFTY 50)
+        start_date (date): Start date for data fetching
+        end_date (date): End date for data fetching
+        
+    Returns:
+        pd.DataFrame | None: DataFrame with 'date' and 'nav' columns, or None if failed
+    """
+    try:
+        # Convert dates to string format for yfinance
+        start_str = start_date.strftime('%Y-%m-%d')
+        end_str = end_date.strftime('%Y-%m-%d')
+        
+        # Fetch data using yfinance
+        ticker = yf.Ticker(benchmark_symbol)
+        hist_data = ticker.history(start=start_str, end=end_str)
+        
+        if hist_data.empty:
+            print(f"No data found for benchmark {benchmark_symbol}")
+            return None
+            
+        # Convert to the same format as mutual fund data
+        benchmark_df = pd.DataFrame({
+            'date': hist_data.index,
+            'nav': hist_data['Close']
+        })
+        
+        # Reset index to make date a column
+        benchmark_df = benchmark_df.reset_index(drop=True)
+        benchmark_df['date'] = pd.to_datetime(benchmark_df['date'])
+        benchmark_df['nav'] = pd.to_numeric(benchmark_df['nav'])
+        
+        return benchmark_df.sort_values('date')
+        
+    except Exception as e:
+        print(f"Error fetching benchmark data for {benchmark_symbol}: {e}")
+        return None
+
+def get_fund_aum(scheme_code: str) -> float:
+    """
+    Gets the AUM (Assets Under Management) for a mutual fund scheme.
+    
+    Args:
+        scheme_code (str): The scheme code of the mutual fund
+        
+    Returns:
+        float: AUM in crores, or 0 if not available
+    """
+    try:
+        scheme_details = mf.get_scheme_details(scheme_code)
+        if isinstance(scheme_details, dict) and 'aum' in scheme_details:
+            aum_str = str(scheme_details['aum'])
+            # Remove any non-numeric characters except decimal point
+            aum_clean = ''.join(c for c in aum_str if c.isdigit() or c == '.')
+            if aum_clean:
+                return float(aum_clean)
+        return 0.0
+    except Exception:
+        return 0.0
+
+def calculate_benchmark_returns(benchmark_symbol: str, dates_chronological: list, ranking_methodology: str) -> list:
+    """
+    Calculates benchmark returns for the given dates and methodology.
+    
+    Args:
+        benchmark_symbol (str): The benchmark symbol (yfinance symbol) or mutual fund code
+        dates_chronological (list): List of dates for calculation
+        ranking_methodology (str): The ranking methodology ("Year-On-Year Consistency Rank", "xYears Performance Rank", or "Benchmark Outperformance Rank")
+        
+    Returns:
+        list: List of benchmark returns for each period
+    """
+    benchmark_returns = []
+    
+    try:
+        # Get the earliest and latest dates for data fetching
+        start_date = min(dates_chronological)
+        end_date = max(dates_chronological)
+        
+        # Check if benchmark_symbol is a mutual fund code (numeric) or yfinance symbol
+        if benchmark_symbol.isdigit():
+            # It's a mutual fund code, use mutual fund API
+            benchmark_data = get_mf_data_direct(benchmark_symbol)
+            if benchmark_data and 'data' in benchmark_data:
+                nav_data = pd.DataFrame(benchmark_data['data'])
+                nav_data['date'] = pd.to_datetime(nav_data['date'], format='%d-%m-%Y', dayfirst=True)
+                nav_data['nav'] = pd.to_numeric(nav_data['nav'])
+                nav_data = nav_data.sort_values('date')
+                benchmark_data = nav_data
+            else:
+                return [""] * (len(dates_chronological) - 1)
+        else:
+            # It's a yfinance symbol, use yfinance
+            benchmark_data = get_benchmark_data(benchmark_symbol, start_date, end_date)
+        
+        if benchmark_data is None or benchmark_data.empty:
+            return [""] * (len(dates_chronological) - 1)
+        
+        if ranking_methodology == "Year-On-Year Consistency Rank":
+            for i in range(len(dates_chronological) - 1):
+                start_date, end_date = dates_chronological[i + 1], dates_chronological[i]
+                
+                # Find NAV values closest to the dates
+                start_nav_row = benchmark_data[benchmark_data['date'] <= pd.to_datetime(start_date)]
+                end_nav_row = benchmark_data[benchmark_data['date'] <= pd.to_datetime(end_date)]
+                
+                if len(start_nav_row) > 0 and len(end_nav_row) > 0:
+                    start_nav = start_nav_row.iloc[-1]['nav']
+                    end_nav = end_nav_row.iloc[-1]['nav']
+                    
+                    if start_nav > 0:
+                        yoy_return = ((end_nav - start_nav) / start_nav) * 100
+                        benchmark_returns.append(f"{yoy_return:.2f}%")
+                    else:
+                        benchmark_returns.append("")
+                else:
+                    benchmark_returns.append("")
+                    
+        elif ranking_methodology == "xYears Performance Rank":
+            end_date = dates_chronological[0]
+            
+            for i in range(1, len(dates_chronological)):
+                start_date = dates_chronological[i]
+                
+                # Find NAV values closest to the dates
+                start_nav_row = benchmark_data[benchmark_data['date'] <= pd.to_datetime(start_date)]
+                end_nav_row = benchmark_data[benchmark_data['date'] <= pd.to_datetime(end_date)]
+                
+                if len(start_nav_row) > 0 and len(end_nav_row) > 0:
+                    start_nav = start_nav_row.iloc[-1]['nav']
+                    end_nav = end_nav_row.iloc[-1]['nav']
+                    
+                    if start_nav > 0:
+                        years = (end_nav_row.iloc[-1]['date'] - start_nav_row.iloc[-1]['date']).days / 365.25
+                        cagr = ((end_nav / start_nav) ** (1 / years) - 1) * 100 if years > 0 else 0
+                        benchmark_returns.append(f"{cagr:.2f}%")
+                    else:
+                        benchmark_returns.append("")
+                else:
+                    benchmark_returns.append("")
+        
+        elif ranking_methodology == "Benchmark Outperformance Rank":
+            for i in range(len(dates_chronological) - 1):
+                start_date, end_date = dates_chronological[i + 1], dates_chronological[i]
+                
+                # Find NAV values closest to the dates
+                start_nav_row = benchmark_data[benchmark_data['date'] <= pd.to_datetime(start_date)]
+                end_nav_row = benchmark_data[benchmark_data['date'] <= pd.to_datetime(end_date)]
+                
+                if len(start_nav_row) > 0 and len(end_nav_row) > 0:
+                    start_nav = start_nav_row.iloc[-1]['nav']
+                    end_nav = end_nav_row.iloc[-1]['nav']
+                    
+                    if start_nav > 0:
+                        yoy_return = ((end_nav - start_nav) / start_nav) * 100
+                        benchmark_returns.append(f"{yoy_return:.2f}%")
+                    else:
+                        benchmark_returns.append("")
+                else:
+                    benchmark_returns.append("")
+        
+        return benchmark_returns
+        
+    except Exception as e:
+        print(f"Error calculating benchmark returns: {e}")
+        return [""] * (len(dates_chronological) - 1)
+
+def calculate_benchmark_outperformance_table(fund_returns: list, benchmark_returns: list, fund_names: list, headers: list) -> pd.DataFrame:
+    """
+    For each fund, for each year, show fund return, benchmark return, and outperformance.
+    Rank by number of years outperformed, then by average outperformance.
+    """
+    results = []
+    for idx, row in enumerate(fund_returns):
+        mf_name = fund_names[idx]
+        outperformance_count = 0
+        outperformance_sum = 0
+        row_result = [mf_name]
+        for j in range(len(benchmark_returns)):
+            try:
+                fund_ret = float(row[j]) if row[j] not in ('', 'Error', None) else None
+            except Exception:
+                fund_ret = None
+            try:
+                bench_ret = float(benchmark_returns[j]) if benchmark_returns[j] not in ('', 'Error', None) else None
+            except Exception:
+                bench_ret = None
+            if fund_ret is not None and bench_ret is not None:
+                outperf = fund_ret - bench_ret
+                row_result.extend([f"{fund_ret:.2f}%", f"{bench_ret:.2f}%", f"{outperf:.2f}%"])
+                if outperf > 0:
+                    outperformance_count += 1
+                outperformance_sum += outperf
+            else:
+                row_result.extend(["", "", ""])
+        row_result.append(outperformance_count)
+        row_result.append(outperformance_sum / len(benchmark_returns) if benchmark_returns else 0)
+        results.append(row_result)
+    # Sort by outperformance count only
+    results.sort(key=lambda x: x[-2], reverse=True)
+    # Add rank
+    for i, row in enumerate(results):
+        row.insert(1, i+1)
+    # Build headers
+    new_headers = ["MF Name", "Rank"]
+    for h in headers:
+        new_headers.extend([
+            f"{h}",
+            f"{h} Benchmark",
+            f"{h} Outperformance (%)"
+        ])
+    new_headers.extend(["Years Outperf", "Avg Outperf"])
+    return pd.DataFrame(results, columns=new_headers)
 
