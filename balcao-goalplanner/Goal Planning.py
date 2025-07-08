@@ -7,6 +7,11 @@ import matplotlib.pyplot as plt
 import numpy_financial as npf
 import numpy as np
 import io
+import plotly.graph_objects as go
+import sqlalchemy  # Make sure 'sqlalchemy' is in requirements.txt
+import traceback
+
+engine = sqlalchemy.create_engine(st.secrets["DB_URL"])
 
 st.markdown("## Goal Planning Tool")
 
@@ -65,32 +70,71 @@ if submitted:
         "CORPUS VALUE": corpus_values
     })
 
-    # Matplotlib chart
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(df["YEAR"], df["CORPUS VALUE"], label="Corpus Growth", color="blue", marker='o')
-    ax.axhline(future_goal_value, color='red', linestyle='--', label='Goal Corpus')
-    ax.set_title("Glide Path to Goal Corpus")
-    ax.set_xlabel("Year")
-    ax.set_ylabel("Corpus Value (INR)")
-    ax.legend()
-    ax.grid(True, linestyle='--', alpha=0.6)
-    st.pyplot(fig)
-
-    # Download chart as PNG
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png")
-    st.download_button(
-        label="Download Chart as PNG",
-        data=buf.getvalue(),
-        file_name="goal_glide_path.png",
-        mime="image/png"
+    # Plotly chart for Glide Path
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["YEAR"],
+        y=df["CORPUS VALUE"],
+        mode="lines+markers",
+        name="Corpus Growth",
+        line=dict(color="blue"),
+        marker=dict(symbol="circle")
+    ))
+    fig.add_trace(go.Scatter(
+        x=[df["YEAR"].min(), df["YEAR"].max()],
+        y=[future_goal_value, future_goal_value],
+        mode="lines",
+        name="Goal Corpus",
+        line=dict(color="red", dash="dash")
+    ))
+    fig.update_layout(
+        title="Glide Path to Goal Corpus",
+        xaxis_title="Year",
+        yaxis_title="Corpus Value (INR)",
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+        template="plotly_white",
+        hovermode="x unified",
+        margin=dict(l=40, r=40, t=60, b=40)
     )
+    st.plotly_chart(fig, use_container_width=True)
 
-    # Download data as CSV
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="Download Data as CSV",
-        data=csv,
-        file_name="goal_glide_path.csv",
-        mime="text/csv"
-    )
+    # Inline Save Plan input method
+    if 'show_save_inline' not in st.session_state:
+        st.session_state['show_save_inline'] = False
+
+    if st.button("Save Plan"):
+        st.session_state['show_save_inline'] = True
+
+    if st.session_state.get('show_save_inline', False):
+        with st.form("save_plan_form"):
+            now = dt.datetime.now()
+            default_plan_name = f"Plan Name_{now.strftime('%d%m%y')}_{now.strftime('%H%M%S')}"
+            plan_name = st.text_input("Enter a name for your plan:", value=default_plan_name, key="plan_name_inline")
+            save_submitted = st.form_submit_button("Save To DB")
+            if save_submitted:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(
+                            sqlalchemy.text(
+                                '''
+                                INSERT INTO goal_plans
+                                (plan_name, goal_value_today, inflation_rate, years_to_goal, rate_inv_return, initial_corpus, future_goal_value, annual_sip)
+                                VALUES (:plan_name, :goal_value_today, :inflation_rate, :years_to_goal, :rate_inv_return, :initial_corpus, :future_goal_value, :annual_sip)
+                                '''
+                            ),
+                            {
+                                "plan_name": plan_name,
+                                "goal_value_today": goal_value_today,
+                                "inflation_rate": inflation_rate,
+                                "years_to_goal": years_to_goal,
+                                "rate_inv_return": rate_inv_return,
+                                "initial_corpus": initial_corpus,
+                                "future_goal_value": future_goal_value,
+                                "annual_sip": annual_sip,
+                            }
+                        )
+                    st.success(f"Plan '{plan_name}' saved to database!")
+                    st.session_state['show_save_inline'] = False
+                except Exception as e:
+                    st.error(f"Database insert failed: {e}")
+                    st.text(traceback.format_exc())
