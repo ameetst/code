@@ -1,0 +1,15 @@
+streamlit
+pandas
+numpy
+matplotlib
+datetime
+yfinance
+numpy_financial
+mftool
+tqdm
+streamlit-authenticator
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+requests
+plotly 

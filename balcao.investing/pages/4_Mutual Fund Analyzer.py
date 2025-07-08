@@ -213,6 +213,9 @@ if selected_fund_type != "Select a Fund Family" and ranking_methodology != "Sele
                         )
                         st.info(f"📊 **Benchmark Returns:** {benchmark_returns}")
                         
+                        # After benchmark_returns is calculated in Benchmark Outperformance Rank section
+                        print(f"Benchmark returns for {benchmark_info['symbol']}: {benchmark_returns}")
+                        
                         # Create progress bar for mutual fund processing
                         progress_bar = st.progress(0)
                         status_text = st.empty()
@@ -256,6 +259,12 @@ if selected_fund_type != "Select a Fund Family" and ranking_methodology != "Sele
                                     row_returns.append("")
                             fund_returns.append(row_returns)
                             fund_names.append(mf_name)
+                            # Print fund name and year-by-year comparison with benchmark in Streamlit
+                            st.write(f"**{mf_name} vs Benchmark**")
+                            for i, period in enumerate(period_headers):
+                                fund_ret = row_returns[i] if i < len(row_returns) else ""
+                                bench_ret = benchmark_returns[i] if i < len(benchmark_returns) else ""
+                                st.write(f"{period}: Fund = {fund_ret}, Benchmark = {bench_ret}")
                         # Clear progress indicators
                         progress_bar.empty()
                         status_text.empty()
