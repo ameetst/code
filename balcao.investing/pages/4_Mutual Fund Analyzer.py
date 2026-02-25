@@ -70,6 +70,7 @@ if selected_fund_type != "Select a Fund Family" and ranking_methodology != "Sele
         current_dir = os.path.dirname(os.path.abspath(__file__))
         mf_codes_file = os.path.join(current_dir, f"{fund_type}.txt")
 
+        excluded_funds = []  # Define at the top of the try block
         try:
             with open(mf_codes_file, 'r') as file:
                 ticker_list = [line.strip() for line in file]
@@ -216,14 +217,30 @@ if selected_fund_type != "Select a Fund Family" and ranking_methodology != "Sele
                         # After benchmark_returns is calculated in Benchmark Outperformance Rank section
                         print(f"Benchmark returns for {benchmark_info['symbol']}: {benchmark_returns}")
                         
-                        # Create progress bar for mutual fund processing
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
-                        fund_returns = []
-                        fund_names = []
-                        processed_count = 0
-                        filtered_count = 0
-                        for idx, mf_code in enumerate(tqdm(filter(str.strip, ticker_list), desc="Processing Mutual Funds")):
+                        # Pre-scan all fund codes for the 5-year NAV requirement
+                        for mf_code in ticker_list:
+                            try:
+                                scheme_details = mfapi_utils.mf.get_scheme_details(mf_code)
+                                mf_name = scheme_details['scheme_name'] if isinstance(scheme_details, dict) and 'scheme_name' in scheme_details else mf_code
+                            except Exception:
+                                mf_name = mf_code
+                            scheme_data = mfapi_utils.get_mf_data_direct(mf_code)
+                            if not scheme_data or 'data' not in scheme_data:
+                                excluded_funds.append(mf_name)
+                                continue
+                            nav_data = pd.DataFrame(scheme_data['data'])
+                            nav_data['date'] = pd.to_datetime(nav_data['date'], format='%d-%m-%Y', dayfirst=True)
+                            if nav_data[nav_data['date'] <= pd.to_datetime(five_years_prior)].empty:
+                                excluded_funds.append(mf_name)
+                            else:
+                                included_funds.append(mf_code)
+                        # Display excluded funds before computation (inside this block only)
+                        if excluded_funds:
+                            st.warning("The following funds will be excluded (no NAV at least 5 years prior to computation start date):")
+                            for name in excluded_funds:
+                                st.write(name)
+                        # Use included_funds for the main computation loop
+                        for idx, mf_code in enumerate(tqdm(filter(str.strip, included_funds), desc="Processing Mutual Funds")):
                             # Update progress bar
                             progress = (idx + 1) / len([x for x in ticker_list if x.strip()])
                             progress_bar.progress(progress)
@@ -243,6 +260,12 @@ if selected_fund_type != "Select a Fund Family" and ranking_methodology != "Sele
                             nav_data['date'] = pd.to_datetime(nav_data['date'], format='%d-%m-%Y', dayfirst=True)
                             nav_data['nav'] = pd.to_numeric(nav_data['nav'])
                             nav_data = nav_data.sort_values('date')
+
+                            # Check for NAV at least 5 years prior to the start date for computation
+                            five_years_prior = start_date - relativedelta(years=5)
+                            if nav_data[nav_data['date'] <= pd.to_datetime(five_years_prior)].empty:
+                                excluded_funds.append(mf_name)
+                                continue
 
                             processed_count += 1
 
@@ -312,4 +335,10 @@ if selected_fund_type != "Select a Fund Family" and ranking_methodology != "Sele
             st.error(f"Attempted file path: {mf_codes_file}")
         except Exception as e:
             st.error(f"An error occurred: {e}")
+
+        # Display excluded funds after the loop
+        if excluded_funds:
+            st.warning("The following funds were excluded (no NAV at least 5 years prior to computation start date):")
+            for name in excluded_funds:
+                st.write(name)
 

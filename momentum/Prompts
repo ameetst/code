@@ -1,0 +1,75 @@
+I need to develop a python script to calculate momentum ranking for given set of stocks and tickers
+
+1. Data Source & Structure:
+
+Source: Data is located in a sheet named DATA.
+
+Headers: The first row contains headers.
+
+Columns:
+
+
+
+Column A: Ticker/Symbol.
+
+Column B: Latest Closing Price.
+
+Column C: 52-Week High.
+
+Column D onwards: Historical daily closing prices for the past 365 calendar days (excluding Saturdays and Sundays).
+
+Data Cleaning Logic:
+
+
+
+Trading Holidays: If a specific date column contains 0 for all tickers, treat it as a global trading holiday and exclude that column from calculations.
+
+Pre-Listing Dates: If a specific ticker has 0 values for dates prior to its listing date, treat those as missing data (NaN) to ensure they do not impact return or volatility calculations.
+
+2. Filtering Criteria:
+
+Perform calculations only for stocks where the Latest Close Price (Col B) is within 25% of the 52-Week High (Col C).
+
+
+
+Calculation: Latest Price >= 0.75 * 52wk High.
+
+3. Calculation Metrics:
+
+Sharpe Ratios: Calculate annualized Sharpe Ratios for three lookback periods: 12 Months (252 days), 6 Months (126 days), and 3 Months (63 days).
+
+Risk Metrics: Calculate Skewness and Kurtosis for each ticker based on the full available 52-week price history.
+
+4. Ranking & Scoring Logic:
+
+Z-Scores: Calculate the cross-sectional Z-score for each of the five metrics (S12m, S6m, S3m, Skew, and Kurtosis) across the filtered universe of stocks.
+
+Core Momentum Score: Assign an equal weight of 0.33 to the Z-scores of the 12m, 6m, and 3m Sharpe Ratios.
+
+Tilt Factors: Apply the Risk Metric Z-scores as modifiers to the score:
+
+
+
+Skewness Tilt: Add 0.10 times the Skewness Z-score (rewarding upside potential).
+
+Kurtosis Tilt: Subtract 0.05 times the Kurtosis Z-score (penalizing jumpy/gappy price action).
+
+Final Score Formula: Final Score = (Z_S12 * 0.33) + (Z_S6 * 0.33) + (Z_S3 * 0.33) + (Z_Skew * 0.10) - (Z_Kurt * 0.05)
+
+5. Output Requirements:
+
+Sort the final list in descending order based on the Final_Score.
+
+The output table must include:
+
+
+
+1. Ticker
+
+2. Final Score
+
+3. Raw Sharpe Ratios (12m, 6m, 3m)
+
+4. Raw Skew and Kurtosis
+
+5. The individual Z-scores for all metrics.

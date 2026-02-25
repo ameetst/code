@@ -1,0 +1,315 @@
+"""
+Momentum Ranking Script
+=======================
+Reads an Excel workbook with a sheet named "DATA", calculates annualised
+Sharpe Ratios (12m / 6m / 3m), Skewness, and Kurtosis for each ticker,
+then computes a composite momentum score using cross-sectional Z-scores.
+
+Expected sheet layout (DATA):
+  Col A  : Ticker / Symbol
+  Col B  : Latest Closing Price
+  Col C  : 52-Week High
+  Col D+ : Historical daily closing prices (up to 365 calendar days,
+            weekdays only; most-recent date should be the LEFT-MOST column
+            OR right-most – the script auto-detects direction)
+
+Data-cleaning rules applied automatically:
+  • Columns where ALL tickers have 0  → global trading holiday → dropped
+  • Per-ticker leading/trailing 0s     → treated as pre-listing NaN
+
+Usage:
+  python "Sharpe_momentum,py" --file <path_to_excel.xlsx>
+
+Optional flags:
+  --sheet   Sheet name (default: DATA)
+  --out     Output CSV path (default: momentum_rankings.csv)
+  --top     Print only the top-N rows to console (default: all)
+"""
+
+import argparse
+import sys
+import warnings
+
+import numpy as np
+import pandas as pd
+from scipy import stats
+
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Constants
+# ─────────────────────────────────────────────────────────────────────────────
+TRADING_DAYS_YEAR = 252
+PERIOD_MAP = {
+    "12m": 252,
+    "6m":  126,
+    "3m":   63,
+}
+
+SCORE_WEIGHTS = {
+    "Z_Sharpe_12m":  0.33,
+    "Z_Sharpe_6m":   0.33,
+    "Z_Sharpe_3m":   0.33,
+    "Z_Skew":        0.10,
+    "Z_Kurt":       -0.05,   # negative: penalise high kurtosis
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper functions
+# ─────────────────────────────────────────────────────────────────────────────
+
+def load_data(filepath: str, sheet: str) -> pd.DataFrame:
+    """Load the raw Excel sheet and return it as a DataFrame."""
+    try:
+        df = pd.read_excel(filepath, sheet_name=sheet, header=0)
+    except FileNotFoundError:
+        sys.exit(f"[ERROR] File not found: {filepath}")
+    except Exception as e:
+        sys.exit(f"[ERROR] Could not read workbook: {e}")
+    return df
+
+
+def prepare_price_matrix(df: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.DataFrame]:
+    """
+    Split the raw DataFrame into:
+      • latest_close  – Series (index = ticker)
+      • high_52w      – Series (index = ticker)
+      • prices        – DataFrame (index = ticker, columns = date positions,
+                        oldest … newest, already cleaned)
+
+    Returns all three.
+    """
+    tickers      = df.iloc[:, 0].astype(str).str.strip()
+    latest_close = pd.to_numeric(df.iloc[:, 1], errors="coerce")
+    high_52w     = pd.to_numeric(df.iloc[:, 2], errors="coerce")
+
+    # Historical prices: column D onwards (index 3+)
+    price_raw = df.iloc[:, 3:].apply(pd.to_numeric, errors="coerce")
+    price_raw.index = tickers
+
+    # ── Step 1: drop global holiday columns (all tickers == 0) ──────────────
+    col_all_zero = (price_raw == 0).all(axis=0)
+    price_raw = price_raw.loc[:, ~col_all_zero]
+
+    # ── Step 2: replace per-ticker leading/trailing 0s with NaN ─────────────
+    def zero_to_nan_edges(row: pd.Series) -> pd.Series:
+        """Replace 0s that appear before the first non-zero (pre-listing)."""
+        arr = row.values.astype(float)
+        # forward pass: find first non-zero
+        first_nz = next((i for i, v in enumerate(arr) if v != 0), None)
+        if first_nz is None:
+            return pd.Series([np.nan] * len(arr), index=row.index)
+        arr[:first_nz] = np.nan
+        # Any remaining interior 0s are also suspicious – treat as NaN
+        arr[arr == 0] = np.nan
+        return pd.Series(arr, index=row.index)
+
+    price_clean = price_raw.apply(zero_to_nan_edges, axis=1)
+
+    latest_close.index = tickers
+    high_52w.index     = tickers
+
+    return latest_close, high_52w, price_clean
+
+
+def compute_returns(prices: pd.DataFrame) -> pd.DataFrame:
+    """Compute daily log returns (or simple % returns) from price matrix."""
+    # prices columns assumed oldest→newest; pct_change works left→right
+    returns = prices.pct_change(axis=1)
+    # Drop the first column (all NaN after pct_change)
+    returns = returns.iloc[:, 1:]
+    return returns
+
+
+def annualised_sharpe(returns_row: pd.Series, n_days: int) -> float:
+    """
+    Compute annualised Sharpe Ratio for the last `n_days` of returns.
+    Assumes risk-free rate ≈ 0 (cross-sectional ranking; RF cancels out).
+    """
+    r = returns_row.dropna().iloc[-n_days:]
+    if len(r) < max(10, n_days // 4):      # need a meaningful sample
+        return np.nan
+    mean   = r.mean()
+    std    = r.std(ddof=1)
+    if std == 0 or np.isnan(std):
+        return np.nan
+    return (mean / std) * np.sqrt(TRADING_DAYS_YEAR)
+
+
+def compute_skew_kurt(returns_row: pd.Series) -> tuple[float, float]:
+    """Skewness and excess Kurtosis over the full available history."""
+    r = returns_row.dropna()
+    if len(r) < 4:
+        return np.nan, np.nan
+    skew = stats.skew(r, bias=False)
+    kurt = stats.kurtosis(r, fisher=True, bias=False)   # excess kurtosis
+    return skew, kurt
+
+
+def zscore_series(s: pd.Series) -> pd.Series:
+    """Cross-sectional Z-score (handles NaN gracefully)."""
+    mu  = s.mean()
+    sig = s.std(ddof=1)
+    if sig == 0 or np.isnan(sig):
+        return pd.Series(np.nan, index=s.index)
+    return (s - mu) / sig
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main pipeline
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run(filepath: str, sheet: str, out_path: str, top_n: int | None) -> pd.DataFrame:
+
+    print(f"\n{'─'*60}")
+    print(f"  Momentum Ranking Engine")
+    print(f"{'─'*60}")
+    print(f"  Workbook : {filepath}")
+    print(f"  Sheet    : {sheet}")
+    print(f"{'─'*60}\n")
+
+    # ── 1. Load ───────────────────────────────────────────────────────────────
+    raw = load_data(filepath, sheet)
+    print(f"[INFO] Loaded {len(raw)} tickers from sheet '{sheet}'.")
+
+    # ── 2. Prepare price matrix ───────────────────────────────────────────────
+    latest_close, high_52w, prices = prepare_price_matrix(raw)
+    n_price_cols = prices.shape[1]
+    print(f"[INFO] {n_price_cols} trading-day columns retained after holiday removal.")
+
+    # ── 3. Filter: Latest Close >= 75% of 52-Week High ────────────────────────
+    pct_of_high  = latest_close / high_52w
+    near_high    = pct_of_high >= 0.75
+    tickers_pass = near_high[near_high].index.tolist()
+
+    # Guard: remove tickers with invalid prices
+    tickers_pass = [
+        t for t in tickers_pass
+        if pd.notna(latest_close[t]) and pd.notna(high_52w[t])
+        and high_52w[t] > 0
+    ]
+
+    print(f"[INFO] {len(tickers_pass)} / {len(raw)} tickers pass the 52-wk High filter (≥ 75%).")
+
+    if len(tickers_pass) == 0:
+        sys.exit("[ERROR] No tickers passed the filter. Check your data.")
+
+    # ── 4. Compute returns for filtered universe ───────────────────────────────
+    prices_filtered  = prices.loc[tickers_pass]
+    returns_filtered = compute_returns(prices_filtered)
+
+    # ── 5. Compute metrics ────────────────────────────────────────────────────
+    records = []
+    for ticker in tickers_pass:
+        ret_row = returns_filtered.loc[ticker]
+
+        s12 = annualised_sharpe(ret_row, PERIOD_MAP["12m"])
+        s6  = annualised_sharpe(ret_row, PERIOD_MAP["6m"])
+        s3  = annualised_sharpe(ret_row, PERIOD_MAP["3m"])
+        skew, kurt = compute_skew_kurt(ret_row)
+
+        records.append({
+            "Ticker":      ticker,
+            "Latest_Close": latest_close[ticker],
+            "High_52w":    high_52w[ticker],
+            "Pct_of_High": round(pct_of_high[ticker] * 100, 2),
+            "Sharpe_12m":  s12,
+            "Sharpe_6m":   s6,
+            "Sharpe_3m":   s3,
+            "Skew":        skew,
+            "Kurt":        kurt,
+        })
+
+    metrics = pd.DataFrame(records).set_index("Ticker")
+
+    # ── 6. Cross-sectional Z-scores ────────────────────────────────────────────
+    metrics["Z_Sharpe_12m"] = zscore_series(metrics["Sharpe_12m"])
+    metrics["Z_Sharpe_6m"]  = zscore_series(metrics["Sharpe_6m"])
+    metrics["Z_Sharpe_3m"]  = zscore_series(metrics["Sharpe_3m"])
+    metrics["Z_Skew"]       = zscore_series(metrics["Skew"])
+    metrics["Z_Kurt"]       = zscore_series(metrics["Kurt"])
+
+    # ── 7. Final composite score ───────────────────────────────────────────────
+    metrics["Final_Score"] = (
+        metrics["Z_Sharpe_12m"] * SCORE_WEIGHTS["Z_Sharpe_12m"] +
+        metrics["Z_Sharpe_6m"]  * SCORE_WEIGHTS["Z_Sharpe_6m"]  +
+        metrics["Z_Sharpe_3m"]  * SCORE_WEIGHTS["Z_Sharpe_3m"]  +
+        metrics["Z_Skew"]       * SCORE_WEIGHTS["Z_Skew"]       +
+        metrics["Z_Kurt"]       * SCORE_WEIGHTS["Z_Kurt"]        # already negative weight
+    )
+
+    # ── 8. Sort & format output ────────────────────────────────────────────────
+    output_cols = [
+        "Final_Score",
+        "Sharpe_12m", "Sharpe_6m", "Sharpe_3m",
+        "Skew", "Kurt",
+        "Z_Sharpe_12m", "Z_Sharpe_6m", "Z_Sharpe_3m",
+        "Z_Skew", "Z_Kurt",
+        "Latest_Close", "High_52w", "Pct_of_High",
+    ]
+
+    result = (
+        metrics[output_cols]
+        .sort_values("Final_Score", ascending=False)
+        .reset_index()
+    )
+
+    # Round for readability
+    float_cols = result.select_dtypes(include="float").columns
+    result[float_cols] = result[float_cols].round(4)
+
+    # ── 9. Save to CSV ────────────────────────────────────────────────────────
+    result.to_csv(out_path, index=False)
+    print(f"[INFO] Results saved → {out_path}\n")
+
+    # ── 10. Print to console ───────────────────────────────────────────────────
+    display = result if top_n is None else result.head(top_n)
+    print(display.to_string(index=False))
+    print(f"\n{'─'*60}")
+    print(f"  Total ranked: {len(result)} tickers")
+    print(f"{'─'*60}\n")
+
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CLI entry-point
+# ─────────────────────────────────────────────────────────────────────────────
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Momentum Ranking: Sharpe + Skew/Kurt Z-score composite scorer."
+    )
+    parser.add_argument(
+        "--file", "-f",
+        required=True,
+        help="Path to the Excel workbook (.xlsx / .xls)."
+    )
+    parser.add_argument(
+        "--sheet", "-s",
+        default="DATA",
+        help="Sheet name containing the data (default: DATA)."
+    )
+    parser.add_argument(
+        "--out", "-o",
+        default="momentum_rankings.csv",
+        help="Output CSV file path (default: momentum_rankings.csv)."
+    )
+    parser.add_argument(
+        "--top", "-t",
+        type=int,
+        default=None,
+        help="Print only the top-N rows to console (default: all)."
+    )
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    run(
+        filepath=args.file,
+        sheet=args.sheet,
+        out_path=args.out,
+        top_n=args.top,
+    )
