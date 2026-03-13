@@ -159,6 +159,38 @@ The normalised value is stored back into `result["COMPOSITE"]` and flows into al
 
 ---
 
+## Session — 2026-03-13
+
+### 8. Multi-Window Clenow Z-Score
+
+**What changed:** The single 90-day Clenow window was refactored into a multi-window approach (12M, 9M, 6M, 3M) identically to the Sharpe ratios.
+
+**Logic details:**
+- Using `stats.linregress` on log-prices over `n` trading days.
+- Extracts `ann_slope` and `r2` to calculate raw scores `CS_` for each window.
+- Z-scores each raw Clenow score cross-sectionally to create `CZ_` columns.
+- Takes equal-weighted average of `CZ_12M, CZ_9M, CZ_6M, CZ_3M` to generate composite `CLENOW_Z`.
+
+### 9. Market Regime Filter (NIFTY500)
+
+**What changed:** Added an independent indicator to gauge the overall market regime using NIFTY500 EMAs.
+
+**Logic details:**
+- Generates 50, 21, and 63-day EMAs on the NIFTY500 log prices.
+- Checks condition: `(last_price > EMA50) and (EMA21 > EMA63)`.
+- Sets a flag indicating `BUY` if true, or `NOT BUY (Risk Off)` if false.
+- The flag is purely informative and is presented at the top of the console output and on the `TOP20` Excel sheet title. It does not gate the calculation of ranks.
+
+### 10. Ranking Logic & Spreadsheet Refresh
+
+**What changed:** 
+- Ranking eligibility was restored entirely to `PCT_FROM_52H >= -25`, discarding interim rules involving positive slopes and R-squared constraints. Rank ties continue to be handled via `RANK` ascending then `COMPOSITE` descending.
+- **Console:** Expanded separator to 76 chars, updated columns to RNK, TICKER, SHARPE_Z, CLENOW_Z, RES_MOM, 1M%, 3M%, 12M%.
+- **TOP20 sheet:** Updated column count to 11 (A-K). Added `CLENOW_Z`, `RES_MOM`, `CZ_3M`, `CZ_6M`, `CZ_12M`.
+- **CALCS sheet:** Expanded output to 41 distinct columns, now detailing intermediate multi-window metrics (`CS_`, `CZ_`, `CL_`, `CR_`).
+
+---
+
 ## File Structure
 
 ```
@@ -167,7 +199,8 @@ momentum/
     ├── Sharpe.py                              ← Active script
     ├── CHANGELOG.md                           ← This file
     └── checkpoints/
-        └── Sharpe_checkpoint_2026-03-12.py   ← Today's checkpoint
+        ├── Sharpe_checkpoint_2026-03-12.py   ← Prior checkpoint
+        └── Sharpe_checkpoint_2026-03-13.py   ← Today's checkpoint
 ```
 
 ---
@@ -177,34 +210,31 @@ momentum/
 ```
 Load n500.xlsx [DATA sheet]
   └─ Build price matrix (tickers × dates)
+  └─ Extract NIFTY500 as benchmark
 
-Compute Sharpe ratios
-  └─ Windows: 12M (252d), 9M (189d), 6M (126d), 3M (63d)
-  └─ Annualised log-return Sharpe, excess over RFR=7%
+Compute Sharpe Z-Scores
+  └─ Windows: 12M, 9M, 6M, 3M  (ann log-returns excess over RFR=7%)
+  └─ Cross-sectional Z-score → SHARPE_Z (mean of Z scores)
+  └─ SHARPE_Z is normalised: (v>1 → v+1), (v<0 → 1/(1-v)), (0<=v<=1 unchanged)
 
-Cross-sectional Z-score each window
-  └─ COMPOSITE = mean(Z_12M, Z_9M, Z_6M, Z_3M)
+Compute Clenow Z-Scores
+  └─ Windows: 12M, 9M, 6M, 3M  (ann log-linear slope × R²)
+  └─ Cross-sectional Z-score → CLENOW_Z (mean of Z scores)
 
-Normalise COMPOSITE
-  └─ v>1 → v+1  |  v<0 → 1/(1-v)  |  else unchanged
+Compute Residual Momentum Z-Scores
+  └─ Windows: 12M, 9M, 6M, 3M  (OLS regression of stock rets vs market rets)
+  └─ Sharpe of residuals → cross-sectional Z-score → RES_MOM (mean of Z scores)
 
-Compute Clenow Score
-  └─ 90-day log-linear regression → AnnSlope × R²
+Market Regime Filter
+  └─ NIFTY500 Last Price > 50EMA AND 21EMA > 63EMA → BUY / NOT BUY
 
-Compute 52-week high proximity
+Rank (eligible stocks only)
   └─ PCT_FROM_52H = (last / max_252d − 1) × 100
-
-Compute Residual Momentum vs NIFTY500
-  └─ OLS regression of stock log-rets on market log-rets
-  └─ Compute Sharpe on residuals for 12M, 9M, 6M, 3M
-  └─ Cross-sectionally Z-score residual Sharpes
-  └─ RES_MOM = mean(RZ_12M, RZ_9M, RZ_6M, RZ_3M)
-
-Rank (eligible stocks only: PCT_FROM_52H >= −25)
-  └─ Ranked by normalised COMPOSITE, descending
+  └─ PCT_FROM_52H >= −25%
+  └─ Ranked by normalised SHARPE_Z, descending
 
 Output
-  └─ Console: top 20 (RNK, TICKER, SHARPE_Z, CLENOW)
-  └─ TOP20 sheet: 9 cols (RNK..CLN_R2), Calibri 11, dark theme
-  └─ CALCS sheet: 24 cols (includes RES_MOM metrics + 52H%), Calibri 11, dark theme
+  └─ Console: regime flag, top 20 (RNK, TICKER, SHARPE_Z, CLENOW_Z, RES_MOM, rets)
+  └─ TOP20 sheet: 11 cols (RNK..CZ_12M), Calibri 11, dark theme
+  └─ CALCS sheet: 41 cols (all window metrics + proxies), Calibri 11, dark theme
 ```
