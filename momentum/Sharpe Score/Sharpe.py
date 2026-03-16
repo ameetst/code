@@ -1,11 +1,11 @@
 """
 N500 Sharpe Z-Score + Clenow Z-Score + Residual Momentum Ranking
 =================================================================
-  • 12M/9M/6M/3M annualised Sharpe ratios → Z-score → SHARPE_Z composite
+  • 12M/9M/6M/3M annualised Sharpe ratios → Z-score → SHARPE_ALL composite
   • 12M/9M/6M/3M Clenow (AnnSlope×R²)    → Z-score → CLENOW_Z composite
   • 12M/9M/6M/3M residual Sharpe (OLS)   → Z-score → RES_MOM composite
   • Eligibility filter: PCT_FROM_52H >= -25%
-  • Ranked by SHARPE_Z
+  • Ranked by SHARPE_ALL
 
 Usage:  python Sharpe.py path/to/n500.xlsx
 """
@@ -88,7 +88,7 @@ for label, window in WINDOWS.items():
     print(f"  {label} ({window}d): {valid}/{len(stock_tickers)} valid")
 sharpe_df = pd.DataFrame(sharpe_data, index=stock_tickers)
 
-# ── SHARPE Z-SCORES → SHARPE_Z COMPOSITE ─────────────────────────────────────
+# ── SHARPE Z-SCORES → SHARPE_ALL COMPOSITE ─────────────────────────────────────
 print("\nZ-scoring Sharpe cross-sectionally ...")
 z_df = pd.DataFrame(index=stock_tickers)
 for label in WINDOWS:
@@ -98,10 +98,24 @@ for label in WINDOWS:
 
 z_cols            = [f"Z_{l}" for l in WINDOWS]
 z_df["COMPOSITE"] = z_df[z_cols].mean(axis=1)
+# SHARPE_3: short-term composite (Z_3M + Z_6M) — reflects recent momentum
+# MOM_ACCEL: short-term composite minus long-term composite, Z-scored
+#   short = mean(Z_3M, Z_6M)   — last 3–6 months
+#   long  = mean(Z_9M, Z_12M)  — last 9–12 months
+#   raw   = short − long  →  positive = momentum accelerating recently
+z_df["SHARPE_ST"] = z_df[["Z_3M",  "Z_6M"]].mean(axis=1)   # short-term
+z_df["SHARPE_LT"] = z_df[["Z_9M", "Z_12M"]].mean(axis=1)   # long-term
+z_df["SHARPE_3"]  = z_df[["Z_12M", "Z_6M", "Z_3M"]].mean(axis=1)  # 3-window EW (excl. 9M)
+accel_raw_series  = z_df["SHARPE_ST"] - z_df["SHARPE_LT"]
+mu_acc = accel_raw_series.mean()
+sd_acc = accel_raw_series.std(ddof=1)
+z_df["MOM_ACCEL"] = (accel_raw_series - mu_acc) / sd_acc if sd_acc > 0 else 0.0
+print(f"  MOM_ACCEL  — accelerating (>0): {(z_df['MOM_ACCEL'] > 0).sum()} stocks  |  "
+      f"decelerating (<0): {(z_df['MOM_ACCEL'] < 0).sum()} stocks")
 
 # ── CLENOW SCORES — multi-window composite ────────────────────────────────────
 # Per window: log(price) = a + b*t  →  ann_slope × R² = raw Clenow score
-# Z-score each window cross-sectionally → CLENOW_Z (same structure as SHARPE_Z)
+# Z-score each window cross-sectionally → CLENOW_Z (same structure as SHARPE_ALL)
 print("\nComputing multi-window Clenow scores ...")
 
 def clenow_window(series: pd.Series, window: int) -> tuple:
@@ -148,14 +162,18 @@ result = result.join(clenow_r2_df)
 result = result.join(clenow_raw_df)
 result = result.join(cz_df)
 
-# ── NORMALISE COMPOSITE (SHARPE_Z) ───────────────────────────────────────────
+# ── NORMALISE COMPOSITE (SHARPE_ALL) ───────────────────────────────────────────
 def normalise_composite(v):
     if pd.isna(v):  return np.nan
     if v > 1:       return v + 1
     if v < 0:       return 1.0 / (1.0 - v)
     return v
 
-result["COMPOSITE"] = result["COMPOSITE"].map(normalise_composite)
+result["COMPOSITE"]  = result["COMPOSITE"].map(normalise_composite)
+result["SHARPE_ALL"]  = result["COMPOSITE"]   # display alias
+result["SHARPE_3"]   = result["SHARPE_3"].map(normalise_composite)
+result["SHARPE_ST"]  = result["SHARPE_ST"].map(normalise_composite)
+result["SHARPE_LT"]  = result["SHARPE_LT"].map(normalise_composite)
 result["RANK"]      = result["COMPOSITE"].rank(ascending=False, method="first",
                                                 na_option="bottom")
 result = result.sort_values("COMPOSITE", ascending=False)
@@ -250,15 +268,16 @@ else:
     regime_flag = "UNKNOWN"
 
 # ── CONSOLE OUTPUT ────────────────────────────────────────────────────────────
-SEP  = "─" * 76
-HEAD = (f"{'RNK':>4}  {'TICKER':<12}  {'SHARPE_Z':>9}  {'CLENOW_Z':>9}  "
-        f"{'RES_MOM':>9}  {'1M%':>7}  {'3M%':>7}  {'12M%':>7}")
+SEP  = "─" * 100
+HEAD = (f"{'RNK':>4}  {'TICKER':<12}  {'SHARPE_ALL':>10}  {'CLENOW_Z':>9}  "
+        f"{'RES_MOM':>9}  {'MOM_ACCEL':>10}  {'SHARPE_3':>9}  "
+        f"{'1M%':>7}  {'3M%':>7}  {'12M%':>7}")
 
-print(f"\n{'':=<76}")
-print(f"  N500 MOMENTUM — TOP {TOP_N}  ·  Sharpe Z + Clenow Z + Residual Momentum")
+print(f"\n{'':=<100}")
+print(f"  N500 MOMENTUM — TOP {TOP_N}  ·  Sharpe Z + Clenow Z + Residual + Accel")
 print(f"  MARKET REGIME : {regime_flag}  (NIFTY500)")
 print(f"  Windows: 12M/9M/6M/3M  |  RFR={RFR_ANNUAL*100:.1f}%  |  Filter: PCT_FROM_52H >= -25%")
-print(f"{'':=<76}")
+print(f"{'':=<100}")
 print(HEAD); print(SEP)
 
 def fs(v, w=7): return f"{v:>{w}.3f}" if pd.notna(v) else f"{'—':>{w}}"
@@ -266,13 +285,14 @@ def fp(v, w=7): return f"{v:>{w}.1f}" if pd.notna(v) else f"{'—':>{w}}"
 
 for i, (ticker, row) in enumerate(result.head(TOP_N).iterrows(), 1):
     print(f"{i:>4}  {ticker:<12}  "
-          f"{fs(row['COMPOSITE'],9)}  {fs(row['CLENOW_Z'],9)}  "
-          f"{fs(row['RES_MOM'],9)}  {fp(row['1M%'])}  {fp(row['3M%'])}  {fp(row['12M%'])}")
+          f"{fs(row['COMPOSITE'],10)}  {fs(row['CLENOW_Z'],9)}  "
+          f"{fs(row['RES_MOM'],9)}  {fs(row['MOM_ACCEL'],10)}  {fs(row['SHARPE_3'],9)}  "
+          f"{fp(row['1M%'])}  {fp(row['3M%'])}  {fp(row['12M%'])}")
 
 print(SEP)
-print(f"\n  SHARPE_Z  = mean(Z_12M..Z_3M)  |  "
-      f"CLENOW_Z = mean(CZ_12M..CZ_3M)  |  "
-      f"RES_MOM = residual Sharpe composite\n")
+print(f"\n  SHARPE_ALL = mean(Z_12M..Z_3M)  |  CLENOW_Z = mean(CZ_12M..CZ_3M)  |  "
+      f"RES_MOM = residual Sharpe  |  MOM_ACCEL = Z(ST−LT Sharpe)  |  "
+      f"SHARPE_3 = mean(Z_12M,Z_6M,Z_3M)\n")
 
 # ── EXCEL OUTPUT ──────────────────────────────────────────────────────────────
 print(f"Writing {OUTPUT_FILE} ...")
@@ -319,9 +339,9 @@ ws1 = wb_out.create_sheet("TOP20")
 ws1.sheet_view.showGridLines = False
 ws1.freeze_panes = "C3"
 
-ws1.merge_cells("A1:K1")
+ws1.merge_cells("A1:L1")
 tc           = ws1["A1"]
-tc.value     = (f"N500 MOMENTUM  ·  Top {TOP_N} by SHARPE_Z  ·  Filter: PCT_FROM_52H ≥ −25%  ·  "
+tc.value     = (f"N500 MOMENTUM  ·  Top {TOP_N} by SHARPE_ALL  ·  Filter: PCT_FROM_52H ≥ −25%  ·  "
                 f"RFR={RFR_ANNUAL*100:.1f}%  ·  "
                 f"{dates[0].strftime('%d-%b-%Y')} → {dates[-1].strftime('%d-%b-%Y')}  ·  "
                 f"Regime: {regime_flag}")
@@ -331,10 +351,10 @@ tc.alignment = Alignment(horizontal="center", vertical="center")
 ws1.row_dimensions[1].height = 22
 
 top20_cols = [
-    ("RNK",      5), ("TICKER",   12), ("SHARPE_Z", 10),
-    ("CLENOW_Z",10), ("RES_MOM",  10), ("1M%",       8),
-    ("3M%",      8), ("12M%",      8), ("CZ_3M",     9),
-    ("CZ_6M",    9), ("CZ_12M",    9),
+    ("RNK",        5), ("TICKER",    12), ("SHARPE_ALL",10),
+    ("CLENOW_Z",  10), ("RES_MOM",   10), ("MOM_ACCEL", 10),
+    ("SHARPE_3",  10), ("SHARPE_ST",  9), ("SHARPE_LT",  9),
+    ("1M%",        8), ("3M%",        8), ("12M%",        8),
 ]
 for c, (col_name, col_w) in enumerate(top20_cols, 1):
     set_hdr(ws1.cell(row=2, column=c), col_name)
@@ -348,17 +368,18 @@ for i, (ticker, row) in enumerate(result.head(TOP_N).iterrows(), 3):
     bg     = ALT_FILL if i % 2 == 0 else fill("0D0D14")
     rank_v = int(row["RANK"]) if pd.notna(row["RANK"]) else None
     values = [
-        (rank_v,            GOLD_FONT,           bg,               None),
-        (ticker,            GOLD_FONT,           bg,               None),
-        (row["COMPOSITE"],  CYAN_FONT,            bg,               "0.000"),
-        (row["CLENOW_Z"],   CYAN_FONT,            bg,               "0.000"),
-        (row["RES_MOM"],    TEXT_FONT,            bg,               "0.000"),
-        (row["1M%"],        pnl_fnt(row["1M%"]),  pnl_bg(row["1M%"]),  "0.0"),
-        (row["3M%"],        pnl_fnt(row["3M%"]),  pnl_bg(row["3M%"]),  "0.0"),
-        (row["12M%"],       pnl_fnt(row["12M%"]), pnl_bg(row["12M%"]), "0.0"),
-        (row["CZ_3M"],      MUTED_FONT,           bg,               "0.000"),
-        (row["CZ_6M"],      MUTED_FONT,           bg,               "0.000"),
-        (row["CZ_12M"],     MUTED_FONT,           bg,               "0.000"),
+        (rank_v,              GOLD_FONT,            bg,                   None),
+        (ticker,              GOLD_FONT,            bg,                   None),
+        (row["COMPOSITE"],    CYAN_FONT,            bg,                   "0.000"),
+        (row["CLENOW_Z"],     CYAN_FONT,            bg,                   "0.000"),
+        (row["RES_MOM"],      TEXT_FONT,            bg,                   "0.000"),
+        (row["MOM_ACCEL"],    CYAN_FONT,            bg,                   "0.000"),
+        (row["SHARPE_3"],     TEXT_FONT,            bg,                   "0.000"),
+        (row["SHARPE_ST"],    MUTED_FONT,           bg,                   "0.000"),
+        (row["SHARPE_LT"],    MUTED_FONT,           bg,                   "0.000"),
+        (row["1M%"],          pnl_fnt(row["1M%"]),  pnl_bg(row["1M%"]),  "0.0"),
+        (row["3M%"],          pnl_fnt(row["3M%"]),  pnl_bg(row["3M%"]),  "0.0"),
+        (row["12M%"],         pnl_fnt(row["12M%"]), pnl_bg(row["12M%"]), "0.0"),
     ]
     for c, (val, fnt, bg_c, nfmt) in enumerate(values, 1):
         v = None if (isinstance(val, float) and np.isnan(val)) else val
@@ -371,7 +392,7 @@ ws2 = wb_out.create_sheet("CALCS")
 ws2.sheet_view.showGridLines = False
 ws2.freeze_panes = "C3"
 
-ws2.merge_cells("A1:AJ1")
+ws2.merge_cells("A1:AN1")
 t2           = ws2["A1"]
 t2.value     = (f"N500  ·  Full Calculations  ·  All {len(stock_tickers)} stocks  ·  "
                 f"{dates[0].strftime('%d-%b-%Y')} → {dates[-1].strftime('%d-%b-%Y')}")
@@ -381,20 +402,21 @@ t2.alignment = Alignment(horizontal="center", vertical="center")
 ws2.row_dimensions[1].height = 22
 
 calcs_cols = [
-    ("RANK",     6), ("TICKER",   12),
-    ("S_12M",    9), ("S_9M",      9), ("S_6M",    9), ("S_3M",    9),
-    ("Z_12M",    9), ("Z_9M",      9), ("Z_6M",    9), ("Z_3M",    9),
-    ("SHARPE_Z",10),
-    ("CS_12M",   9), ("CS_9M",     9), ("CS_6M",   9), ("CS_3M",   9),
-    ("CZ_12M",   9), ("CZ_9M",     9), ("CZ_6M",   9), ("CZ_3M",   9),
-    ("CLENOW_Z",10),
-    ("CL_12M",   9), ("CL_9M",     9), ("CL_6M",   9), ("CL_3M",   9),
-    ("CR_12M",   9), ("CR_9M",     9), ("CR_6M",   9), ("CR_3M",   9),
-    ("RS_12M",   9), ("RS_9M",     9), ("RS_6M",   9), ("RS_3M",   9),
-    ("RZ_12M",   9), ("RZ_9M",     9), ("RZ_6M",   9), ("RZ_3M",   9),
-    ("RES_MOM", 10),
-    ("1M%",      8), ("3M%",       8), ("12M%",    8),
-    ("52H%",    10),
+    ("RANK",      6), ("TICKER",    12),
+    ("S_12M",     9), ("S_9M",       9), ("S_6M",    9), ("S_3M",    9),
+    ("Z_12M",     9), ("Z_9M",       9), ("Z_6M",    9), ("Z_3M",    9),
+    ("SHARPE_ALL",10), ("SHARPE_ST",  9), ("SHARPE_LT", 9),
+    ("SHARPE_3", 10), ("MOM_ACCEL", 10),
+    ("CS_12M",    9), ("CS_9M",      9), ("CS_6M",   9), ("CS_3M",   9),
+    ("CZ_12M",    9), ("CZ_9M",      9), ("CZ_6M",   9), ("CZ_3M",   9),
+    ("CLENOW_Z", 10),
+    ("CL_12M",    9), ("CL_9M",      9), ("CL_6M",   9), ("CL_3M",   9),
+    ("CR_12M",    9), ("CR_9M",      9), ("CR_6M",   9), ("CR_3M",   9),
+    ("RS_12M",    9), ("RS_9M",      9), ("RS_6M",   9), ("RS_3M",   9),
+    ("RZ_12M",    9), ("RZ_9M",      9), ("RZ_6M",   9), ("RZ_3M",   9),
+    ("RES_MOM",  10),
+    ("1M%",       8), ("3M%",        8), ("12M%",    8),
+    ("52H%",     10),
 ]
 
 for c, (col_name, col_w) in enumerate(calcs_cols, 1):
@@ -421,8 +443,13 @@ for i, (ticker, row) in enumerate(result.iterrows(), 3):
         (row["Z_9M"],      TEXT_FONT,  bg,        "0.000"),
         (row["Z_6M"],      TEXT_FONT,  bg,        "0.000"),
         (row["Z_3M"],      TEXT_FONT,  bg,        "0.000"),
-        (row["COMPOSITE"], CYAN_FONT,  bg,        "0.000"),
-        (row["CS_12M"],    TEXT_FONT,  bg,        "0.000"),
+        (row["COMPOSITE"],   CYAN_FONT,  bg,        "0.000"),
+        (row["SHARPE_ALL"],  CYAN_FONT,  bg,        "0.000"),
+        (row["SHARPE_ST"],   MUTED_FONT, bg,        "0.000"),
+        (row["SHARPE_LT"],   MUTED_FONT, bg,        "0.000"),
+        (row["SHARPE_3"],    TEXT_FONT,  bg,        "0.000"),
+        (row["MOM_ACCEL"],   CYAN_FONT,  bg,        "0.000"),
+        (row["CS_12M"],      TEXT_FONT,  bg,        "0.000"),
         (row["CS_9M"],     TEXT_FONT,  bg,        "0.000"),
         (row["CS_6M"],     TEXT_FONT,  bg,        "0.000"),
         (row["CS_3M"],     TEXT_FONT,  bg,        "0.000"),
@@ -462,4 +489,4 @@ for i, (ticker, row) in enumerate(result.iterrows(), 3):
 wb_out.save(OUTPUT_FILE)
 print(f"  ✓  Saved → {OUTPUT_FILE}")
 print(f"     Sheet 'TOP20' : top {TOP_N} stocks")
-print(f"     Sheet 'CALCS' : all {len(stock_tickers)} stocks, 41 columns")
+print(f"     Sheet 'CALCS' : all {len(stock_tickers)} stocks, 45 columns")
