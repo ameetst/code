@@ -1,0 +1,304 @@
+The guide covers everything in one place. Structure is:
+
+Script 1 (options_trader.py) — what to download, how to run, what comes out, what to do with it
+Script 2 (options_monitor.py) — when exactly to run it (post-close vs intraday), what each Action means, expiry day rule
+Script 3 (options_tradelog.py) — interactive close flow, what the three Excel sheets contain
+Weekly routine — the full Monday-to-expiry sequence in plain steps
+File reference — which files to never touch, which are auto-maintained, which need manual action
+Common issues — the errors you're most likely to hit and how to fix them
+
+================================================================================
+  NSE OPTIONS TRADING SYSTEM — EXECUTION GUIDE
+  Scripts: options_trader.py | options_monitor.py | options_tradelog.py
+================================================================================
+
+PREREQUISITES
+─────────────
+1. Python installed (3.10 or higher)
+2. Dependencies installed — run once:
+     pip install pandas openpyxl python-dateutil
+
+3. All files in the same folder:
+     options_trader.py
+     options_monitor.py
+     options_tradelog.py
+     etf_rankings.xlsx         ← from your ETF momentum system
+     holdings_log.json         ← from your ETF momentum system
+
+4. Run your ETF script first each week to keep etf_rankings.xlsx and
+   holdings_log.json current before running any options script.
+
+
+================================================================================
+SCRIPT 1 — options_trader.py
+PURPOSE  : Generates new buy signals for the week
+RUN WHEN : Every Monday or Friday (pick one day and stick to it)
+================================================================================
+
+STEP 1 — Download option chain CSVs from NSE
+─────────────────────────────────────────────
+  URL  : https://www.nseindia.com/option-chain
+  How  :
+    a. Select index from dropdown (start with NIFTY and BANKNIFTY)
+    b. Select expiry date — download TWO files per index:
+         - Nearest weekly expiry (e.g. 20-Mar-2026)
+         - Next monthly expiry  (e.g. 27-Mar-2026)
+    c. Click the CSV download button (top-right of the options table)
+    d. Move downloaded files into your options folder — DO NOT rename them
+       NSE names them automatically: option-chain-ED-NIFTY-27-Mar-2026.csv
+
+  Indices to download (as your ETF system starts covering more sectors):
+    NIFTY        → when top sector is GOLD, METAL, ENERGY, IT, HEALTHCARE etc.
+    BANKNIFTY    → when top sector is PRIVATE_BANK, PSU_BANK, BANKING_BROAD
+    FINNIFTY     → when top sector is FACTOR_VALUE or FINANCIAL
+    MIDCPNIFTY   → when top sector is MIDCAP or SMALLCAP
+    NIFTYNXT50   → when top sector is FACTOR_QUALITY or FACTOR_LOWVOL
+
+  TIP: When in doubt, download NIFTY and BANKNIFTY every week. Add others
+       only when your ETF system shows those sectors in the top 5.
+
+STEP 2 — Run the script
+────────────────────────
+  Command:
+    python options_trader.py
+
+  The script will print its progress:
+    [Regime]   reads holdings_log.json → BULL / PARTIAL / BEAR
+    [Sectors]  reads etf_rankings.xlsx → top 5 investable ETFs + sectors
+    [CSV]      scans folder for option-chain-ED-*.csv files
+    [Signal]   for each top sector → checks IV rank → selects expiry + strike
+    [Trade]    prints entry price, lots, stop-loss, target, time stop
+
+INPUTS:
+  - etf_rankings.xlsx           (your ETF system output — read only)
+  - holdings_log.json           (your ETF system output — read only)
+  - option-chain-ED-*.csv       (downloaded from NSE in Step 1)
+  - iv_history.json             (auto-read if exists, created if not)
+
+OUTPUTS:
+  - options_trades.xlsx         → trade signals with all entry/exit details
+  - iv_history.json             → updated with today's ATM IV per index
+  - signals_log.json            → new signals appended (status = ACTIVE)
+
+WHAT TO DO AFTER:
+  Open options_trades.xlsx. Each green row is an actionable trade.
+  Place orders in your broker terminal using:
+    - Strike label  (e.g. NIFTY 23000 CE)
+    - Expiry date
+    - Lots recommended
+  Note your actual fill price — it may differ slightly from the LTP shown.
+  If your fill differs from LTP by more than 5%, check liquidity before entering.
+
+IF REGIME = BEAR:
+  No signals are generated. Do not trade. Close any open positions
+  from prior weeks if the time stop or stop-loss has been hit.
+
+
+================================================================================
+SCRIPT 2 — options_monitor.py
+PURPOSE  : Daily MTM check — tells you whether to hold or exit each position
+RUN WHEN : Every trading day — AFTER market close (3:35–3:45pm IST)
+           Do NOT run during the last 30 mins of trading (3:00–3:30pm)
+           LTPs are noisy intraday. Post-close prices are settled and reliable.
+           Exception: exit intraday only if option is down 70%+ and the
+           underlying is in clear freefall — that is not noise, that is a
+           broken trade.
+================================================================================
+
+STEP 1 — Download fresh option chain CSVs for your OPEN positions only
+────────────────────────────────────────────────────────────────────────
+  URL  : https://www.nseindia.com/option-chain
+  How  :
+    a. For each index you have an open position in (e.g. NIFTY, BANKNIFTY):
+    b. Select that index
+    c. Select the SAME expiry as your open trade
+    d. Download CSV and move to your options folder
+       Old CSV files for the same index/expiry will be overwritten — that is fine.
+
+  You only need CSVs for indices where you have open positions.
+  You do not need to download all indices every day.
+
+STEP 2 — Run the script
+────────────────────────
+  Command:
+    python options_monitor.py
+
+  The script reads all open (ACTIVE) positions from signals_log.json,
+  looks up the current LTP from the fresh CSVs, and computes MTM.
+
+INPUTS:
+  - signals_log.json            (maintained by options_trader.py)
+  - option-chain-ED-*.csv       (fresh download from Step 1)
+
+OUTPUTS:
+  - options_monitor.xlsx        → one row per open position with:
+      Current LTP
+      Unrealised P&L (₹ and %)
+      Days to expiry
+      Days to time stop
+      ACTION column — one of:
+
+        HOLD                        No exit triggered. Check again tomorrow.
+        WATCH CLOSELY               Approaching stop-loss. Stay alert.
+        CONSIDER EXITING            Near profit target (75%+ of the way there).
+        PREPARE TO EXIT             Time stop is within 3 days.
+        EXIT NOW — STOP-LOSS HIT    LTP at or below 50% of entry. Exit today.
+        EXIT NOW — TARGET HIT       LTP at or above 2× entry. Book profit today.
+        EXIT NOW — TIME STOP        Time stop date reached. Exit regardless of P&L.
+
+WHAT TO DO AFTER:
+  - If Action = HOLD           → no action needed. Re-check tomorrow.
+  - If Action = EXIT NOW       → place exit order in broker immediately.
+                                 Then run options_tradelog.py to record the exit.
+  - If Action = WATCH / PREPARE → no action today but check again tomorrow.
+                                  Do not average down or add to losing positions.
+
+EXPIRY DAY RULE:
+  Your time stop fires 2 trading days before expiry — so by expiry day
+  you should have no open position in that contract.
+  If you do (missed the time stop), exit in the first 30 minutes of trade
+  (9:15–9:45am). Do not wait for the last hour — pinning risk is highest then.
+
+
+================================================================================
+SCRIPT 3 — options_tradelog.py
+PURPOSE  : Records exits, updates P&L, regenerates trade_log.xlsx
+RUN WHEN : Immediately after closing a position in your broker terminal
+================================================================================
+
+STEP 1 — Close the position in your broker first
+──────────────────────────────────────────────────
+  Place the exit order in your broker (Zerodha / Upstox etc.)
+  Note the actual exit price (average fill price from your broker's trade book)
+
+STEP 2 — Run the script
+────────────────────────
+  Command:
+    python options_tradelog.py
+
+  The script will show all open positions and ask you to close one or more.
+
+  Interactive prompts:
+    a. Enter the position number to close (shown in the list)
+    b. Enter the exit LTP (your actual broker fill price)
+    c. Select exit reason:
+         [1] Stop-loss hit
+         [2] Target hit
+         [3] Time stop
+         [4] Manual / other
+
+  Repeat for each position being closed. Enter 0 when done.
+
+INPUTS:
+  - signals_log.json            (read + updated — ACTIVE → CLOSED)
+  - trade_log.json              (read + updated — closed trade appended)
+
+OUTPUTS:
+  - signals_log.json            → position status updated to CLOSED
+  - trade_log.json              → exit price, exit reason, P&L recorded
+  - trade_log.xlsx              → regenerated with 3 sheets:
+
+      Sheet 1: Trade Log
+        Every closed trade — entry date, index, strike, expiry, entry LTP,
+        exit LTP, move %, lots, total premium, P&L (₹), hold days, exit reason
+
+      Sheet 2: P&L Summary
+        Month-by-month — number of trades, winners, losers, win rate,
+        gross P&L, avg win, avg loss, best trade, worst trade,
+        total premium deployed, return on premium
+
+      Sheet 3: Stats
+        Overall win rate, profit factor, expectancy per trade,
+        best/worst trade, max consecutive wins/losses,
+        exit reason breakdown (how many stopped out vs target vs time stop),
+        P&L by index
+
+
+================================================================================
+WEEKLY ROUTINE — FULL SEQUENCE
+================================================================================
+
+  MONDAY or FRIDAY (your chosen signal day)
+  ──────────────────────────────────────────
+  1. Run your ETF script first  →  refreshes etf_rankings.xlsx + holdings_log.json
+  2. Check options_monitor.py   →  see if any open positions need closing first
+  3. If exits needed            →  close in broker → run options_tradelog.py
+  4. Download fresh CSVs        →  for indices matching your top ETF sectors
+  5. Run options_trader.py      →  generates new signals for the week
+  6. Place new orders           →  use options_trades.xlsx as your order sheet
+
+  TUESDAY to THURSDAY (monitoring days)
+  ──────────────────────────────────────
+  1. After 3:30pm               →  download fresh CSVs for open positions only
+  2. Run options_monitor.py     →  check Action column
+  3. If EXIT NOW appears        →  close in broker → run options_tradelog.py
+  4. Otherwise                  →  no action needed
+
+  EXPIRY DAY (if you somehow still have an open position)
+  ────────────────────────────────────────────────────────
+  1. Exit at market open (9:15–9:45am) — do not wait
+  2. Run options_tradelog.py to record the exit
+
+
+================================================================================
+FILE REFERENCE — WHAT LIVES WHERE
+================================================================================
+
+  READ ONLY (from ETF system — never modify):
+    etf_rankings.xlsx
+    holdings_log.json
+
+  AUTO-MAINTAINED (never edit manually):
+    signals_log.json            all signals, ACTIVE or CLOSED
+    trade_log.json              all closed trades with P&L
+    iv_history.json             rolling IV history — builds up weekly
+
+  MANUAL INPUTS (download from NSE each time):
+    option-chain-ED-*.csv       one file per index per expiry
+
+  OUTPUTS (regenerated each run):
+    options_trades.xlsx         new signals (from options_trader.py)
+    options_monitor.xlsx        MTM status (from options_monitor.py)
+    trade_log.xlsx              P&L tracker (from options_tradelog.py)
+
+
+================================================================================
+QUICK REFERENCE — EXIT RULES
+================================================================================
+
+  Stop-loss   Exit when LTP falls to 50% of entry premium. No exceptions.
+  Target      Exit when LTP reaches 2× entry premium (100% gain). Book it.
+  Time stop   Exit 2 trading days before expiry. Regardless of P&L.
+
+  All three exit levels are printed in options_trades.xlsx and shown in
+  options_monitor.xlsx. You do not need to calculate anything manually.
+
+
+================================================================================
+COMMON ISSUES
+================================================================================
+
+  "No CSV files found"
+    → Download option chain CSVs from nseindia.com/option-chain and place
+      them in the same folder as the scripts. Do not rename the files.
+
+  "No open ACTIVE positions found"
+    → signals_log.json has no ACTIVE entries. Run options_trader.py first
+      to generate signals, or check if all positions are already CLOSED.
+
+  "IVR defaults to 40 (neutral)"
+    → iv_history.json has fewer than 20 data points. This resolves after
+      approximately 5 weekly runs. Signals are still valid — IVR just uses
+      a neutral assumption until enough history is built up.
+
+  "1 lot exceeds ₹25,000 budget"
+    → The selected strike is too expensive for the budget. This typically
+      happens on MIDCPNIFTY or with near-ATM strikes when premium is high.
+      The script skips the signal automatically and logs the reason.
+
+  Signal shows SKIPPED for an index you downloaded a CSV for
+    → Check the filename. NSE sometimes changes the naming format slightly.
+      The script detects: NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, NIFTYNXT50.
+      Ensure the index name appears in the filename as downloaded.
+
+================================================================================

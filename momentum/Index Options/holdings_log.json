@@ -1,0 +1,49 @@
+{
+  "2026-03": {
+    "run_date": "2026-03-19 17:00",
+    "regime": "PARTIAL (weak TREND)",
+    "active_slots": 3,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "HDFCPSUBK",
+        "etf_name": "HDFC NIFTY PSU Bank ETF",
+        "sector": "PSU_BANK",
+        "weight": 0.2,
+        "inv_rank": "4"
+      },
+      {
+        "slot": 2,
+        "ticker": "BANKPSU",
+        "etf_name": "Mirae Asset Nifty PSU Bank ETF",
+        "sector": "PSU_BANK",
+        "weight": 0.2,
+        "inv_rank": "7"
+      },
+      {
+        "slot": 3,
+        "ticker": "CPSEETF",
+        "etf_name": "CPSE ETF",
+        "sector": "PSE",
+        "weight": 0.2,
+        "inv_rank": "15"
+      },
+      {
+        "slot": 4,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-"
+      },
+      {
+        "slot": 5,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-"
+      }
+    ]
+  }
+}

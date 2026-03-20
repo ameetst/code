@@ -1,11 +1,11 @@
 """
 N500 Sharpe Z-Score + Clenow Z-Score + Residual Momentum Ranking
 =================================================================
-  • 12M/9M/6M/3M annualised Sharpe ratios → Z-score → SHARPE_Z composite
+  • 12M/9M/6M/3M annualised Sharpe ratios → Z-score → SHARPE_ALL composite
   • 12M/9M/6M/3M Clenow (AnnSlope×R²)    → Z-score → CLENOW_Z composite
   • 12M/9M/6M/3M residual Sharpe (OLS)   → Z-score → RES_MOM composite
   • Eligibility filter: PCT_FROM_52H >= -25%
-  • Ranked by SHARPE_Z
+  • Ranked by SHARPE_ALL
 
 Usage:  python Sharpe.py path/to/n500.xlsx
 """
@@ -26,7 +26,8 @@ OUTPUT_FILE  = "n500_rankings.xlsx"
 RFR_ANNUAL   = 0.07
 TRADING_DAYS = 252
 TOP_N        = 20
-WINDOWS      = {"12M": 252, "9M": 189, "6M": 126, "3M": 63}
+WINDOWS         = {"12M": 252, "9M": 189, "6M": 126, "3M": 63}   # Clenow + ResMom
+SHARPE_WINDOWS  = {"12M": 252, "9M": 189, "6M": 126, "3M": 63, "1M": 21}  # Sharpe only
 
 # ── LOAD ──────────────────────────────────────────────────────────────────────
 print(f"Loading {FILE} ...")
@@ -81,36 +82,41 @@ def sharpe_ratio(series: pd.Series, window: int) -> float:
 
 print("Computing Sharpe ratios ...")
 sharpe_data = {}
-for label, window in WINDOWS.items():
+for label, window in SHARPE_WINDOWS.items():
     col = [sharpe_ratio(prices_df.loc[t], window) for t in stock_tickers]
     sharpe_data[label] = col
     valid = sum(1 for v in col if not np.isnan(v))
     print(f"  {label} ({window}d): {valid}/{len(stock_tickers)} valid")
-
-# Compute 1M (21d) separately to use for short-term composite
-col_1m = [sharpe_ratio(prices_df.loc[t], 21) for t in stock_tickers]
-sharpe_data["1M"] = col_1m
-print(f"  1M (21d): {sum(1 for v in col_1m if not np.isnan(v))}/{len(stock_tickers)} valid")
-
 sharpe_df = pd.DataFrame(sharpe_data, index=stock_tickers)
 
-# ── SHARPE Z-SCORES → SHARPE_Z COMPOSITE ─────────────────────────────────────
+# ── SHARPE Z-SCORES → SHARPE_ALL COMPOSITE ─────────────────────────────────────
 print("\nZ-scoring Sharpe cross-sectionally ...")
 z_df = pd.DataFrame(index=stock_tickers)
-for label in ["12M", "9M", "6M", "3M", "1M"]:
+for label in SHARPE_WINDOWS:
     s = sharpe_df[label]
     mu, sd = s.mean(), s.std(ddof=1)
     z_df[f"Z_{label}"] = (s - mu) / sd if sd > 0 else 0.0
 
-z_cols            = [f"Z_{l}" for l in WINDOWS]
+z_cols            = [f"Z_{l}" for l in WINDOWS]   # COMPOSITE uses 4 core windows only
 z_df["COMPOSITE"] = z_df[z_cols].mean(axis=1)
-
-# New Acceleration definition logic: Short-term (1M,3M,6M) minus Long-term (9M,12M)
-z_df["MOM_ACCEL_SL"] = z_df[["Z_1M", "Z_3M", "Z_6M"]].mean(axis=1) - z_df[["Z_9M", "Z_12M"]].mean(axis=1)
+# SHARPE_3: short-term composite (Z_3M + Z_6M) — reflects recent momentum
+# MOM_ACCEL: short-term composite minus long-term composite, Z-scored
+#   short = mean(Z_1M, Z_3M, Z_6M) — last 1–6 months
+#   long  = mean(Z_9M, Z_12M)      — last 9–12 months
+#   raw   = short − long  →  positive = momentum accelerating recently
+z_df["SHARPE_ST"] = z_df[["Z_1M", "Z_3M", "Z_6M"]].mean(axis=1)   # short-term
+z_df["SHARPE_LT"] = z_df[["Z_9M", "Z_12M"]].mean(axis=1)           # long-term
+z_df["SHARPE_3"]  = z_df[["Z_12M", "Z_6M", "Z_3M"]].mean(axis=1)  # 3-window EW (excl. 9M, 1M)
+accel_raw_series  = z_df["SHARPE_ST"] - z_df["SHARPE_LT"]
+mu_acc = accel_raw_series.mean()
+sd_acc = accel_raw_series.std(ddof=1)
+z_df["MOM_ACCEL"] = (accel_raw_series - mu_acc) / sd_acc if sd_acc > 0 else 0.0
+print(f"  MOM_ACCEL  — accelerating (>0): {(z_df['MOM_ACCEL'] > 0).sum()} stocks  |  "
+      f"decelerating (<0): {(z_df['MOM_ACCEL'] < 0).sum()} stocks")
 
 # ── CLENOW SCORES — multi-window composite ────────────────────────────────────
 # Per window: log(price) = a + b*t  →  ann_slope × R² = raw Clenow score
-# Z-score each window cross-sectionally → CLENOW_Z (same structure as SHARPE_Z)
+# Z-score each window cross-sectionally → CLENOW_Z (same structure as SHARPE_ALL)
 print("\nComputing multi-window Clenow scores ...")
 
 def clenow_window(series: pd.Series, window: int) -> tuple:
@@ -151,20 +157,24 @@ cz_cols           = [f"CZ_{l}" for l in WINDOWS]
 cz_df["CLENOW_Z"] = cz_df[cz_cols].mean(axis=1)
 
 # ── COMBINE ───────────────────────────────────────────────────────────────────
-result = z_df.join(sharpe_df.rename(columns={l: f"S_{l}" for l in WINDOWS}))
+result = z_df.join(sharpe_df.rename(columns={l: f"S_{l}" for l in SHARPE_WINDOWS}))
 result = result.join(clenow_slope_df)
 result = result.join(clenow_r2_df)
 result = result.join(clenow_raw_df)
 result = result.join(cz_df)
 
-# ── NORMALISE COMPOSITE (SHARPE_Z) ───────────────────────────────────────────
+# ── NORMALISE COMPOSITE (SHARPE_ALL) ───────────────────────────────────────────
 def normalise_composite(v):
     if pd.isna(v):  return np.nan
     if v > 1:       return v + 1
     if v < 0:       return 1.0 / (1.0 - v)
     return v
 
-result["COMPOSITE"] = result["COMPOSITE"].map(normalise_composite)
+result["COMPOSITE"]  = result["COMPOSITE"].map(normalise_composite)
+result["SHARPE_ALL"]  = result["COMPOSITE"]   # display alias
+result["SHARPE_3"]   = result["SHARPE_3"].map(normalise_composite)
+result["SHARPE_ST"]  = result["SHARPE_ST"].map(normalise_composite)
+result["SHARPE_LT"]  = result["SHARPE_LT"].map(normalise_composite)
 result["RANK"]      = result["COMPOSITE"].rank(ascending=False, method="first",
                                                 na_option="bottom")
 result = result.sort_values("COMPOSITE", ascending=False)
@@ -246,58 +256,6 @@ rs_z_df["RES_MOM"] = rs_z_df[rz_cols].mean(axis=1)
 result = result.join(resmom_df)
 result = result.join(rs_z_df)
 
-# ── MOMENTUM ACCELERATION — Approach 3 (quadratic curvature of log-price) ─────
-# Fit log(P) = a + b*t + c*t²  over each window.
-# c > 0 → price curve is concave-up (accelerating trend).
-# Average c across the 4 windows, then Z-score → QUAD_ACCEL.
-
-print("\nComputing momentum acceleration (Approach 3 — quadratic curvature) ...")
-
-def quad_curvature(series: pd.Series, window: int) -> float:
-    """
-    Fit quadratic to log-prices over last `window` days.
-    Returns annualised curvature coefficient c (×TRADING_DAYS²).
-    """
-    px = series.dropna()
-    if len(px) < window * 0.90: return np.nan
-    n    = min(len(px), window)
-    pw   = px.iloc[-n:].values
-    t    = np.arange(n, dtype=float)
-    # Normalise t to [0,1] for numerical stability
-    t_n  = t / (n - 1) if n > 1 else t
-    y    = np.log(pw)
-    # Fit degree-2 polynomial: coeffs = [c, b, a]  (highest power first)
-    coeffs = np.polyfit(t_n, y, 2)
-    c_raw  = coeffs[0]   # curvature in normalised-time units
-    # Annualise: normalised unit = (n-1) trading days, so
-    # c_daily = c_raw / (n-1)²,  c_annual = c_daily * TRADING_DAYS²
-    c_ann  = c_raw / ((n - 1) ** 2) * (TRADING_DAYS ** 2) if n > 1 else np.nan
-    return c_ann
-
-quad_data = {}
-for label, window in WINDOWS.items():
-    col   = [quad_curvature(prices_df.loc[t], window) for t in stock_tickers]
-    valid = sum(1 for v in col if not np.isnan(v))
-    quad_data[f"QC_{label}"] = col
-    print(f"  {label} ({window}d): {valid}/{len(stock_tickers)} valid")
-
-quad_df = pd.DataFrame(quad_data, index=stock_tickers)
-
-# Z-score each window, then composite average → QUAD_ACCEL
-qz_df = pd.DataFrame(index=stock_tickers)
-for label in WINDOWS:
-    s = quad_df[f"QC_{label}"]
-    mu, sd = s.mean(), s.std(ddof=1)
-    qz_df[f"QZ_{label}"] = (s - mu) / sd if sd > 0 else 0.0
-
-qz_cols              = [f"QZ_{l}" for l in WINDOWS]
-qz_df["QUAD_ACCEL"]  = qz_df[qz_cols].mean(axis=1)
-
-result = result.join(quad_df)
-result = result.join(qz_df)
-
-print(f"  Accelerating (QUAD_ACCEL>0): {(qz_df['QUAD_ACCEL'] > 0).sum()} stocks")
-
 # ── MARKET REGIME ─────────────────────────────────────────────────────────────
 nifty_px = nifty_series.dropna()
 if len(nifty_px) >= 63:
@@ -311,16 +269,16 @@ else:
     regime_flag = "UNKNOWN"
 
 # ── CONSOLE OUTPUT ────────────────────────────────────────────────────────────
-SEP  = "─" * 88
-HEAD = (f"{'RNK':>4}  {'TICKER':<12}  {'SHARPE_Z':>9}  {'CLENOW_Z':>9}  "
-        f"{'RES_MOM':>9}  {'MOM_ACCEL_SL':>13}  {'QUAD_ACCEL':>11}  "
+SEP  = "─" * 100
+HEAD = (f"{'RNK':>4}  {'TICKER':<12}  {'SHARPE_ALL':>10}  {'CLENOW_Z':>9}  "
+        f"{'RES_MOM':>9}  {'MOM_ACCEL':>10}  {'SHARPE_3':>9}  "
         f"{'1M%':>7}  {'3M%':>7}  {'12M%':>7}")
 
-print(f"\n{'':=<88}")
-print(f"  N500 MOMENTUM — TOP {TOP_N}  ·  Sharpe Z + Clenow Z + Residual + Accel (SL+A3)")
+print(f"\n{'':=<100}")
+print(f"  N500 MOMENTUM — TOP {TOP_N}  ·  Sharpe Z + Clenow Z + Residual + Accel")
 print(f"  MARKET REGIME : {regime_flag}  (NIFTY500)")
 print(f"  Windows: 12M/9M/6M/3M  |  RFR={RFR_ANNUAL*100:.1f}%  |  Filter: PCT_FROM_52H >= -25%")
-print(f"{'':=<88}")
+print(f"{'':=<100}")
 print(HEAD); print(SEP)
 
 def fs(v, w=7): return f"{v:>{w}.3f}" if pd.notna(v) else f"{'—':>{w}}"
@@ -328,13 +286,14 @@ def fp(v, w=7): return f"{v:>{w}.1f}" if pd.notna(v) else f"{'—':>{w}}"
 
 for i, (ticker, row) in enumerate(result.head(TOP_N).iterrows(), 1):
     print(f"{i:>4}  {ticker:<12}  "
-          f"{fs(row['COMPOSITE'],9)}  {fs(row['CLENOW_Z'],9)}  "
-          f"{fs(row['RES_MOM'],9)}  {fs(row['MOM_ACCEL_SL'],13)}  {fs(row['QUAD_ACCEL'],11)}  "
+          f"{fs(row['COMPOSITE'],10)}  {fs(row['CLENOW_Z'],9)}  "
+          f"{fs(row['RES_MOM'],9)}  {fs(row['MOM_ACCEL'],10)}  {fs(row['SHARPE_3'],9)}  "
           f"{fp(row['1M%'])}  {fp(row['3M%'])}  {fp(row['12M%'])}")
 
 print(SEP)
-print(f"\n  SHARPE_Z=mean(Z_12M..Z_3M)  |  CLENOW_Z=mean(CZ_12M..CZ_3M)  |  "
-      f"RES_MOM=residual Sharpe  |  MOM_ACCEL_SL=Z(short)-Z(long)  |  QUAD_ACCEL=Z(curvature c)\n")
+print(f"\n  SHARPE_ALL = mean(Z_12M..Z_3M)  |  CLENOW_Z = mean(CZ_12M..CZ_3M)  |  "
+      f"RES_MOM = residual Sharpe  |  MOM_ACCEL = Z(ST−LT Sharpe)  |  "
+      f"SHARPE_3 = mean(Z_12M,Z_6M,Z_3M)\n")
 
 # ── EXCEL OUTPUT ──────────────────────────────────────────────────────────────
 print(f"Writing {OUTPUT_FILE} ...")
@@ -381,9 +340,9 @@ ws1 = wb_out.create_sheet("TOP20")
 ws1.sheet_view.showGridLines = False
 ws1.freeze_panes = "C3"
 
-ws1.merge_cells("A1:J1")
+ws1.merge_cells("A1:L1")
 tc           = ws1["A1"]
-tc.value     = (f"N500 MOMENTUM  ·  Top {TOP_N} by SHARPE_Z  ·  Filter: PCT_FROM_52H ≥ −25%  ·  "
+tc.value     = (f"N500 MOMENTUM  ·  Top {TOP_N} by SHARPE_ALL  ·  Filter: PCT_FROM_52H ≥ −25%  ·  "
                 f"RFR={RFR_ANNUAL*100:.1f}%  ·  "
                 f"{dates[0].strftime('%d-%b-%Y')} → {dates[-1].strftime('%d-%b-%Y')}  ·  "
                 f"Regime: {regime_flag}")
@@ -393,32 +352,35 @@ tc.alignment = Alignment(horizontal="center", vertical="center")
 ws1.row_dimensions[1].height = 22
 
 top20_cols = [
-    "RNK", "TICKER", "SHARPE_Z", "CLENOW_Z", "RES_MOM",
-    "MOM_ACCEL_SL", "QUAD_ACCEL", "1M%", "3M%", "12M%",
+    ("RNK",        5), ("TICKER",    12), ("SHARPE_ALL",10),
+    ("CLENOW_Z",  10), ("RES_MOM",   10), ("MOM_ACCEL", 10),
+    ("SHARPE_3",  10), ("SHARPE_ST",  9), ("SHARPE_LT",  9),
+    ("1M%",        8), ("3M%",        8), ("12M%",        8),
 ]
-for c, col_name in enumerate(top20_cols, 1):
+for c, (col_name, col_w) in enumerate(top20_cols, 1):
     set_hdr(ws1.cell(row=2, column=c), col_name)
-    ws1.column_dimensions[get_column_letter(c)].width = 15
+    ws1.column_dimensions[get_column_letter(c)].width = col_w
 ws1.row_dimensions[2].height = 18
 
 def pnl_fnt(v): return GREEN_FONT if pd.notna(v) and v >= 0 else RED_FONT
 def pnl_bg(v):  return POS_FILL   if pd.notna(v) and v >= 0 else NEG_FILL
 
-NO_FILL = PatternFill(fill_type=None)   # transparent / no background
-
 for i, (ticker, row) in enumerate(result.head(TOP_N).iterrows(), 3):
+    bg     = ALT_FILL if i % 2 == 0 else fill("0D0D14")
     rank_v = int(row["RANK"]) if pd.notna(row["RANK"]) else None
     values = [
-        (rank_v,               GOLD_FONT,           NO_FILL,              None),
-        (ticker,               GOLD_FONT,           NO_FILL,              None),
-        (row["COMPOSITE"],     CYAN_FONT,            NO_FILL,              "0.000"),
-        (row["CLENOW_Z"],      CYAN_FONT,            NO_FILL,              "0.000"),
-        (row["RES_MOM"],       TEXT_FONT,            NO_FILL,              "0.000"),
-        (row["MOM_ACCEL_SL"],  CYAN_FONT,            NO_FILL,              "0.000"),
-        (row["QUAD_ACCEL"],    CYAN_FONT,            NO_FILL,              "0.000"),
-        (row["1M%"],           pnl_fnt(row["1M%"]),  pnl_bg(row["1M%"]),  "0.0"),
-        (row["3M%"],           pnl_fnt(row["3M%"]),  pnl_bg(row["3M%"]),  "0.0"),
-        (row["12M%"],          pnl_fnt(row["12M%"]), pnl_bg(row["12M%"]), "0.0"),
+        (rank_v,              GOLD_FONT,            bg,                   None),
+        (ticker,              GOLD_FONT,            bg,                   None),
+        (row["COMPOSITE"],    CYAN_FONT,            bg,                   "0.000"),
+        (row["CLENOW_Z"],     CYAN_FONT,            bg,                   "0.000"),
+        (row["RES_MOM"],      TEXT_FONT,            bg,                   "0.000"),
+        (row["MOM_ACCEL"],    CYAN_FONT,            bg,                   "0.000"),
+        (row["SHARPE_3"],     TEXT_FONT,            bg,                   "0.000"),
+        (row["SHARPE_ST"],    MUTED_FONT,           bg,                   "0.000"),
+        (row["SHARPE_LT"],    MUTED_FONT,           bg,                   "0.000"),
+        (row["1M%"],          pnl_fnt(row["1M%"]),  pnl_bg(row["1M%"]),  "0.0"),
+        (row["3M%"],          pnl_fnt(row["3M%"]),  pnl_bg(row["3M%"]),  "0.0"),
+        (row["12M%"],         pnl_fnt(row["12M%"]), pnl_bg(row["12M%"]), "0.0"),
     ]
     for c, (val, fnt, bg_c, nfmt) in enumerate(values, 1):
         v = None if (isinstance(val, float) and np.isnan(val)) else val
@@ -431,7 +393,7 @@ ws2 = wb_out.create_sheet("CALCS")
 ws2.sheet_view.showGridLines = False
 ws2.freeze_panes = "C3"
 
-ws2.merge_cells("A1:AV1")
+ws2.merge_cells("A1:AP1")
 t2           = ws2["A1"]
 t2.value     = (f"N500  ·  Full Calculations  ·  All {len(stock_tickers)} stocks  ·  "
                 f"{dates[0].strftime('%d-%b-%Y')} → {dates[-1].strftime('%d-%b-%Y')}")
@@ -441,24 +403,21 @@ t2.alignment = Alignment(horizontal="center", vertical="center")
 ws2.row_dimensions[1].height = 22
 
 calcs_cols = [
-    ("RANK",     6), ("TICKER",   12),
-    ("S_12M",    9), ("S_9M",      9), ("S_6M",    9), ("S_3M",    9),
-    ("Z_12M",    9), ("Z_9M",      9), ("Z_6M",    9), ("Z_3M",    9),
-    ("SHARPE_Z",10),
-    ("CS_12M",   9), ("CS_9M",     9), ("CS_6M",   9), ("CS_3M",   9),
-    ("CZ_12M",   9), ("CZ_9M",     9), ("CZ_6M",   9), ("CZ_3M",   9),
-    ("CLENOW_Z",10),
-    ("CL_12M",   9), ("CL_9M",     9), ("CL_6M",   9), ("CL_3M",   9),
-    ("CR_12M",   9), ("CR_9M",     9), ("CR_6M",   9), ("CR_3M",   9),
-    ("RS_12M",   9), ("RS_9M",     9), ("RS_6M",   9), ("RS_3M",   9),
-    ("RZ_12M",   9), ("RZ_9M",     9), ("RZ_6M",   9), ("RZ_3M",   9),
-    ("RES_MOM", 10),
-    ("MOM_ACCEL_SL",14),
-    ("QC_12M",   9), ("QC_9M",     9), ("QC_6M",   9), ("QC_3M",   9),
-    ("QZ_12M",   9), ("QZ_9M",     9), ("QZ_6M",   9), ("QZ_3M",   9),
-    ("QUAD_ACCEL",11),
-    ("1M%",      8), ("3M%",       8), ("12M%",    8),
-    ("52H%",    10),
+    ("RANK",      6), ("TICKER",    12),
+    ("S_12M",     9), ("S_9M",       9), ("S_6M",    9), ("S_3M",    9), ("S_1M",   9),
+    ("Z_12M",     9), ("Z_9M",       9), ("Z_6M",    9), ("Z_3M",    9), ("Z_1M",   9),
+    ("SHARPE_ALL",10), ("SHARPE_ST",  9), ("SHARPE_LT", 9),
+    ("SHARPE_3", 10), ("MOM_ACCEL", 10),
+    ("CS_12M",    9), ("CS_9M",      9), ("CS_6M",   9), ("CS_3M",   9),
+    ("CZ_12M",    9), ("CZ_9M",      9), ("CZ_6M",   9), ("CZ_3M",   9),
+    ("CLENOW_Z", 10),
+    ("CL_12M",    9), ("CL_9M",      9), ("CL_6M",   9), ("CL_3M",   9),
+    ("CR_12M",    9), ("CR_9M",      9), ("CR_6M",   9), ("CR_3M",   9),
+    ("RS_12M",    9), ("RS_9M",      9), ("RS_6M",   9), ("RS_3M",   9),
+    ("RZ_12M",    9), ("RZ_9M",      9), ("RZ_6M",   9), ("RZ_3M",   9),
+    ("RES_MOM",  10),
+    ("1M%",       8), ("3M%",        8), ("12M%",    8),
+    ("52H%",     10),
 ]
 
 for c, (col_name, col_w) in enumerate(calcs_cols, 1):
@@ -481,12 +440,19 @@ for i, (ticker, row) in enumerate(result.iterrows(), 3):
         (row["S_9M"],      TEXT_FONT,  bg,        "0.000"),
         (row["S_6M"],      TEXT_FONT,  bg,        "0.000"),
         (row["S_3M"],      TEXT_FONT,  bg,        "0.000"),
+        (row["S_1M"],      TEXT_FONT,  bg,        "0.000"),
         (row["Z_12M"],     TEXT_FONT,  bg,        "0.000"),
         (row["Z_9M"],      TEXT_FONT,  bg,        "0.000"),
         (row["Z_6M"],      TEXT_FONT,  bg,        "0.000"),
         (row["Z_3M"],      TEXT_FONT,  bg,        "0.000"),
-        (row["COMPOSITE"], CYAN_FONT,  bg,        "0.000"),
-        (row["CS_12M"],    TEXT_FONT,  bg,        "0.000"),
+        (row["Z_1M"],      TEXT_FONT,  bg,        "0.000"),
+        (row["COMPOSITE"],   CYAN_FONT,  bg,        "0.000"),
+        (row["SHARPE_ALL"],  CYAN_FONT,  bg,        "0.000"),
+        (row["SHARPE_ST"],   MUTED_FONT, bg,        "0.000"),
+        (row["SHARPE_LT"],   MUTED_FONT, bg,        "0.000"),
+        (row["SHARPE_3"],    TEXT_FONT,  bg,        "0.000"),
+        (row["MOM_ACCEL"],   CYAN_FONT,  bg,        "0.000"),
+        (row["CS_12M"],      TEXT_FONT,  bg,        "0.000"),
         (row["CS_9M"],     TEXT_FONT,  bg,        "0.000"),
         (row["CS_6M"],     TEXT_FONT,  bg,        "0.000"),
         (row["CS_3M"],     TEXT_FONT,  bg,        "0.000"),
@@ -511,18 +477,8 @@ for i, (ticker, row) in enumerate(result.iterrows(), 3):
         (row["RZ_9M"],     MUTED_FONT, bg,        "0.000"),
         (row["RZ_6M"],     MUTED_FONT, bg,        "0.000"),
         (row["RZ_3M"],     MUTED_FONT, bg,        "0.000"),
-        (row["RES_MOM"],     CYAN_FONT,  bg,        "0.000"),
-        (row["MOM_ACCEL_SL"],CYAN_FONT,  bg,        "0.000"),
-        (row["QC_12M"],      MUTED_FONT, bg,        "0.000"),
-        (row["QC_9M"],       MUTED_FONT, bg,        "0.000"),
-        (row["QC_6M"],       MUTED_FONT, bg,        "0.000"),
-        (row["QC_3M"],       MUTED_FONT, bg,        "0.000"),
-        (row["QZ_12M"],      MUTED_FONT, bg,        "0.000"),
-        (row["QZ_9M"],       MUTED_FONT, bg,        "0.000"),
-        (row["QZ_6M"],       MUTED_FONT, bg,        "0.000"),
-        (row["QZ_3M"],       MUTED_FONT, bg,        "0.000"),
-        (row["QUAD_ACCEL"],  CYAN_FONT,  bg,        "0.000"),
-        (row["1M%"],         TEXT_FONT,  bg,        "0.0"),
+        (row["RES_MOM"],   CYAN_FONT,  bg,        "0.000"),
+        (row["1M%"],       TEXT_FONT,  bg,        "0.0"),
         (row["3M%"],       TEXT_FONT,  bg,        "0.0"),
         (row["12M%"],      TEXT_FONT,  bg,        "0.0"),
         (pct52h,           pct52h_fnt, pct52h_bg, "0.0"),
@@ -536,4 +492,4 @@ for i, (ticker, row) in enumerate(result.iterrows(), 3):
 wb_out.save(OUTPUT_FILE)
 print(f"  ✓  Saved → {OUTPUT_FILE}")
 print(f"     Sheet 'TOP20' : top {TOP_N} stocks")
-print(f"     Sheet 'CALCS' : all {len(stock_tickers)} stocks, 51 columns")
+print(f"     Sheet 'CALCS' : all {len(stock_tickers)} stocks, 47 columns")

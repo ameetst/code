@@ -1,0 +1,250 @@
+The most important thing to communicate to whoever uses this: never delete holdings_log.json — that's the memory of the system. Everything else can be regenerated.
+
+================================================================================
+ETF DUAL MOMENTUM PORTFOLIO ALLOCATOR — EXECUTION GUIDE
+================================================================================
+
+OVERVIEW
+--------
+One script, one input file, three persistent files. Run monthly to get ranked
+ETF scores, portfolio allocation, and trade instructions vs prior month.
+
+
+================================================================================
+SECTION 1 — ONE-TIME SETUP (do this once only)
+================================================================================
+
+STEP 1: Install Python
+-----------------------
+  - Download Python 3.8 or higher from https://www.python.org/downloads/
+  - During installation, check "Add Python to PATH"
+  - Verify installation: open Command Prompt and type:
+      python --version
+    Should show something like: Python 3.11.x
+
+STEP 2: Install required libraries
+------------------------------------
+  Open Command Prompt and run:
+
+      pip install pandas numpy scipy openpyxl
+
+  This only needs to be done once.
+
+STEP 3: Set up your working folder
+------------------------------------
+  Create a folder anywhere on your computer, e.g.:
+      C:\ETF_Momentum\
+
+  Place the following files in this folder:
+      - etf_momentum_ranking.py     (the script)
+      - ETF.xlsx                    (your input data file)
+
+  The following files will be auto-created by the script on first run:
+      - etf_rankings.xlsx           (output — generated each run)
+      - holdings_log.json           (holdings history — auto-maintained)
+
+  IMPORTANT: All four files must always stay in the same folder.
+
+
+================================================================================
+SECTION 2 — MONTHLY EXECUTION (do this every month)
+================================================================================
+
+STEP 4: Update input data
+--------------------------
+  - Replace ETF.xlsx in your folder with the latest data file
+  - The file must have a sheet named "DATA" with this structure:
+      Row 1  : Header — ETF_NAME | TICKER | CLOSE | 52WK HIGH | date1 | date2 | ...
+      Row 2+ : One ETF per row, with daily adjusted close prices in date columns
+      Zeros  : Used as placeholders for non-trading days (script handles this)
+
+  DO NOT rename the sheet or change the column structure.
+
+STEP 5: Open Command Prompt in your folder
+-------------------------------------------
+  Option A — easiest:
+    - Open your folder in Windows Explorer
+    - Click on the address bar at the top
+    - Type "cmd" and press Enter
+    - A Command Prompt window opens already in your folder
+
+  Option B:
+    - Open Command Prompt (Win + R, type cmd, press Enter)
+    - Navigate to your folder:
+        cd C:\ETF_Momentum
+
+STEP 6: Run the script
+-----------------------
+  Type the following and press Enter:
+
+      python etf_momentum_ranking.py
+
+  The script will run and print progress to the screen:
+
+      [load]   ETF.xlsx
+               224 ETFs | 260 days (2025-02-27 -> 2026-02-25)
+      [regime] Computing tiered regime filter ...
+      [scores] Screening + scoring all ETFs ...
+      [alloc]  Building allocation ...
+      [log]    Updating holdings log ...
+               Previous month: 2026-02  |  Changes: 4
+                 - SELL   PSUBANKADD     Exited
+                 + BUY    GOLDBEES       New entry
+                 = HOLD   METALIETF      No change
+                 = HOLD   METAL          No change
+      [saved] -> C:\ETF_Momentum\etf_rankings.xlsx
+
+  Total run time: approximately 5-15 seconds.
+
+STEP 7: Open the output file
+-----------------------------
+  Open etf_rankings.xlsx from your folder.
+
+  The workbook has 4 sheets — read them in this order:
+
+  SHEET 1: Rebalance  (most important — go here first)
+  ---------------------------------------------------
+  Section 1 — Current Allocation
+    What to hold after today's rebalance.
+    Action column shows BUY / HOLD / CASH for each slot.
+
+  Section 2 — Changes vs Previous Month
+    Explicit trade instructions:
+      BUY    green  = buy this ETF (new entry)
+      SELL   red    = sell this ETF (exited)
+      ADD    blue   = increase position (weight went up)
+      TRIM   amber  = reduce position (weight went down)
+      HOLD   grey   = no action needed
+      REGIME dark   = market regime has changed (read the note)
+
+  Section 3 — Last 12 Months History Grid
+    One row per month, one column per ETF ever held.
+    Green cell = held that month. Use this to see rotation patterns.
+
+  SHEET 2: Allocation
+  -------------------
+    Detail on all 5 portfolio slots — why each ETF was selected,
+    which sector cap applied, the investable rank used.
+
+  SHEET 3: Rankings
+  -----------------
+    All 224 ETFs sorted by investable rank (passing ETFs first).
+    Key columns to check:
+      Investable Rank  = rank among qualifying ETFs (use for decisions)
+      Universe Rank    = rank among all 224 (reference only)
+      Screen Result    = PASS / FAIL (both filters must pass to be investable)
+      Clenow Blended   = 70% x 6M Clenow + 30% x 3M Clenow
+      Wtd Sharpe Score = 60% x Sharpe(6M) + 40% x Sharpe(3M)
+      Abs Momo Filter  = PASS if 6M return > 3.5% hurdle
+      52Wk High Filter = PASS if price >= 75% of 52-week high
+
+  SHEET 4: Regime
+  ---------------
+    Regime filter detail — current market state and what triggered it.
+
+
+================================================================================
+SECTION 3 — WEEKLY REGIME CHECK (optional but recommended)
+================================================================================
+
+STEP 8: Weekly regime monitoring
+----------------------------------
+  Even if you only rebalance monthly, check the regime weekly.
+  If the regime flips to BEAR mid-month, exit to cash immediately
+  without waiting for the next scheduled rebalance.
+
+  To check regime only (without changing holdings or updating the log):
+
+      python etf_momentum_ranking.py
+
+  Look at the console output line:
+
+      REGIME: BULL           Active slots: 5 / 5    <- fully invested
+      REGIME: PARTIAL        Active slots: 3 / 5    <- reduce exposure
+      REGIME: BEAR           Active slots: 0 / 5    <- exit to cash
+
+  If BEAR: sell all current holdings and move to cash / money market.
+  Re-enter only at the next monthly rebalance once regime recovers.
+
+  NOTE: Running the script weekly will overwrite the current month's log
+  entry with the latest scores. Only the most recent run per month is kept.
+  This is intentional — the latest data always wins within a month.
+
+
+================================================================================
+SECTION 4 — FILE REFERENCE
+================================================================================
+
+INPUT
+-----
+  ETF.xlsx
+    - Refresh this file monthly with updated price data
+    - Must contain a sheet called "DATA"
+    - Structure: ETF rows x Date columns (prices in cells, 0 for non-trading days)
+
+OUTPUT — regenerated every run
+-------------------------------
+  etf_rankings.xlsx
+    - 4 sheets: Rebalance, Allocation, Rankings, Regime
+    - Safe to delete and regenerate; the log is the source of truth for history
+
+PERSISTENT — do not delete
+----------------------------
+  holdings_log.json
+    - Auto-maintained history of monthly allocations
+    - Used to generate BUY/SELL/HOLD instructions
+    - Keyed by calendar month (YYYY-MM)
+    - Running twice in the same month overwrites — latest run wins
+    - Do not edit manually
+    - Back this file up if you want to preserve history
+
+
+================================================================================
+SECTION 5 — TROUBLESHOOTING
+================================================================================
+
+Problem: "python is not recognized as an internal or external command"
+Fix: Python is not in your PATH. Reinstall Python and check
+     "Add Python to PATH" during installation. Or try "python3" instead.
+
+Problem: "ModuleNotFoundError: No module named 'pandas'"
+Fix: Run: pip install pandas numpy scipy openpyxl
+
+Problem: "FileNotFoundError: ETF.xlsx"
+Fix: Make sure ETF.xlsx is in the same folder as the script.
+     Run the script from that folder (see Step 5).
+
+Problem: Script runs but output looks wrong / no data
+Fix: Check that the DATA sheet in ETF.xlsx has the correct structure.
+     Row 1 must be the header with dates starting at column E.
+
+Problem: Want to reset history and start fresh
+Fix: Delete holdings_log.json from your folder. The next run will
+     treat itself as the first run (no previous month to compare).
+
+Problem: Want to change parameters (hurdle, sector cap, top N, etc.)
+Fix: Open etf_momentum_ranking.py in any text editor (Notepad works).
+     Find the CONFIG section near the top. Edit the values and save.
+     All parameters are documented with comments.
+
+
+================================================================================
+SECTION 6 — PARAMETER QUICK REFERENCE
+================================================================================
+
+To change any of these, open etf_momentum_ranking.py in a text editor:
+
+  TOP_N = 5                   Number of holdings in BULL regime (default: 5)
+  TOP_N_PARTIAL = 3           Number of holdings in PARTIAL regime (default: 3)
+  HURDLE_6M = 0.035           Abs momentum hurdle: 3.5% over 6M (default)
+  MAX_DRAWDOWN_FROM_HIGH = 0.25   Max 25% below 52-week high (default)
+  SECTOR_CAP = 2              Max 2 ETFs per sector (default)
+  TREND_SMA_WINDOW = 100      Regime Layer 1: 100-day SMA (default)
+  BREADTH_THRESHOLD = 0.50    Regime Layer 2: 50% of ETFs above SMA (default)
+  CLENOW_W6M = 0.70           Clenow blend: 70% 6M weight (default)
+  SHARPE_W6M = 0.60           Sharpe blend: 60% 6M weight (default)
+
+
+================================================================================
+END OF GUIDE
+================================================================================

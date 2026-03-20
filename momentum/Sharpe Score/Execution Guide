@@ -1,0 +1,202 @@
+===============================================================================
+ N500 MOMENTUM SCORING — EXECUTION GUIDE
+===============================================================================
+
+OVERVIEW
+--------
+Two Python scripts compute momentum scores for NSE Nifty 500 stocks and
+output a ranked Excel workbook.
+
+  momentum_lib.py   Library of reusable scoring functions (do not run directly)
+  Sharpe.py         Main script — loads data, calls the library, writes output
+
+
+REQUIRED FILES (all in the same folder)
+----------------------------------------
+  momentum_lib.py       (library — must be present for Sharpe.py to work)
+  Sharpe.py             (main script)
+  n500.xlsx             (input price data — see format notes below)
+
+
+DEPENDENCIES
+------------
+Install once using pip:
+
+  pip install pandas numpy openpyxl scipy
+
+Python version: 3.9 or higher recommended.
+
+
+INPUT FILE FORMAT  (n500.xlsx)
+-------------------------------
+Sheet name  : DATA
+Row 1       : Header row
+  - Column 1        : TICKER  (text label e.g. "ASHOKLEY", "NIFTY500")
+  - Column 2        : CLOSE   (latest close price — informational)
+  - Column 3        : 52WK HIGH
+  - Columns 4+      : Daily close prices, one column per trading date
+                      Column header must be a date value (Excel date format)
+
+Special rows:
+  - NIFTY500        : Must be present — used as the market benchmark for
+                      residual momentum. It is automatically separated from
+                      the stock universe before scoring.
+
+Price data rules:
+  - Missing / zero prices are treated as NaN and excluded from calculations
+  - Stocks need at least 90% data coverage for a given window to receive a score
+  - Duplicate tickers: if a ticker appears more than once, only the FIRST
+    occurrence is used. Remove duplicates from the file before running.
+
+
+HOW TO RUN
+----------
+Step 1.  Place all three files in the same folder:
+           momentum_lib.py
+           Sharpe.py
+           n500.xlsx  (or any xlsx with the correct DATA sheet format)
+
+Step 2.  Open a terminal / command prompt and navigate to that folder.
+
+Step 3.  Run the script:
+
+           python Sharpe.py                        # uses n500.xlsx by default
+           python Sharpe.py path/to/myfile.xlsx    # explicit path
+
+Step 4.  The script prints progress and top-20 results to the console.
+
+Step 5.  Output file is written to the same folder as Sharpe.py:
+           n500_rankings.xlsx
+
+
+WHAT THE SCRIPT COMPUTES (in order)
+-------------------------------------
+1. SHARPE RATIOS
+   Windows : 1M (21d), 3M (63d), 6M (126d), 9M (189d), 12M (252d)
+   Method  : Annualised Sharpe = mean(excess log-returns) / std * sqrt(252)
+             Excess = log-return minus daily risk-free rate (7% / 252)
+   Output  : S_1M, S_3M, S_6M, S_9M, S_12M
+
+2. SHARPE Z-SCORES
+   Each window is Z-scored cross-sectionally (mean=0, std=1 across all stocks)
+   Output  : Z_1M, Z_3M, Z_6M, Z_9M, Z_12M
+
+3. COMPOSITE SCORES (derived from Z-scores)
+   SHARPE_ALL  = mean(Z_12M, Z_9M, Z_6M, Z_3M)  — 4-window equal-weighted
+   SHARPE_3    = mean(Z_12M, Z_6M, Z_3M)         — 3-window (excludes 9M, 1M)
+   SHARPE_ST   = mean(Z_1M, Z_3M, Z_6M)          — short-term (1-6 months)
+   SHARPE_LT   = mean(Z_9M, Z_12M)               — long-term  (9-12 months)
+   MOM_ACCEL   = Z(SHARPE_ST - SHARPE_LT)        — acceleration: positive =
+                                                    momentum building recently
+
+4. CLENOW SCORES  (windows: 3M, 6M, 9M, 12M only — not 1M)
+   Method  : Fit log(price) = a + b*t over each window
+             Raw Clenow = annualised slope * R²
+             High score = strong uptrend with clean fit
+   Z-scored cross-sectionally per window → CLENOW_Z composite
+
+5. 52-WEEK HIGH FILTER
+   PCT_FROM_52H = (last price / 52-week high - 1) * 100
+   Eligibility  : PCT_FROM_52H >= -25  (stock must be within 25% of its high)
+   Stocks outside this range receive no RANK but all scores are still computed
+
+6. RESIDUAL MOMENTUM  (windows: 3M, 6M, 9M, 12M only — not 1M)
+   Method  : For each window, regress stock log-returns on NIFTY500 log-returns
+             using OLS. Compute Sharpe ratio on the residuals.
+             High score = strong return not explained by market movement
+   Z-scored cross-sectionally per window → RES_MOM composite
+
+7. MARKET REGIME  (informational — does not affect ranking)
+   BUY             : Last NIFTY500 price > EMA(50) AND EMA(21) > EMA(63)
+   NOT BUY         : Either condition fails
+   Shown in console output and Excel title row
+
+8. RANKING
+   Ranked by SHARPE_ALL (COMPOSITE) descending, eligible stocks only
+   Ties broken by "first" method (order of appearance in data)
+
+
+OUTPUT FILE  (n500_rankings.xlsx)
+-----------------------------------
+Sheet: TOP20
+  Columns : RNK, TICKER, SHARPE_ALL, CLENOW_Z, RES_MOM, MOM_ACCEL,
+            SHARPE_3, SHARPE_ST, SHARPE_LT, 1M%, 3M%, 12M%
+  Rows    : Top 20 ranked stocks (eligible only)
+
+Sheet: CALCS
+  All 502 stocks (or however many are in the input), 47 columns:
+  RANK, TICKER,
+  S_12M, S_9M, S_6M, S_3M, S_1M,           (raw Sharpe per window)
+  Z_12M, Z_9M, Z_6M, Z_3M, Z_1M,           (Sharpe Z-scores)
+  SHARPE_ALL, SHARPE_ST, SHARPE_LT,
+  SHARPE_3, MOM_ACCEL,
+  CS_12M/9M/6M/3M,                          (raw Clenow per window)
+  CZ_12M/9M/6M/3M, CLENOW_Z,               (Clenow Z-scores + composite)
+  CL_12M/9M/6M/3M,                          (annualised slopes)
+  CR_12M/9M/6M/3M,                          (R² values)
+  RS_12M/9M/6M/3M,                          (residual Sharpe per window)
+  RZ_12M/9M/6M/3M, RES_MOM,                (residual Z-scores + composite)
+  1M%, 3M%, 12M%,                           (price returns)
+  52H%                                      (% from 52-week high, green if >= -25)
+
+
+USING momentum_lib.py IN YOUR OWN SCRIPT
+-----------------------------------------
+The library functions can be imported and called independently:
+
+  import momentum_lib as ml
+
+  prices_df, nifty_series, tickers, dates = ml.load_prices("n500.xlsx")
+
+  sharpe_df, z_df = ml.compute_sharpe(
+      prices_df, tickers,
+      windows={"12M": 252, "3M": 63},
+      rfr_daily=0.07/252,
+      trading_days=252
+  )
+
+  slope_df, r2_df, raw_df, cz_df = ml.compute_clenow(
+      prices_df, tickers,
+      windows={"12M": 252, "3M": 63},
+      trading_days=252
+  )
+
+  resmom_df, rs_z_df = ml.compute_residual_momentum(
+      prices_df, tickers, nifty_series,
+      windows={"12M": 252, "3M": 63},
+      trading_days=252
+  )
+
+  ret_df    = ml.compute_returns(prices_df, tickers)
+  pct_52h   = ml.compute_pct_from_52h(prices_df, tickers)
+  regime    = ml.compute_market_regime(nifty_series)
+
+
+CONFIG PARAMETERS (top of Sharpe.py)
+--------------------------------------
+  RFR_ANNUAL    = 0.07     Risk-free rate (7% p.a. — change to match T-bill)
+  TRADING_DAYS  = 252      Trading days per year (standard NSE assumption)
+  TOP_N         = 20       Number of stocks to show in TOP20 sheet + console
+  WINDOWS       = {...}    Windows for Clenow + Residual Momentum
+  SHARPE_WINDOWS= {...}    Windows for Sharpe (includes 1M)
+  OUTPUT_FILE   = "n500_rankings.xlsx"   Change to rename the output
+
+
+TYPICAL RUNTIME
+---------------
+  ~30-60 seconds on a standard laptop for 502 stocks
+  Residual Momentum (OLS per stock per window) is the most compute-intensive step
+
+
+TROUBLESHOOTING
+---------------
+  ModuleNotFoundError: momentum_lib     → Sharpe.py and momentum_lib.py must
+                                          be in the same directory
+  KeyError: 'NIFTY500'                  → DATA sheet must contain a NIFTY500 row
+  KeyError: 'DATA'                      → Check xlsx sheet is named exactly DATA
+  All scores NaN for a stock            → Stock has fewer than 90% valid prices
+                                          for the shortest window required
+  Duplicate index error                 → Remove duplicate tickers from the
+                                          input file before running
+
+===============================================================================
