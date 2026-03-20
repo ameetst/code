@@ -2,8 +2,8 @@
 ETF Dual Momentum + Clenow + Weighted Sharpe + Tiered Regime Filter
 ====================================================================
 Scoring pipeline (in correct order):
-  Step 1 - SCREEN  : Apply absolute momentum filter first.
-                     Only ETFs with 6M return > HURDLE qualify as investable.
+  Step 1 - SCREEN  : Apply 52-week high proximity filter.
+                     Only ETFs within MAX_DRAWDOWN_FROM_HIGH of their 52wk high are investable.
   Step 2 - SCORE   : Compute Clenow (6M+3M), Weighted Sharpe, Composite
                      on ALL 224 ETFs for reference.
                      Investable rank is computed on the screened subset only.
@@ -16,7 +16,7 @@ Regime Filter - Tiered (three states):
   BEAR   (both fail) : full cash
 
   Layer 1 - Trend  : MONIFTY500 above its 100-day SMA
-  Layer 2 - Breadth: >= 50% of ETFs above their own 50-day SMA
+  Layer 2 - Breadth: >= 50% of ETFs above their own 50-day EMA
 
 All parameters in CONFIG below.
 """
@@ -24,6 +24,7 @@ All parameters in CONFIG below.
 from __future__ import annotations
 import sys
 import numpy as np
+from scipy import stats
 import pandas as pd
 from pathlib import Path
 from openpyxl import Workbook
@@ -48,11 +49,7 @@ class CONFIG:
     TOP_N_PARTIAL = 3    # slots when regime = PARTIAL (one layer fails)
                          # remaining slots go to cash as a buffer
 
-    # Absolute momentum hurdle — applied BEFORE ranking
-    # Only ETFs exceeding this 6M return are considered investable
-    HURDLE_6M   = 0.035  # 3.5% over 6M ~ 7% annualised (repo rate proxy)
-
-    # 52-week high proximity filter — applied BEFORE ranking alongside abs hurdle
+    # 52-week high proximity filter — the sole screen applied BEFORE ranking
     # ETF must be trading within MAX_DRAWDOWN_FROM_HIGH of its 52-week high.
     # Removes deep-drawdown ETFs that are bouncing off a bottom rather than
     # exhibiting genuine momentum. 0.25 = must be >= 75% of 52wk high.
@@ -63,13 +60,17 @@ class CONFIG:
     SHARPE_W6M  = 0.60
     SHARPE_W3M  = 0.40
 
+    # R-squared z-score blend weights (display metric — not used in composite)
+    R2_W6M      = 0.60
+    R2_W3M      = 0.40
+
     # Regime filter
     # Nifty 500 used (not Nifty 50) — broader coverage matches full ETF universe
     # (large + mid + small cap); mid/small roll over before large caps in India
     REGIME_TICKER      = "MONIFTY500"
     REGIME_FALLBACKS   = ["BSE500IETF", "HDFCBSE500", "NIFTYBEES"]
     TREND_SMA_WINDOW   = 100   # Layer 1: index must be above N-day SMA
-    BREADTH_SMA_WINDOW = 50    # Layer 2: % of ETFs above their N-day SMA
+    BREADTH_EMA_WINDOW = 50    # Layer 2: % of ETFs above their N-day EMA
     BREADTH_THRESHOLD  = 0.50  # Layer 2: minimum fraction required
 
     # Sector cap — max ETFs per sector in final allocation
@@ -195,6 +196,18 @@ def sharpe_score(series: pd.Series, window: int) -> float:
     return (excess.mean() / excess.std()) * np.sqrt(CONFIG.ANNUALIZE)
 
 
+def r2_score(series: pd.Series, window: int) -> float:
+    """R-squared from log-linear regression over the lookback window.
+    Measures trend consistency: 1.0 = perfect straight-line trend, 0 = random."""
+    clean = series.dropna()
+    if len(clean) < window:
+        return np.nan
+    y = np.log(clean.iloc[-window:].values.astype(float))
+    x = np.arange(len(y))
+    _, _, r, _, _ = stats.linregress(x, y)
+    return r ** 2
+
+
 def momentum_return(series: pd.Series, window: int) -> float:
     """Total % return over lookback window"""
     clean = series.dropna()
@@ -237,12 +250,14 @@ def regime_status(prices: pd.DataFrame) -> dict:
 
     # Layer 2: Breadth
     above, eligible = 0, 0
-    bw = CONFIG.BREADTH_SMA_WINDOW
+    bw = CONFIG.BREADTH_EMA_WINDOW
     for col in prices.columns:
         s = prices[col].dropna()
         if len(s) >= bw:
             eligible += 1
-            if s.iloc[-1] > s.iloc[-bw:].mean():
+            # EMA uses span=bw; only needs bw rows minimum for a stable value
+            ema = s.ewm(span=bw, adjust=False).mean().iloc[-1]
+            if s.iloc[-1] > ema:
                 above += 1
 
     breadth_pct = above / eligible if eligible > 0 else np.nan
@@ -293,6 +308,8 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
 
         sh6 = sharpe_score(s, CONFIG.WINDOW_6M)
         sh3 = sharpe_score(s, CONFIG.WINDOW_3M)
+        r6  = r2_score(s, CONFIG.WINDOW_6M)
+        r3  = r2_score(s, CONFIG.WINDOW_3M)
         dm6 = momentum_return(s, CONFIG.WINDOW_6M)
         dm3 = momentum_return(s, CONFIG.WINDOW_3M)
 
@@ -306,27 +323,17 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
         else:
             wtd_sharpe = np.nan
 
-        # --- Screen Step 1a: Absolute momentum hurdle ---
-        hurdle_pct = CONFIG.HURDLE_6M * 100
-        if not np.isnan(dm6):
-            abs_pass = dm6 > hurdle_pct
-        elif not np.isnan(dm3):
-            abs_pass = dm3 > hurdle_pct / 2
-        else:
-            abs_pass = False
-
-        # --- Screen Step 1b: 52-week high proximity filter ---
+        # --- Screen: 52-week high proximity filter ---
         close    = row["CLOSE"]
         high_52w = row["52WK_HIGH"]
         if pd.notna(close) and pd.notna(high_52w) and high_52w > 0:
-            pct_from_high = (high_52w - close) / high_52w   # 0 = at high, 1 = at zero
+            pct_from_high = (high_52w - close) / high_52w
             high_pass     = pct_from_high <= CONFIG.MAX_DRAWDOWN_FROM_HIGH
         else:
             pct_from_high = np.nan
             high_pass     = True   # no data -> don't penalise
 
-        # Both screens must pass to be investable
-        screen_pass = abs_pass and high_pass
+        screen_pass = high_pass
 
         records.append({
             "TICKER"        : ticker,
@@ -335,12 +342,13 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
             "CLOSE"         : close,
             "52WK_HIGH"     : high_52w,
             "PCT_FROM_HIGH" : pct_from_high * 100 if not np.isnan(pct_from_high) else np.nan,
+            "R2_6M"         : r6,
+            "R2_3M"         : r3,
             "SHARPE_6M"     : sh6,
             "SHARPE_3M"     : sh3,
             "WTD_SHARPE"    : wtd_sharpe,
             "DM_RET_6M_PCT" : dm6,
             "DM_RET_3M_PCT" : dm3,
-            "ABS_PASS"      : abs_pass,
             "HIGH_PASS"     : high_pass,
             "SCREEN_PASS"   : screen_pass,
         })
@@ -350,6 +358,18 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
     def minmax(col):
         mn, mx = col.min(), col.max()
         return (col - mn) / (mx - mn) if mx > mn else col * 0 + 0.5
+
+    # --- R2 z-scores and blended R2 score (display only) ---
+    # Z-score normalises each R2 value relative to the full universe
+    # so ETFs can be compared on a consistent scale regardless of window
+    def zscore(col):
+        mu, sd = col.mean(), col.std()
+        return (col - mu) / sd if sd > 0 else col * 0
+
+    df["R2_Z_6M"]    = zscore(df["R2_6M"].fillna(df["R2_6M"].mean()))
+    df["R2_Z_3M"]    = zscore(df["R2_3M"].fillna(df["R2_3M"].mean()))
+    df["R2_Z_BLEND"] = CONFIG.R2_W6M * df["R2_Z_6M"] + CONFIG.R2_W3M * df["R2_Z_3M"]
+    df["RANK_R2_BLD"]= df["R2_Z_BLEND"].rank(ascending=False, na_option="bottom").astype(int)
 
     # --- Universe rank — based entirely on Weighted Sharpe ---
     df["RANK_UNIVERSE"] = df["WTD_SHARPE"].rank(ascending=False, na_option="bottom").astype(int)
@@ -501,11 +521,11 @@ def print_summary(df, regime, allocation):
     print(f"  Layer 1 Trend    ({r['trend_ticker']} vs {CONFIG.TREND_SMA_WINDOW}d SMA): "
           f"{'PASS' if r['trend_ok'] else 'FAIL'}  "
           f"({r['nifty_price']:.2f} vs SMA {r['nifty_sma']:.2f})")
-    print(f"  Layer 2 Breadth  (>={CONFIG.BREADTH_THRESHOLD:.0%} above {CONFIG.BREADTH_SMA_WINDOW}d SMA): "
+    print(f"  Layer 2 Breadth  (>={CONFIG.BREADTH_THRESHOLD:.0%} above {CONFIG.BREADTH_EMA_WINDOW}d EMA): "
           f"{'PASS' if r['breadth_ok'] else 'FAIL'}  "
-          f"({r['breadth_pct']:.1%} of ETFs above SMA)")
+          f"({r['breadth_pct']:.1%} of ETFs above EMA)")
 
-    print(f"\n  ALLOCATION  (hurdle={CONFIG.HURDLE_6M*100:.1f}%  |  "
+    print(f"\n  ALLOCATION  (52wk high filter: max {CONFIG.MAX_DRAWDOWN_FROM_HIGH*100:.0f}% drawdown  |  "
           f"BULL={CONFIG.TOP_N} slots  PARTIAL={CONFIG.TOP_N_PARTIAL} slots  BEAR=0 slots)")
     print("  " + "-" * 75)
     for _, a in allocation.iterrows():
@@ -522,8 +542,8 @@ def print_summary(df, regime, allocation):
 
     for _, r2 in df.head(30).iterrows():
         def f(v, d=3): return f"{v:.{d}f}" if pd.notna(v) and v != 0 else "N/A"
-        inv_rk = str(int(r2["RANK_INVESTABLE"])) if r2["ABS_PASS"] else "-"
-        screen = "PASS" if r2["SCREEN_PASS"] else ("AbsOK/HighFAIL" if r2["ABS_PASS"] else "FAIL")
+        inv_rk = str(int(r2["RANK_INVESTABLE"])) if r2["SCREEN_PASS"] else "-"
+        screen = "PASS" if r2["SCREEN_PASS"] else "FAIL"
         print(f"  {inv_rk:>5} {int(r2['RANK_UNIVERSE']):>5} {r2['TICKER']:<14} "
               f"{str(r2['ETF_NAME'])[:35]:<36} "
               f"{f(r2['WTD_SHARPE']):>10} {f(r2['SHARPE_6M']):>9} {f(r2['SHARPE_3M']):>9} "
@@ -954,7 +974,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
     ws.title = "Rankings"
 
     # Title
-    ws.merge_cells("A1:R1")
+    ws.merge_cells("A1:W1")
     c = ws["A1"]
     c.value     = ("ETF Momentum Ranking  |  "
                    "Step 1: Screen (abs filter)  ->  "
@@ -966,12 +986,12 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
     ws.row_dimensions[1].height = 22
 
     # Regime row
-    ws.merge_cells("A2:R2")
+    ws.merge_cells("A2:W2")
     r = regime
     rtext = (f"REGIME: {r['label']}  |  Active slots: {r['active_slots']}/{CONFIG.TOP_N}  |  "
              f"Layer 1 Trend ({r['trend_ticker']} vs {CONFIG.TREND_SMA_WINDOW}d SMA): "
              f"{'PASS' if r['trend_ok'] else 'FAIL'} ({r['nifty_price']:.2f} vs {r['nifty_sma']:.2f})  |  "
-             f"Layer 2 Breadth (>={CONFIG.BREADTH_THRESHOLD:.0%} above {CONFIG.BREADTH_SMA_WINDOW}d SMA): "
+             f"Layer 2 Breadth (>={CONFIG.BREADTH_THRESHOLD:.0%} above {CONFIG.BREADTH_EMA_WINDOW}d EMA): "
              f"{'PASS' if r['breadth_ok'] else 'FAIL'} ({r['breadth_pct']:.1%})")
     rc = ws["A2"]
     rc.value     = rtext
@@ -984,6 +1004,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         ("Investable\nRank",    10, "0"),
         ("Universe\nRank",      10, "0"),
         ("Sharpe\nRank",         9, "0"),
+        ("R2 Bld\nRank",          9, "0"),
         ("DM 6M\nRank",          9, "0"),
         ("Ticker",              14, "@"),
         ("ETF Name",            40, "@"),
@@ -994,17 +1015,22 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         ("Wtd Sharpe\nScore",   14, "0.000"),
         ("Sharpe\n6M",          13, "0.000"),
         ("Sharpe\n3M",          13, "0.000"),
+        ("R2\n6M",              10, "0.000"),
+        ("R2\n3M",              10, "0.000"),
+        ("R2 Z-Score\n6M",     12, "0.000"),
+        ("R2 Z-Score\n3M",     12, "0.000"),
+        ("R2 Z-Score\nBlended",13, "0.000"),
         ("DM Ret\n6M (%)",      13, "0.00"),
         ("DM Ret\n3M (%)",      13, "0.00"),
-        ("Abs Momo\nFilter",    11, "@"),
         ("52Wk High\nFilter",   11, "@"),
         ("Screen\nResult",      11, "@"),
     ]
     KEYS = [
-        "RANK_INVESTABLE", "RANK_UNIVERSE", "RANK_SHARPE", "RANK_DM_6M",
+        "RANK_INVESTABLE", "RANK_UNIVERSE", "RANK_SHARPE", "RANK_R2_BLD", "RANK_DM_6M",
         "TICKER", "ETF_NAME", "SECTOR", "CLOSE", "52WK_HIGH", "PCT_FROM_HIGH",
         "WTD_SHARPE", "SHARPE_6M", "SHARPE_3M",
-        "DM_RET_6M_PCT", "DM_RET_3M_PCT", "ABS_PASS", "HIGH_PASS", "SCREEN_PASS",
+        "R2_6M", "R2_3M", "R2_Z_6M", "R2_Z_3M", "R2_Z_BLEND",
+        "DM_RET_6M_PCT", "DM_RET_3M_PCT", "HIGH_PASS", "SCREEN_PASS",
     ]
 
     HDR = 3
@@ -1023,7 +1049,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
 
         for ci, (key, (_, _, fmt)) in enumerate(zip(KEYS, COLS), 1):
             val = row[key]
-            if key in ("ABS_PASS", "HIGH_PASS", "SCREEN_PASS"):
+            if key in ("HIGH_PASS", "SCREEN_PASS"):
                 val = "PASS" if val else "FAIL"
             elif key == "RANK_INVESTABLE" and (not passed or val == 0):
                 val = "-"
@@ -1038,7 +1064,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
     wa = wb.create_sheet("Allocation")
     wa.merge_cells("A1:F1")
     c = wa["A1"]
-    c.value     = (f"Top-{CONFIG.TOP_N} Allocation  |  Hurdle={CONFIG.HURDLE_6M*100:.1f}%  |  "
+    c.value     = (f"Top-{CONFIG.TOP_N} Allocation  |  Screen: ≤{CONFIG.MAX_DRAWDOWN_FROM_HIGH*100:.0f}% from 52wk high  |  "
                    f"Regime={regime['label']}  |  Active slots={regime['active_slots']}")
     c.font      = Font(name="Arial", bold=True, size=12, color="FFFFFF")
     c.fill      = PatternFill("solid", fgColor=regime_color)
@@ -1081,11 +1107,11 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         ("--- LAYER 1: TREND ---",                        ""),
         ("Index used",                                    r["trend_ticker"]),
         ("Current price",                                 f"{r['nifty_price']:.2f}"),
-        (f"{CONFIG.TREND_SMA_WINDOW}-day SMA",            f"{r['nifty_sma']:.2f}"),
-        ("Price above SMA",                               str(r["trend_ok"])),
-        ("--- LAYER 2: BREADTH ---",                      ""),
-        (f"SMA window",                                   f"{CONFIG.BREADTH_SMA_WINDOW} days"),
-        ("% ETFs above their SMA",                        f"{r['breadth_pct']:.1%}"),
+        (f"{CONFIG.TREND_SMA_WINDOW}-day SMA (trend index)",  f"{r['nifty_sma']:.2f}"),
+        ("Price above SMA",                                   str(r["trend_ok"])),
+        ("--- LAYER 2: BREADTH ---",                          ""),
+        (f"EMA window",                                       f"{CONFIG.BREADTH_EMA_WINDOW} days (EMA)"),
+        ("% ETFs above their 50d EMA",                        f"{r['breadth_pct']:.1%}"),
         ("Required threshold",                            f">= {CONFIG.BREADTH_THRESHOLD:.0%}"),
         ("Breadth threshold met",                         str(r["breadth_ok"])),
     ]
