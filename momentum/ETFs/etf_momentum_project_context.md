@@ -49,35 +49,22 @@ pip install pandas numpy scipy openpyxl
 ### Step 1 — Screen (applied BEFORE ranking)
 Two hard filters. An ETF must pass BOTH to be "investable":
 
-**1a. Absolute Momentum Hurdle**
-- 6M total return must exceed `HURDLE_6M = 3.5%` (~7% annualised, repo rate proxy)
-- If 6M data unavailable, falls back to: 3M return > 1.75%
-
-**1b. 52-Week High Proximity Filter**
+**1a. 52-Week High Proximity Filter**
 - ETF must be trading within `MAX_DRAWDOWN_FROM_HIGH = 25%` of its 52-week high
-- Removes deep-drawdown ETFs bouncing off a bottom rather than trending
-- Example: SILVERBEES had 97.7% 6M return but was 33.7% below its 52wk high → **FAIL**
+- Removes deep-drawdown ETFs bouncing off a bottom rather than trending upward
+- Example: an ETF 33.7% below its 52wk high → **FAIL**
+- If 52wk high data is missing → defaults to **PASS** (don't penalise missing data)
 
-Result columns: `ABS_PASS`, `HIGH_PASS`, `SCREEN_PASS` (both must be True)
+**1b. Above 100 EMA Filter**
+- ETF's current close must be above its 100-day exponential moving average
+- Ensures only ETFs in a confirmed uptrend are ranked as investable
+- If fewer than 100 days of price history available → defaults to **PASS** (insufficient history)
+
+Result columns: `HIGH_PASS`, `EMA_PASS`, `SCREEN_PASS` (both must be True)
 
 ---
 
-### Step 2 — Score (computed on ALL 224 ETFs for reference)
-
-**Clenow Score (6M and 3M)**
-```
-Clenow = annualised_log_regression_slope × R²
-       = slope × 252 × R²
-```
-- Rewards smooth, consistent uptrends (R² = trend quality)
-- An ETF rising 30% in a straight line scores much higher than one rising 30% erratically
-
-**Blended Clenow (used in composite ranking)**
-```
-CLENOW_BLD = 70% × Clenow(6M) + 30% × Clenow(3M)
-```
-- 70/30 rather than 60/40 because R² already provides some recency sensitivity
-- Catches ETFs whose trend is accelerating recently (e.g. CPSEETF moved from rank 27 → 16)
+**Scoring is entirely based on Weighted Sharpe (no Clenow):**
 
 **Sharpe Score (6M and 3M)**
 ```
@@ -85,16 +72,12 @@ Sharpe = (mean(log_returns) - DAILY_RF) / std(log_returns) × √252
 DAILY_RF = 7% / 252  (repo rate proxy)
 ```
 
-**Weighted Sharpe**
+**Weighted Sharpe (composite ranking metric)**
 ```
-WTD_SHARPE = 60% × Sharpe(6M) + 40% × Sharpe(3M)
+WTD_SHARPE = 50% × Sharpe(6M) + 50% × Sharpe(3M)
 ```
 
-**Composite Score (used for ranking)**
-```
-Composite = 50% × norm(CLENOW_BLD) + 50% × norm(WTD_SHARPE)
-```
-Both inputs are min-max normalised to [0,1] across the universe before blending.
+The Weighted Sharpe is the sole ranking metric — no Clenow or composite blending.
 
 **Two rank columns produced:**
 - `RANK_UNIVERSE` — rank among all 224 ETFs (ignores screens, reference only)
@@ -158,24 +141,21 @@ class CONFIG:
     TOP_N         = 5      # slots in BULL regime
     TOP_N_PARTIAL = 3      # slots in PARTIAL regime
 
-    HURDLE_6M             = 0.035   # 3.5% over 6M
     MAX_DRAWDOWN_FROM_HIGH = 0.25   # must be within 25% of 52wk high
+                                    # ETF must also be above its 100 EMA
 
-    SHARPE_W6M  = 0.60
-    SHARPE_W3M  = 0.40
+    SHARPE_W6M  = 0.50     # Weighted Sharpe blend
+    SHARPE_W3M  = 0.50
 
-    CLENOW_W6M  = 0.70
-    CLENOW_W3M  = 0.30
-
-    COMP_W_CLENOW = 0.50
-    COMP_W_SHARPE = 0.50
+    R2_W6M = 0.50          # R² z-score blend (display only, not used in ranking)
+    R2_W3M = 0.50
 
     SECTOR_CAP = 2
 
     REGIME_TICKER      = "MONIFTY500"
     REGIME_FALLBACKS   = ["BSE500IETF", "HDFCBSE500", "NIFTYBEES"]
-    TREND_SMA_WINDOW   = 100
-    BREADTH_SMA_WINDOW = 50
+    TREND_SMA_WINDOW   = 100      # Layer 1: index vs N-day SMA
+    BREADTH_EMA_WINDOW = 50       # Layer 2: % of ETFs above N-day EMA
     BREADTH_THRESHOLD  = 0.50
 
     DAILY_RF = 0.07 / 252
@@ -186,26 +166,30 @@ class CONFIG:
 ## Excel Output — 4 Sheets
 
 ### Sheet 1: Rankings
-24 columns, all 224 ETFs, sorted by investable rank first then universe rank.
+25 columns, all ETFs, sorted by investable rank first then universe rank.
 
 | Col | Content |
 |---|---|
 | 1 | Investable Rank (blank if screened out) |
-| 2 | Universe Rank (all 224) |
-| 3–7 | Clenow 6M Rank, Clenow 3M Rank, Clenow Bld Rank, Sharpe Rank, DM 6M Rank |
-| 8 | Ticker |
-| 9 | ETF Name |
-| 10 | Sector (auto-classified) |
-| 11–13 | Close, 52Wk High, % From 52Wk High |
-| 14–16 | Clenow 6M Score, Clenow 3M Score, Clenow Blended |
-| 17–19 | Wtd Sharpe Score, Sharpe 6M, Sharpe 3M |
-| 20–21 | DM Return 6M (%), DM Return 3M (%) |
-| 22–24 | Abs Momo Filter, 52Wk High Filter, Screen Result |
+| 2 | Universe Rank (all ETFs) |
+| 3–5 | Sharpe Rank, R2 Blended Rank, DM 6M Rank |
+| 6 | Ticker |
+| 7 | ETF Name |
+| 8 | Sector (auto-classified) |
+| 9–11 | Close, 52Wk High, % From 52Wk High |
+| 12–13 | **EMA 50, EMA 100** (new) |
+| 14 | Wtd Sharpe Score |
+| 15–16 | Sharpe 6M, Sharpe 3M |
+| 17–20 | R2 6M, R2 3M, R2 Z-Score 6M, R2 Z-Score 3M |
+| 21 | R2 Z-Score Blended |
+| 22–23 | DM Return 6M (%), DM Return 3M (%) |
+| 24–25 | 52Wk High Filter, Screen Result |
 
 **Colour coding:**
 - Darker green = in current allocation (PASS + top N)
 - Light green = passes both screens but not in top N
 - Orange = fails at least one screen
+- **Dark forest green Close cell** = NAV is above both 50 EMA and 100 EMA
 - Row 2 = regime status bar (green=BULL, amber=PARTIAL, red=BEAR)
 
 ### Sheet 2: Rebalance ⭐ (new)
@@ -260,11 +244,13 @@ Layer-by-layer regime filter detail with pass/fail status.
 |---|---|
 | Nifty 500 (not Nifty 50) for regime | Broader coverage matches universe; mid/small cap rolls over before large cap |
 | Absolute momentum screen BEFORE ranking | Investable rank only shows qualifying ETFs; rank 1 = best ETF you'd actually buy |
-| Blended Clenow 70/30 (not pure 6M) | Catches trend acceleration (e.g. CPSEETF +11 ranks); 0.9951 correlation shows stability |
-| 3M Clenow sort in PARTIAL regime | Drops ETFs whose recent momentum is weakest — most forward-looking signal when regime weakens |
+| Weighted Sharpe as sole ranking metric | Clean, single signal; 50/50 6M-3M blend balances trend persistence with recency |
+| 3M Sharpe sort in PARTIAL regime | Drops ETFs whose recent momentum is weakest — most forward-looking signal when regime weakens |
 | Sector cap = 2 | Prevents 4/5 PSU Bank ETFs (same index, different fund houses) dominating allocation |
 | Waterfall allocation | Slots never go to cash just because a higher-ranked ETF failed sector cap |
 | 52wk high filter as hard screen | Deep-drawdown ETFs (e.g. 33% below peak) are bouncing, not trending — filter removes them before ranking |
+| 100 EMA filter as hard screen | Ensures only ETFs in a confirmed uptrend are rankable; complements 52wk high filter |
+| Missing EMA/52wk data → PASS | Penalising newly listed ETFs for insufficient history would unfairly exclude them |
 | Tiered regime (not binary) | PARTIAL allows 3 active slots as a buffer — avoids whipsawing between full-invest and full-cash |
 
 ---
@@ -294,11 +280,11 @@ etf_momentum_ranking.py
 ├── SECTOR_RULES                # 40+ keyword-to-sector mappings
 ├── classify_sector()           # Auto-tags each ETF
 ├── load_etf_data()             # Reads ETF.xlsx, transposes, cleans zeros
-├── clenow_score()              # Log-regression slope × R²
 ├── sharpe_score()              # Annualised Sharpe vs risk-free
+├── r2_score()                  # R² from log-linear regression
 ├── momentum_return()           # Simple total return %
 ├── regime_status()             # Two-layer tiered filter
-├── build_ranking()             # Screen → score → rank (universe + investable)
+├── build_ranking()             # Screen (52wk+EMA) → score → rank (universe + investable)
 ├── build_allocation()          # Regime-aware, sector-capped, waterfall
 ├── print_summary()             # Console output
 ├── load_holdings_log()         # Read holdings_log.json
@@ -307,6 +293,6 @@ etf_momentum_ranking.py
 ├── diff_allocations()          # BUY/SELL/HOLD/ADD/TRIM diff
 ├── update_log()                # Orchestrate log read/diff/write
 ├── _write_rebalance_sheet()    # Excel Rebalance sheet (3 sections)
-├── save_excel()                # Write all 4 sheets
+├── save_excel()                # Write all 4 sheets (Rankings has EMA 50/100 columns)
 └── main                        # Orchestrate full pipeline
 ```

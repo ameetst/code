@@ -57,12 +57,12 @@ class CONFIG:
 
     # Weighted Sharpe blending (6M trend + 3M recency tilt)
     # Composite ranking is based entirely on Weighted Sharpe
-    SHARPE_W6M  = 0.60
-    SHARPE_W3M  = 0.40
+    SHARPE_W6M  = 0.5
+    SHARPE_W3M  = 0.5
 
     # R-squared z-score blend weights (display metric — not used in composite)
-    R2_W6M      = 0.60
-    R2_W3M      = 0.40
+    R2_W6M      = 0.5
+    R2_W3M      = 0.5
 
     # Regime filter
     # Nifty 500 used (not Nifty 50) — broader coverage matches full ETF universe
@@ -249,7 +249,8 @@ def regime_status(prices: pd.DataFrame) -> dict:
             nifty_sma   = np.nan
 
     # Layer 2: Breadth
-    above, eligible = 0, 0
+    above: int = 0
+    eligible: int = 0
     bw = CONFIG.BREADTH_EMA_WINDOW
     for col in prices.columns:
         s = prices[col].dropna()
@@ -323,6 +324,11 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
         else:
             wtd_sharpe = np.nan
 
+        # --- EMA calculations (50 and 100 day) ---
+        clean_s = s.dropna()
+        ema_50  = float(clean_s.ewm(span=50,  adjust=False).mean().iloc[-1]) if len(clean_s) >= 50  else np.nan
+        ema_100 = float(clean_s.ewm(span=100, adjust=False).mean().iloc[-1]) if len(clean_s) >= 100 else np.nan
+
         # --- Screen: 52-week high proximity filter ---
         close    = row["CLOSE"]
         high_52w = row["52WK_HIGH"]
@@ -333,7 +339,13 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
             pct_from_high = np.nan
             high_pass     = True   # no data -> don't penalise
 
-        screen_pass = high_pass
+        # --- Screen: above 100 EMA filter ---
+        if pd.notna(close) and not np.isnan(ema_100):
+            ema_pass = close > ema_100
+        else:
+            ema_pass = True   # insufficient history -> don't penalise
+
+        screen_pass = high_pass and ema_pass
 
         records.append({
             "TICKER"        : ticker,
@@ -342,6 +354,8 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
             "CLOSE"         : close,
             "52WK_HIGH"     : high_52w,
             "PCT_FROM_HIGH" : pct_from_high * 100 if not np.isnan(pct_from_high) else np.nan,
+            "EMA_50"        : ema_50,
+            "EMA_100"       : ema_100,
             "R2_6M"         : r6,
             "R2_3M"         : r3,
             "SHARPE_6M"     : sh6,
@@ -350,6 +364,7 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
             "DM_RET_6M_PCT" : dm6,
             "DM_RET_3M_PCT" : dm3,
             "HIGH_PASS"     : high_pass,
+            "EMA_PASS"      : ema_pass,
             "SCREEN_PASS"   : screen_pass,
         })
 
@@ -444,8 +459,8 @@ def build_allocation(df: pd.DataFrame, regime: dict) -> pd.DataFrame:
     sector_count: dict[str, int] = {}   # track how many slots each sector has filled
 
     # Walk the (possibly re-sorted) investable list; apply sector cap
-    candidate_idx = 0
-    slot_num = 1
+    candidate_idx: int = 0
+    slot_num: int = 1
     while slot_num <= active:
         # Find next candidate that doesn't breach sector cap
         filled = False
@@ -793,7 +808,7 @@ def _write_rebalance_sheet(wb, prev_entry, changes, log,
     wb.create_sheet("Rebalance", 1)   # insert as second sheet
     wr = wb["Rebalance"]
 
-    row = 1
+    row: int = 1
 
     def title_row(ws, r, text, cols, bg=NAVY2):
         ws.merge_cells(f"A{r}:{get_column_letter(cols)}{r}")
@@ -897,7 +912,7 @@ def _write_rebalance_sheet(wb, prev_entry, changes, log,
               bg="203864")
     row += 1
 
-    sorted_months = sorted(log.keys())[-HISTORY_MONTHS:]
+    sorted_months: list[str] = list(sorted(log.keys()))[-int(HISTORY_MONTHS):]
 
     # Collect all unique tickers ever held (excluding CASH)
     all_tickers: list[str] = []
@@ -974,7 +989,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
     ws.title = "Rankings"
 
     # Title
-    ws.merge_cells("A1:W1")
+    ws.merge_cells("A1:Y1")
     c = ws["A1"]
     c.value     = ("ETF Momentum Ranking  |  "
                    "Step 1: Screen (abs filter)  ->  "
@@ -986,7 +1001,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
     ws.row_dimensions[1].height = 22
 
     # Regime row
-    ws.merge_cells("A2:W2")
+    ws.merge_cells("A2:Y2")
     r = regime
     rtext = (f"REGIME: {r['label']}  |  Active slots: {r['active_slots']}/{CONFIG.TOP_N}  |  "
              f"Layer 1 Trend ({r['trend_ticker']} vs {CONFIG.TREND_SMA_WINDOW}d SMA): "
@@ -1012,6 +1027,8 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         ("Close",               10, "0.00"),
         ("52Wk\nHigh",          10, "0.00"),
         ("% From\n52Wk High",   12, "0.00"),
+        ("EMA 50",              10, "0.00"),
+        ("EMA 100",             10, "0.00"),
         ("Wtd Sharpe\nScore",   14, "0.000"),
         ("Sharpe\n6M",          13, "0.000"),
         ("Sharpe\n3M",          13, "0.000"),
@@ -1028,6 +1045,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
     KEYS = [
         "RANK_INVESTABLE", "RANK_UNIVERSE", "RANK_SHARPE", "RANK_R2_BLD", "RANK_DM_6M",
         "TICKER", "ETF_NAME", "SECTOR", "CLOSE", "52WK_HIGH", "PCT_FROM_HIGH",
+        "EMA_50", "EMA_100",
         "WTD_SHARPE", "SHARPE_6M", "SHARPE_3M",
         "R2_6M", "R2_3M", "R2_Z_6M", "R2_Z_3M", "R2_Z_BLEND",
         "DM_RET_6M_PCT", "DM_RET_3M_PCT", "HIGH_PASS", "SCREEN_PASS",
@@ -1047,13 +1065,24 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
               GREEN   if passed else
               ORANGE)
 
+        # Pre-compute NAV vs EMA condition for this row
+        nav_above_both_ema = (
+            pd.notna(row["CLOSE"]) and
+            pd.notna(row["EMA_50"]) and
+            pd.notna(row["EMA_100"]) and
+            row["CLOSE"] > row["EMA_50"] and
+            row["CLOSE"] > row["EMA_100"]
+        )
+
         for ci, (key, (_, _, fmt)) in enumerate(zip(KEYS, COLS), 1):
             val = row[key]
             if key in ("HIGH_PASS", "SCREEN_PASS"):
                 val = "PASS" if val else "FAIL"
             elif key == "RANK_INVESTABLE" and (not passed or val == 0):
                 val = "-"
-            _d(ws, ri, ci, val, bg=bg,
+            # Dark green highlight on the NAV/Close cell when above both EMAs
+            cell_bg = "217346" if (key == "CLOSE" and nav_above_both_ema) else bg
+            _d(ws, ri, ci, val, bg=cell_bg,
                fmt=fmt if fmt != "@" else None, bold=in_alloc)
         ws.row_dimensions[ri].height = 14
 
