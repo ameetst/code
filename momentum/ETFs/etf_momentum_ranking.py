@@ -69,7 +69,7 @@ class CONFIG:
     # (large + mid + small cap); mid/small roll over before large caps in India
     REGIME_TICKER      = "MONIFTY500"
     REGIME_FALLBACKS   = ["BSE500IETF", "HDFCBSE500", "NIFTYBEES"]
-    TREND_SMA_WINDOW   = 100   # Layer 1: index must be above N-day SMA
+    TREND_EMA_WINDOW   = 100   # Layer 1: index must be above N-day EMA
     BREADTH_EMA_WINDOW = 50    # Layer 2: % of ETFs above their N-day EMA
     BREADTH_THRESHOLD  = 0.50  # Layer 2: minimum fraction required
 
@@ -236,17 +236,17 @@ def regime_status(prices: pd.DataFrame) -> dict:
         print("  [warn] No Nifty 500 proxy found; trend layer defaulting to PASS")
         trend_ok    = True
         nifty_price = np.nan
-        nifty_sma   = np.nan
+        nifty_ema   = np.nan
     else:
         s = prices[trend_ticker].dropna()
-        if len(s) >= CONFIG.TREND_SMA_WINDOW:
+        if len(s) >= CONFIG.TREND_EMA_WINDOW:
             nifty_price = s.iloc[-1]
-            nifty_sma   = s.iloc[-CONFIG.TREND_SMA_WINDOW:].mean()
-            trend_ok    = bool(nifty_price > nifty_sma)
+            nifty_ema   = float(s.ewm(span=CONFIG.TREND_EMA_WINDOW, adjust=False).mean().iloc[-1])
+            trend_ok    = bool(nifty_price > nifty_ema)
         else:
             trend_ok    = True
             nifty_price = s.iloc[-1] if len(s) else np.nan
-            nifty_sma   = np.nan
+            nifty_ema   = np.nan
 
     # Layer 2: Breadth
     above: int = 0
@@ -255,13 +255,13 @@ def regime_status(prices: pd.DataFrame) -> dict:
     for col in prices.columns:
         s = prices[col].dropna()
         if len(s) >= bw:
-            eligible += 1
+            eligible += 1  # pyre-ignore[58]
             # EMA uses span=bw; only needs bw rows minimum for a stable value
             ema = s.ewm(span=bw, adjust=False).mean().iloc[-1]
             if s.iloc[-1] > ema:
-                above += 1
+                above += 1  # pyre-ignore[58]
 
-    breadth_pct = above / eligible if eligible > 0 else np.nan
+    breadth_pct = above / eligible if eligible > 0 else np.nan  # pyre-ignore[58]
     breadth_ok  = bool(breadth_pct >= CONFIG.BREADTH_THRESHOLD) if not np.isnan(breadth_pct) else True
 
     # Tiered label
@@ -287,7 +287,7 @@ def regime_status(prices: pd.DataFrame) -> dict:
         "trend_ok"    : trend_ok,
         "breadth_ok"  : breadth_ok,
         "nifty_price" : nifty_price,
-        "nifty_sma"   : nifty_sma,
+        "nifty_ema"   : nifty_ema,
         "breadth_pct" : breadth_pct,
         "trend_ticker": trend_ticker or "N/A",
     }
@@ -323,6 +323,15 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
             wtd_sharpe = sh3
         else:
             wtd_sharpe = np.nan
+
+        # Sharpe × R² score (NaN → 0 before multiplying so a missing window = 0 contribution)
+        _sh6 = 0.0 if np.isnan(sh6) else sh6
+        _sh3 = 0.0 if np.isnan(sh3) else sh3
+        _r6  = 0.0 if (r6 is None or np.isnan(r6)) else r6
+        _r3  = 0.0 if (r3 is None or np.isnan(r3)) else r3
+        sr2_6m    = _sh6 * _r6
+        sr2_3m    = _sh3 * _r3
+        sr2_blend = (sr2_6m + sr2_3m) / 2
 
         # --- EMA calculations (50 and 100 day) ---
         clean_s = s.dropna()
@@ -361,6 +370,9 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
             "SHARPE_6M"     : sh6,
             "SHARPE_3M"     : sh3,
             "WTD_SHARPE"    : wtd_sharpe,
+            "SR2_6M"        : sr2_6m,
+            "SR2_3M"        : sr2_3m,
+            "SR2_BLEND"     : sr2_blend,
             "DM_RET_6M_PCT" : dm6,
             "DM_RET_3M_PCT" : dm3,
             "HIGH_PASS"     : high_pass,
@@ -370,26 +382,13 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
 
     df = pd.DataFrame(records)
 
-    def minmax(col):
-        mn, mx = col.min(), col.max()
-        return (col - mn) / (mx - mn) if mx > mn else col * 0 + 0.5
-
-    # --- R2 z-scores and blended R2 score (display only) ---
-    # Z-score normalises each R2 value relative to the full universe
-    # so ETFs can be compared on a consistent scale regardless of window
-    def zscore(col):
-        mu, sd = col.mean(), col.std()
-        return (col - mu) / sd if sd > 0 else col * 0
-
-    df["R2_Z_6M"]    = zscore(df["R2_6M"].fillna(df["R2_6M"].mean()))
-    df["R2_Z_3M"]    = zscore(df["R2_3M"].fillna(df["R2_3M"].mean()))
-    df["R2_Z_BLEND"] = CONFIG.R2_W6M * df["R2_Z_6M"] + CONFIG.R2_W3M * df["R2_Z_3M"]
-    df["RANK_R2_BLD"]= df["R2_Z_BLEND"].rank(ascending=False, na_option="bottom").astype(int)
-
     # --- Universe rank — based entirely on Weighted Sharpe ---
     df["RANK_UNIVERSE"] = df["WTD_SHARPE"].rank(ascending=False, na_option="bottom").astype(int)
     df["RANK_SHARPE"]   = df["RANK_UNIVERSE"]   # same — kept for column compatibility
     df["RANK_DM_6M"]    = df["DM_RET_6M_PCT"].rank(ascending=False, na_option="bottom").astype(int)
+
+    # --- SR2 rank — display only, does not affect allocation ---
+    df["RANK_SR2"]      = df["SR2_BLEND"].rank(ascending=False, na_option="bottom").astype(int)
 
     # --- Investable rank — Weighted Sharpe among screen-pass ETFs only ---
     inv = df[df["SCREEN_PASS"]].copy()
@@ -468,7 +467,7 @@ def build_allocation(df: pd.DataFrame, regime: dict) -> pd.DataFrame:
             row     = investable.iloc[candidate_idx]
             sector  = row.get("SECTOR", "OTHER")
             current = sector_count.get(sector, 0)
-            candidate_idx += 1
+            candidate_idx += 1  # pyre-ignore[58]
 
             if current < CONFIG.SECTOR_CAP:
                 sector_count[sector] = current + 1
@@ -533,9 +532,9 @@ def print_summary(df, regime, allocation):
     r = regime
     print(f"\n  REGIME: {r['label']:30s}"
           f"  Active slots: {r['active_slots']} / {CONFIG.TOP_N}")
-    print(f"  Layer 1 Trend    ({r['trend_ticker']} vs {CONFIG.TREND_SMA_WINDOW}d SMA): "
+    print(f"  Layer 1 Trend    ({r['trend_ticker']} vs {CONFIG.TREND_EMA_WINDOW}d EMA): "
           f"{'PASS' if r['trend_ok'] else 'FAIL'}  "
-          f"({r['nifty_price']:.2f} vs SMA {r['nifty_sma']:.2f})")
+          f"({r['nifty_price']:.2f} vs EMA {r['nifty_ema']:.2f})")
     print(f"  Layer 2 Breadth  (>={CONFIG.BREADTH_THRESHOLD:.0%} above {CONFIG.BREADTH_EMA_WINDOW}d EMA): "
           f"{'PASS' if r['breadth_ok'] else 'FAIL'}  "
           f"({r['breadth_pct']:.1%} of ETFs above EMA)")
@@ -772,11 +771,11 @@ def _h(ws, row, col, val, bg="1F4E79", fg="FFFFFF", sz=10):
     c.border    = _brd()
     return c
 
-def _d(ws, row, col, val, bg="FFFFFF", fmt=None, bold=False):
+def _d(ws, row, col, val, bg="FFFFFF", fmt=None, bold=False, fg="000000"):
     if isinstance(val, float) and np.isnan(val):
         val = None
     c = ws.cell(row=row, column=col, value=val)
-    c.font      = Font(name="Arial", size=9, bold=bold)
+    c.font      = Font(name="Arial", size=9, bold=bold, color=fg)
     c.fill      = PatternFill("solid", fgColor=bg)
     c.alignment = Alignment(horizontal="center", vertical="center")
     c.border    = _brd()
@@ -912,7 +911,7 @@ def _write_rebalance_sheet(wb, prev_entry, changes, log,
               bg="203864")
     row += 1
 
-    sorted_months: list[str] = list(sorted(log.keys()))[-int(HISTORY_MONTHS):]
+    sorted_months: list[str] = list(sorted(log.keys()))[-int(HISTORY_MONTHS):]  # pyre-ignore[16]
 
     # Collect all unique tickers ever held (excluding CASH)
     all_tickers: list[str] = []
@@ -928,7 +927,7 @@ def _write_rebalance_sheet(wb, prev_entry, changes, log,
     hdrs   = ["Month", "Regime"] + all_tickers
     widths = [12, 24] + [12] * len(all_tickers)
     hdr_row(wr, row, hdrs, widths)
-    row += 1
+    row += 1  # pyre-ignore[58]
 
     for mk in sorted_months:
         entry    = log[mk]
@@ -964,7 +963,7 @@ def _write_rebalance_sheet(wb, prev_entry, changes, log,
                 c.fill = PatternFill("solid", fgColor="F2F2F2")
             if f and f != "@": c.number_format = f
         wr.row_dimensions[row].height = 15
-        row += 1
+        row += 1  # pyre-ignore[58]
 
     wr.freeze_panes = "A2"
 
@@ -1004,8 +1003,8 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
     ws.merge_cells("A2:Y2")
     r = regime
     rtext = (f"REGIME: {r['label']}  |  Active slots: {r['active_slots']}/{CONFIG.TOP_N}  |  "
-             f"Layer 1 Trend ({r['trend_ticker']} vs {CONFIG.TREND_SMA_WINDOW}d SMA): "
-             f"{'PASS' if r['trend_ok'] else 'FAIL'} ({r['nifty_price']:.2f} vs {r['nifty_sma']:.2f})  |  "
+             f"Layer 1 Trend ({r['trend_ticker']} vs {CONFIG.TREND_EMA_WINDOW}d EMA): "
+             f"{'PASS' if r['trend_ok'] else 'FAIL'} ({r['nifty_price']:.2f} vs {r['nifty_ema']:.2f})  |  "
              f"Layer 2 Breadth (>={CONFIG.BREADTH_THRESHOLD:.0%} above {CONFIG.BREADTH_EMA_WINDOW}d EMA): "
              f"{'PASS' if r['breadth_ok'] else 'FAIL'} ({r['breadth_pct']:.1%})")
     rc = ws["A2"]
@@ -1019,8 +1018,8 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         ("Investable\nRank",    10, "0"),
         ("Universe\nRank",      10, "0"),
         ("Sharpe\nRank",         9, "0"),
-        ("R2 Bld\nRank",          9, "0"),
         ("DM 6M\nRank",          9, "0"),
+        ("SR2\nRank",            9, "0"),
         ("Ticker",              14, "@"),
         ("ETF Name",            40, "@"),
         ("Sector",              18, "@"),
@@ -1034,20 +1033,22 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         ("Sharpe\n3M",          13, "0.000"),
         ("R2\n6M",              10, "0.000"),
         ("R2\n3M",              10, "0.000"),
-        ("R2 Z-Score\n6M",     12, "0.000"),
-        ("R2 Z-Score\n3M",     12, "0.000"),
-        ("R2 Z-Score\nBlended",13, "0.000"),
+        ("SR2\n6M",             12, "0.000"),
+        ("SR2\n3M",             12, "0.000"),
+        ("SR2\nBlend",          12, "0.000"),
         ("DM Ret\n6M (%)",      13, "0.00"),
         ("DM Ret\n3M (%)",      13, "0.00"),
         ("52Wk High\nFilter",   11, "@"),
         ("Screen\nResult",      11, "@"),
     ]
     KEYS = [
-        "RANK_INVESTABLE", "RANK_UNIVERSE", "RANK_SHARPE", "RANK_R2_BLD", "RANK_DM_6M",
+        "RANK_INVESTABLE", "RANK_UNIVERSE", "RANK_SHARPE", "RANK_DM_6M",
+        "RANK_SR2",
         "TICKER", "ETF_NAME", "SECTOR", "CLOSE", "52WK_HIGH", "PCT_FROM_HIGH",
         "EMA_50", "EMA_100",
         "WTD_SHARPE", "SHARPE_6M", "SHARPE_3M",
-        "R2_6M", "R2_3M", "R2_Z_6M", "R2_Z_3M", "R2_Z_BLEND",
+        "R2_6M", "R2_3M",
+        "SR2_6M", "SR2_3M", "SR2_BLEND",
         "DM_RET_6M_PCT", "DM_RET_3M_PCT", "HIGH_PASS", "SCREEN_PASS",
     ]
 
@@ -1066,11 +1067,10 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
               ORANGE)
 
         # Pre-compute NAV vs EMA condition for this row
-        nav_above_both_ema = (
+        # CLOSE > EMA_100: keep row background, set font to dark green
+        close_above_ema100 = (
             pd.notna(row["CLOSE"]) and
-            pd.notna(row["EMA_50"]) and
             pd.notna(row["EMA_100"]) and
-            row["CLOSE"] > row["EMA_50"] and
             row["CLOSE"] > row["EMA_100"]
         )
 
@@ -1080,10 +1080,10 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
                 val = "PASS" if val else "FAIL"
             elif key == "RANK_INVESTABLE" and (not passed or val == 0):
                 val = "-"
-            # Dark green highlight on the NAV/Close cell when above both EMAs
-            cell_bg = "217346" if (key == "CLOSE" and nav_above_both_ema) else bg
-            _d(ws, ri, ci, val, bg=cell_bg,
-               fmt=fmt if fmt != "@" else None, bold=in_alloc)
+            # Close cell: dark green font when NAV > 100 EMA, background unchanged
+            cell_fg = "1A5C2E" if (key == "CLOSE" and close_above_ema100) else "000000"
+            _d(ws, ri, ci, val, bg=bg,
+               fmt=fmt if fmt != "@" else None, bold=in_alloc, fg=cell_fg)
         ws.row_dimensions[ri].height = 14
 
     ws.freeze_panes = "A4"
@@ -1136,8 +1136,8 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         ("--- LAYER 1: TREND ---",                        ""),
         ("Index used",                                    r["trend_ticker"]),
         ("Current price",                                 f"{r['nifty_price']:.2f}"),
-        (f"{CONFIG.TREND_SMA_WINDOW}-day SMA (trend index)",  f"{r['nifty_sma']:.2f}"),
-        ("Price above SMA",                                   str(r["trend_ok"])),
+        (f"{CONFIG.TREND_EMA_WINDOW}-day EMA (trend index)",  f"{r['nifty_ema']:.2f}"),
+        ("Price above EMA",                                   str(r["trend_ok"])),
         ("--- LAYER 2: BREADTH ---",                          ""),
         (f"EMA window",                                       f"{CONFIG.BREADTH_EMA_WINDOW} days (EMA)"),
         ("% ETFs above their 50d EMA",                        f"{r['breadth_pct']:.1%}"),

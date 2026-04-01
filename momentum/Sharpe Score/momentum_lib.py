@@ -35,7 +35,7 @@ compute_pct_from_52h(prices_df, stock_tickers)
 
 compute_market_regime(nifty_series)
     EMA-based market regime check on NIFTY500.
-    Returns 'BUY', 'NOT BUY (Risk Off)', or 'UNKNOWN'.
+    Returns 'BUY', 'NOT BUY — <reason(s)>', or 'UNKNOWN'.
 
 normalise_composite(v)
     Non-linear normalisation: v>1 → v+1, v<0 → 1/(1-v), else unchanged.
@@ -157,6 +157,22 @@ def compute_sharpe(prices_df: pd.DataFrame,
     z_df = pd.DataFrame(index=stock_tickers)
     for label in windows:
         z_df[f"Z_{label}"] = _cross_section_z(sharpe_df[label])
+
+    # Stocks with insufficient data for a window get Z = 0 (universe average)
+    # so they can still receive a composite score rather than being dropped.
+    z_label_cols = [f"Z_{l}" for l in windows]
+    missing_mask = z_df[z_label_cols].isna()
+    n_affected   = missing_mask.any(axis=1).sum()
+    if n_affected > 0:
+        affected = (missing_mask.sum(axis=1)[missing_mask.any(axis=1)]
+                    .rename("missing_windows"))
+        print(f"  Note: {n_affected} stock(s) have partial window coverage; "
+              f"missing Z-scores set to 0 (universe mean):")
+        for ticker, count in affected.items():
+            missing_lbls = [l for l in windows
+                            if pd.isna(z_df.loc[ticker, f"Z_{l}"])]
+            print(f"    {ticker:<16}  missing: {', '.join(missing_lbls)}")
+    z_df[z_label_cols] = z_df[z_label_cols].fillna(0.0)
 
     # COMPOSITE / SHARPE_ALL: 4 core windows (exclude 1M if present)
     core_labels = [l for l in windows if l != "1M"]
@@ -358,9 +374,15 @@ def compute_pct_from_52h(prices_df: pd.DataFrame,
 def compute_market_regime(nifty_series: pd.Series) -> str:
     """
     EMA-based regime check on NIFTY500.
-    BUY if: last_price > EMA(50) AND EMA(21) > EMA(63).
+    BUY requires BOTH:
+      (1) last_price > EMA(50)   — price above medium-term trend
+      (2) EMA(21) > EMA(63)      — short-term trend above long-term trend
 
-    Returns 'BUY', 'NOT BUY (Risk Off)', or 'UNKNOWN'.
+    Returns
+    -------
+    'BUY'                             — both conditions pass
+    'NOT BUY — <reason(s)>'           — one or both conditions fail
+    'UNKNOWN'                         — insufficient data (< 63 bars)
     """
     px = nifty_series.dropna()
     if len(px) < 63:
@@ -369,7 +391,19 @@ def compute_market_regime(nifty_series: pd.Series) -> str:
     n21    = px.ewm(span=21, adjust=False).mean().iloc[-1]
     n63    = px.ewm(span=63, adjust=False).mean().iloc[-1]
     last_n = px.iloc[-1]
-    return "BUY" if (last_n > n50 and n21 > n63) else "NOT BUY (Risk Off)"
+
+    cond1 = last_n > n50   # price above EMA(50)
+    cond2 = n21 > n63      # EMA(21) above EMA(63)
+
+    if cond1 and cond2:
+        return "BUY"
+
+    failures = []
+    if not cond1:
+        failures.append(f"price below EMA50 ({last_n:.0f} < {n50:.0f})")
+    if not cond2:
+        failures.append(f"EMA21 < EMA63 ({n21:.0f} < {n63:.0f})")
+    return "NOT BUY — " + "  &  ".join(failures)
 
 
 # ── NORMALISATION ─────────────────────────────────────────────────────────────

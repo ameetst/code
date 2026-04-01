@@ -119,21 +119,17 @@ WHAT THE SCRIPT COMPUTES (in order)
 OUTPUT FILE  (n500_rankings.xlsx)
 -----------------------------------
 Sheet: TOP20
-  Columns : RNK, TICKER, SHARPE_ALL, CLENOW_Z, RES_MOM, MOM_ACCEL,
+  Columns : RNK, TICKER, SHARPE_ALL, RES_MOM, MOM_ACCEL,
             SHARPE_3, SHARPE_ST, SHARPE_LT, 1M%, 3M%, 12M%
   Rows    : Top 20 ranked stocks (eligible only)
 
 Sheet: CALCS
-  All 502 stocks (or however many are in the input), 47 columns:
+  All stocks, 33 columns:
   RANK, TICKER,
   S_12M, S_9M, S_6M, S_3M, S_1M,           (raw Sharpe per window)
   Z_12M, Z_9M, Z_6M, Z_3M, Z_1M,           (Sharpe Z-scores)
   SHARPE_ALL, SHARPE_ST, SHARPE_LT,
   SHARPE_3, MOM_ACCEL,
-  CS_12M/9M/6M/3M,                          (raw Clenow per window)
-  CZ_12M/9M/6M/3M, CLENOW_Z,               (Clenow Z-scores + composite)
-  CL_12M/9M/6M/3M,                          (annualised slopes)
-  CR_12M/9M/6M/3M,                          (R² values)
   RS_12M/9M/6M/3M,                          (residual Sharpe per window)
   RZ_12M/9M/6M/3M, RES_MOM,                (residual Z-scores + composite)
   1M%, 3M%, 12M%,                           (price returns)
@@ -155,11 +151,6 @@ The library functions can be imported and called independently:
       trading_days=252
   )
 
-  slope_df, r2_df, raw_df, cz_df = ml.compute_clenow(
-      prices_df, tickers,
-      windows={"12M": 252, "3M": 63},
-      trading_days=252
-  )
 
   resmom_df, rs_z_df = ml.compute_residual_momentum(
       prices_df, tickers, nifty_series,
@@ -177,7 +168,7 @@ CONFIG PARAMETERS (top of Sharpe.py)
   RFR_ANNUAL    = 0.07     Risk-free rate (7% p.a. — change to match T-bill)
   TRADING_DAYS  = 252      Trading days per year (standard NSE assumption)
   TOP_N         = 20       Number of stocks to show in TOP20 sheet + console
-  WINDOWS       = {...}    Windows for Clenow + Residual Momentum
+  WINDOWS       = {...}    Windows for Residual Momentum
   SHARPE_WINDOWS= {...}    Windows for Sharpe (includes 1M)
   OUTPUT_FILE   = "n500_rankings.xlsx"   Change to rename the output
 
