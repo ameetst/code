@@ -321,6 +321,95 @@ def compute_residual_momentum(prices_df: pd.DataFrame,
     return resmom_df, rs_z_df
 
 
+# ── ALPHA & VOLATILITY ────────────────────────────────────────────────────────
+
+def compute_alpha_vol(prices_df: pd.DataFrame,
+                             stock_tickers: list,
+                             nifty_series: pd.Series,
+                             window: int = 252,
+                             rfr_daily: float = 0.07/252,
+                             trading_days: int = 252):
+    """
+    Compute annualized Jensen's Alpha and Volatility over a specified window.
+
+    Returns
+    -------
+    alpha_vol_df : DataFrame  ALPHA, VOL
+    z_df         : DataFrame  Z_ALPHA, Z_VOL, COMPOSITE
+    """
+    print(f"\nComputing {window}d Alpha and Volatility ...")
+    nifty_px = nifty_series.dropna()
+    if len(nifty_px) < window * 0.90:
+        print("Not enough NIFTY data.")
+        return pd.DataFrame(), pd.DataFrame()
+
+    nifty_px_w = nifty_px.iloc[-(window+1):] if len(nifty_px) > window else nifty_px
+    mkt_rets = np.diff(np.log(nifty_px_w.values))
+    mkt_excess = mkt_rets - rfr_daily
+
+    alpha_data = []
+    vol_data = []
+
+    for t in stock_tickers:
+        px = prices_df.loc[t].dropna()
+        if len(px) < window * 0.90:
+            alpha_data.append(np.nan)
+            vol_data.append(np.nan)
+            continue
+            
+        n = min(len(px) - 1, window)
+        s_rets = np.diff(np.log(px.iloc[-n-1:].values))
+        s_excess = s_rets - rfr_daily
+        
+        # Align with market
+        m_exc = mkt_excess[-n:]
+        s_exc = s_excess[-n:]
+        
+        if len(s_exc) != len(m_exc) or len(s_exc) < 10:
+            alpha_data.append(np.nan)
+            vol_data.append(np.nan)
+            continue
+            
+        # Volatility: std of daily log returns * sqrt(252)
+        vol = np.std(s_rets, ddof=1) * np.sqrt(trading_days)
+        inv_vol = 1.0 / vol if vol > 1e-6 else np.nan
+        
+        # Alpha: regress stock excess return on market excess return
+        X = np.column_stack([np.ones(len(m_exc)), m_exc])
+        try:
+            coeffs, _, _, _ = np.linalg.lstsq(X, s_exc, rcond=None)
+            intercept = coeffs[0]
+            # Annualize alpha
+            annual_alpha = intercept * trading_days
+        except np.linalg.LinAlgError:
+            annual_alpha = np.nan
+            
+        alpha_data.append(annual_alpha)
+        vol_data.append(inv_vol)
+
+    df = pd.DataFrame({"ALPHA": alpha_data, "INV_VOL": vol_data}, index=stock_tickers)
+    valid_alpha = df["ALPHA"].notna().sum()
+    print(f"  {window}d window: {valid_alpha}/{len(stock_tickers)} valid")
+    
+    z_df = pd.DataFrame(index=stock_tickers)
+    z_df["Z_ALPHA"]   = _cross_section_z(df["ALPHA"])
+    z_df["Z_INV_VOL"] = _cross_section_z(df["INV_VOL"])
+    
+    # Missing handling
+    missing_mask = df.isna().any(axis=1)
+    n_affected = missing_mask.sum()
+    if n_affected > 0:
+        print(f"  Note: {n_affected} stock(s) missing Alpha/Vol; Z-scores set to 0")
+        df = df.fillna(0.0)
+        z_df = z_df.fillna(0.0)
+
+    # Composite: equal weighted Z-scores
+    z_df["COMPOSITE"] = 0.5 * (z_df["Z_ALPHA"] + z_df["Z_INV_VOL"])
+    
+    return df, z_df
+
+
+
 # ── RETURN CONTEXT ────────────────────────────────────────────────────────────
 
 def compute_returns(prices_df: pd.DataFrame,

@@ -125,20 +125,20 @@ def fill(hex_colour):
     return PatternFill("solid", fgColor=hex_colour)
 
 def border_all():
-    s = Side(style="thin", color="333355")
+    s = Side(style="thin", color="CCCCCC")
     return Border(left=s, right=s, top=s, bottom=s)
 
-HDR_FILL   = fill("1E2A4A")
-ALT_FILL   = fill("13131F")
-POS_FILL   = fill("003322")
-NEG_FILL   = fill("330011")
-GOLD_FONT  = Font(name="Calibri", color="FFC840", bold=True,  size=11)
-CYAN_FONT  = Font(name="Calibri", color="00CCFF", bold=True,  size=11)
-TEXT_FONT  = Font(name="Calibri", color="E0E0F0",             size=11)
-MUTED_FONT = Font(name="Calibri", color="7070A0",             size=11)
-HDR_FONT   = Font(name="Calibri", color="00CCFF", bold=True,  size=11)
-GREEN_FONT = Font(name="Calibri", color="00E5A0", bold=True,  size=11)
-RED_FONT   = Font(name="Calibri", color="FF4466", bold=True,  size=11)
+HDR_FILL   = fill("E8EEF2")
+ALT_FILL   = fill("F8F9FA")
+POS_FILL   = fill("E6F4EA")
+NEG_FILL   = fill("FCE8E6")
+GOLD_FONT  = Font(name="Calibri", color="1A365D", bold=True,  size=11)
+CYAN_FONT  = Font(name="Calibri", color="0055CC", bold=True,  size=11)
+TEXT_FONT  = Font(name="Calibri", color="111111",             size=11)
+MUTED_FONT = Font(name="Calibri", color="707070",             size=11)
+HDR_FONT   = Font(name="Calibri", color="1A365D", bold=True,  size=11)
+GREEN_FONT = Font(name="Calibri", color="137333", bold=True,  size=11)
+RED_FONT   = Font(name="Calibri", color="C5221F", bold=True,  size=11)
 
 def set_hdr(cell, value):
     cell.value     = value
@@ -150,7 +150,7 @@ def set_hdr(cell, value):
 def set_cell(cell, value, font=None, bg=None, num_fmt=None, align="right"):
     cell.value     = value
     cell.font      = font or TEXT_FONT
-    cell.fill      = bg or fill("0D0D14")
+    cell.fill      = bg or fill("FFFFFF")
     cell.alignment = Alignment(horizontal=align, vertical="center")
     cell.border    = border_all()
     if num_fmt:
@@ -170,8 +170,8 @@ tc.value     = (f"N500 MOMENTUM  .  Top {TOP_N} by SHARPE_ALL  .  Filter: PCT_FR
                 f"RFR={RFR_ANNUAL*100:.1f}%  .  "
                 f"{dates[0].strftime('%d-%b-%Y')} -> {dates[-1].strftime('%d-%b-%Y')}  .  "
                 f"Regime: {regime_flag}")
-tc.font      = Font(name="Calibri", color="FFC840", bold=True, size=11)
-tc.fill      = fill("0A0A18")
+tc.font      = Font(name="Calibri", color="1A365D", bold=True, size=11)
+tc.fill      = fill("F0F4F8")
 tc.alignment = Alignment(horizontal="center", vertical="center")
 ws1.row_dimensions[1].height = 22
 
@@ -187,7 +187,7 @@ for c, (col_name, col_w) in enumerate(top20_cols, 1):
 ws1.row_dimensions[2].height = 18
 
 for i, (ticker, row) in enumerate(result.head(TOP_N).iterrows(), 3):
-    bg     = ALT_FILL if i % 2 == 0 else fill("0D0D14")
+    bg     = ALT_FILL if i % 2 == 0 else fill("FFFFFF")
     rank_v = int(row["RANK"]) if pd.notna(row["RANK"]) else None
     values = [
         (rank_v,              GOLD_FONT,            bg,                   None),
@@ -217,8 +217,8 @@ ws2.merge_cells("A1:AG1")
 t2           = ws2["A1"]
 t2.value     = (f"N500  .  Full Calculations  .  All {len(stock_tickers)} stocks  .  "
                 f"{dates[0].strftime('%d-%b-%Y')} -> {dates[-1].strftime('%d-%b-%Y')}")
-t2.font      = Font(name="Calibri", color="FFC840", bold=True, size=11)
-t2.fill      = fill("0A0A18")
+t2.font      = Font(name="Calibri", color="1A365D", bold=True, size=11)
+t2.fill      = fill("F0F4F8")
 t2.alignment = Alignment(horizontal="center", vertical="center")
 ws2.row_dimensions[1].height = 22
 
@@ -241,12 +241,12 @@ for c, (col_name, col_w) in enumerate(calcs_cols, 1):
 ws2.row_dimensions[2].height = 18
 
 for i, (ticker, row) in enumerate(result.iterrows(), 3):
-    bg         = ALT_FILL if i % 2 == 0 else fill("0D0D14")
+    bg         = ALT_FILL if i % 2 == 0 else fill("FFFFFF")
     rank_v     = int(row["RANK"]) if pd.notna(row["RANK"]) else None
     pct52h     = row["PCT_FROM_52H"]
     pct52h_ok  = pd.notna(pct52h) and pct52h >= -25
     pct52h_fnt = GREEN_FONT if pct52h_ok else MUTED_FONT
-    pct52h_bg  = fill("003322") if pct52h_ok else fill("1A0A0A")
+    pct52h_bg  = fill("E6F4EA") if pct52h_ok else fill("F0F0F0")
 
     values = [
         (rank_v,             GOLD_FONT,  bg,        None),
