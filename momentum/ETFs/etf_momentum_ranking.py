@@ -13,10 +13,10 @@ Scoring pipeline (in correct order):
 Regime Filter - Tiered (three states):
   BULL   (both pass) : all TOP_N slots active
   PARTIAL (one fails): TOP_N_PARTIAL slots active, rest = cash
-  BEAR   (both fail) : full cash
+  BEAR   (Price <= EMA100): full cash
 
   Layer 1 - Trend  : MONIFTY500 above its 100-day SMA
-  Layer 2 - Breadth: >= 50% of ETFs above their own 50-day EMA
+  Layer 2 - EMA50  : Price above 50-day EMA (for BULL)
 
 All parameters in CONFIG below.
 """
@@ -248,11 +248,11 @@ def regime_status(prices: pd.DataFrame) -> dict:
             if nifty_ema_50 > nifty_ema_100 and nifty_price > nifty_ema_50:
                 label = "BULL"
                 active_slots = CONFIG.TOP_N
-            elif nifty_ema_50 <= nifty_ema_100 and nifty_price > nifty_ema_50:
+            elif nifty_price > nifty_ema_100:
                 label = "PARTIAL"
                 active_slots = CONFIG.TOP_N_PARTIAL
             else:
-                # Bear is anything where price <= 50 EMA
+                # Bear: price <= EMA100
                 label = "BEAR"
                 active_slots = 0
             

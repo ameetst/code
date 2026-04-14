@@ -12,8 +12,7 @@ load_prices(filepath)
 compute_sharpe(prices_df, stock_tickers, windows, rfr_daily, trading_days)
     Compute per-window Sharpe ratios and cross-sectional Z-scores.
     Returns (sharpe_df, z_df)
-    z_df contains Z_<label> columns plus COMPOSITE, SHARPE_ALL,
-    SHARPE_ST, SHARPE_LT, SHARPE_3, MOM_ACCEL.
+    z_df contains Z_<label> columns plus COMPOSITE, SHARPE_ALL, SHARPE_3.
 
 compute_clenow(prices_df, stock_tickers, windows, trading_days)
     Compute per-window Clenow scores (AnnSlope × R²) and Z-scores.
@@ -35,7 +34,11 @@ compute_pct_from_52h(prices_df, stock_tickers)
 
 compute_market_regime(nifty_series)
     EMA-based market regime check on NIFTY500.
-    Returns 'BUY', 'NOT BUY — <reason(s)>', or 'UNKNOWN'.
+    Returns a tuple (label: str, is_cash: bool).
+    Three states (checked in priority order):
+      CASH    — EMA50 < EMA200 (Death Cross): exit all, move to liquid funds
+      BUY     — EMA50 > EMA200, price > EMA50, EMA21 > EMA63
+      NOT BUY — EMA50 > EMA200, but one/both BUY conditions fail
 
 normalise_composite(v)
     Non-linear normalisation: v>1 → v+1, v<0 → 1/(1-v), else unchanged.
@@ -90,8 +93,14 @@ def load_prices(filepath: str):
         price_matrix.append(px)
 
     prices_df     = pd.DataFrame(price_matrix, index=tickers, columns=dates)
+    # Drop duplicate ticker rows (keep first) — guards against duplicate NIFTY500
+    # or duplicate stock rows in the input file.
+    n_dupes = prices_df.index.duplicated(keep="first").sum()
+    if n_dupes:
+        print(f"  Warning: {n_dupes} duplicate ticker row(s) found — keeping first occurrence only.")
+    prices_df     = prices_df[~prices_df.index.duplicated(keep="first")]
     nifty_series  = prices_df.loc["NIFTY500"].copy()
-    stock_tickers = [t for t in tickers if t != "NIFTY500"]
+    stock_tickers = [t for t in prices_df.index if t != "NIFTY500"]
     prices_df     = prices_df.loc[stock_tickers]
 
     return prices_df, nifty_series, stock_tickers, dates
@@ -179,22 +188,7 @@ def compute_sharpe(prices_df: pd.DataFrame,
     z_cols             = [f"Z_{l}" for l in core_labels]
     z_df["COMPOSITE"]  = z_df[z_cols].mean(axis=1)
 
-    # Short-term: 1M+3M+6M if 1M available, else 3M+6M
-    st_cols = (["Z_1M", "Z_3M", "Z_6M"] if "1M" in windows
-               else ["Z_3M", "Z_6M"])
-    lt_cols = ["Z_9M", "Z_12M"]
-
-    z_df["SHARPE_ST"] = z_df[st_cols].mean(axis=1)
-    z_df["SHARPE_LT"] = z_df[lt_cols].mean(axis=1)
     z_df["SHARPE_3"]  = z_df[["Z_12M", "Z_6M", "Z_3M"]].mean(axis=1)
-
-    accel_raw         = z_df["SHARPE_ST"] - z_df["SHARPE_LT"]
-    z_df["MOM_ACCEL"] = _cross_section_z(accel_raw)
-
-    accel_pos = (z_df["MOM_ACCEL"] > 0).sum()
-    accel_neg = (z_df["MOM_ACCEL"] < 0).sum()
-    print(f"  MOM_ACCEL  — accelerating (>0): {accel_pos}  |  "
-          f"decelerating (<0): {accel_neg}")
 
     return sharpe_df, z_df
 
@@ -460,39 +454,51 @@ def compute_pct_from_52h(prices_df: pd.DataFrame,
 
 # ── MARKET REGIME ─────────────────────────────────────────────────────────────
 
-def compute_market_regime(nifty_series: pd.Series) -> str:
+def compute_market_regime(nifty_series: pd.Series) -> tuple:
     """
-    EMA-based regime check on NIFTY500.
-    BUY requires BOTH:
-      (1) last_price > EMA(50)   — price above medium-term trend
-      (2) EMA(21) > EMA(63)      — short-term trend above long-term trend
+    EMA-based regime check on NIFTY500.  Three states, checked in priority order:
+
+    1. CASH (Death Cross)  — EMA(50) < EMA(200)
+         Highest priority.  Exit all positions; park in liquid funds at ~2% p.a.
+    2. BUY                 — EMA(50) > EMA(200)  AND  price > EMA(50)  AND  EMA(21) > EMA(63)
+    3. NOT BUY             — EMA(50) > EMA(200)  but one or both BUY conditions fail
 
     Returns
     -------
-    'BUY'                             — both conditions pass
-    'NOT BUY — <reason(s)>'           — one or both conditions fail
-    'UNKNOWN'                         — insufficient data (< 63 bars)
+    (label : str, is_cash : bool)
+      label   — human-readable regime string with EMA values embedded
+      is_cash — True only when EMA50 < EMA200 (triggers exit signal)
     """
     px = nifty_series.dropna()
-    if len(px) < 63:
-        return "UNKNOWN"
-    n50    = px.ewm(span=50, adjust=False).mean().iloc[-1]
-    n21    = px.ewm(span=21, adjust=False).mean().iloc[-1]
-    n63    = px.ewm(span=63, adjust=False).mean().iloc[-1]
-    last_n = px.iloc[-1]
+    if len(px) < 200:
+        return "UNKNOWN (insufficient data for EMA200)", False
 
-    cond1 = last_n > n50   # price above EMA(50)
-    cond2 = n21 > n63      # EMA(21) above EMA(63)
+    ema200 = px.ewm(span=200, adjust=False).mean().iloc[-1]
+    ema50  = px.ewm(span=50,  adjust=False).mean().iloc[-1]
+    ema21  = px.ewm(span=21,  adjust=False).mean().iloc[-1]
+    ema63  = px.ewm(span=63,  adjust=False).mean().iloc[-1]
+    last   = px.iloc[-1]
+
+    # ── Priority 1: Death Cross — supersedes all other checks ──────────────
+    if ema50 < ema200:
+        label = (f"CASH  |  Death Cross: EMA50 ({ema50:.0f}) < EMA200 ({ema200:.0f})  "
+                 f"|  EXIT ALL -> LIQUID FUNDS (~2% p.a.)")
+        return label, True
+
+    # ── Priority 2 & 3: Normal BUY / NOT BUY checks ────────────────────────
+    cond1 = last  > ema50   # price above EMA(50)
+    cond2 = ema21 > ema63   # short-term above medium-term trend
 
     if cond1 and cond2:
-        return "BUY"
+        return (f"BUY  |  EMA50 ({ema50:.0f}) > EMA200 ({ema200:.0f})  "
+                f"|  price ({last:.0f}) > EMA50  |  EMA21 > EMA63"), False
 
     failures = []
     if not cond1:
-        failures.append(f"price below EMA50 ({last_n:.0f} < {n50:.0f})")
+        failures.append(f"price ({last:.0f}) below EMA50 ({ema50:.0f})")
     if not cond2:
-        failures.append(f"EMA21 < EMA63 ({n21:.0f} < {n63:.0f})")
-    return "NOT BUY — " + "  &  ".join(failures)
+        failures.append(f"EMA21 ({ema21:.0f}) < EMA63 ({ema63:.0f})")
+    return "NOT BUY  |  " + "  &  ".join(failures), False
 
 
 # ── NORMALISATION ─────────────────────────────────────────────────────────────
