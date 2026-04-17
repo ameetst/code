@@ -21,7 +21,7 @@ import sys
 # ─────────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────────
-EXCEL_FILE   = "ETF.xlsx"             
+EXCEL_FILE   = "BT DATA.xlsx"             
 SHEET_NAME   = "DATA"
 BATCH_SIZE   = 20                     
 PRICE_COL    = "Close"                
