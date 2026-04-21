@@ -34,11 +34,10 @@ compute_pct_from_52h(prices_df, stock_tickers)
 
 compute_market_regime(nifty_series)
     EMA-based market regime check on NIFTY500.
-    Returns a tuple (label: str, is_cash: bool).
-    Three states (checked in priority order):
-      CASH    — EMA50 < EMA200 (Death Cross): exit all, move to liquid funds
-      BUY     — EMA50 > EMA200, price > EMA50, EMA21 > EMA63
-      NOT BUY — EMA50 > EMA200, but one/both BUY conditions fail
+    Returns label: str.
+    Two states:
+      BUY     — price > EMA50
+      NOT BUY — price <= EMA50
 
 normalise_composite(v)
     Non-linear normalisation: v>1 → v+1, v<0 → 1/(1-v), else unchanged.
@@ -89,7 +88,10 @@ def load_prices(filepath: str):
                 px.append(float(v) if v and float(v) > 0 else np.nan)
             except Exception:
                 px.append(np.nan)
-        tickers.append(str(row[0]).strip())
+        ticker_name = str(row[0]).strip()
+        if ticker_name.upper() == "NIFTY 500":
+            ticker_name = "NIFTY500"
+        tickers.append(ticker_name)
         price_matrix.append(px)
 
     prices_df     = pd.DataFrame(price_matrix, index=tickers, columns=dates)
@@ -454,51 +456,29 @@ def compute_pct_from_52h(prices_df: pd.DataFrame,
 
 # ── MARKET REGIME ─────────────────────────────────────────────────────────────
 
-def compute_market_regime(nifty_series: pd.Series) -> tuple:
+def compute_market_regime(nifty_series: pd.Series) -> str:
     """
-    EMA-based regime check on NIFTY500.  Three states, checked in priority order:
+    EMA-based regime check on NIFTY500. Two states:
 
-    1. CASH (Death Cross)  — EMA(50) < EMA(200)
-         Highest priority.  Exit all positions; park in liquid funds at ~2% p.a.
-    2. BUY                 — EMA(50) > EMA(200)  AND  price > EMA(50)  AND  EMA(21) > EMA(63)
-    3. NOT BUY             — EMA(50) > EMA(200)  but one or both BUY conditions fail
+    BUY     — price > EMA(50)
+    NOT BUY — price <= EMA(50)
 
     Returns
     -------
-    (label : str, is_cash : bool)
-      label   — human-readable regime string with EMA values embedded
-      is_cash — True only when EMA50 < EMA200 (triggers exit signal)
+    label : str
+        Human-readable regime string with EMA value embedded.
     """
     px = nifty_series.dropna()
-    if len(px) < 200:
-        return "UNKNOWN (insufficient data for EMA200)", False
+    if len(px) < 50:
+        return "UNKNOWN (insufficient data for EMA50)"
 
-    ema200 = px.ewm(span=200, adjust=False).mean().iloc[-1]
-    ema50  = px.ewm(span=50,  adjust=False).mean().iloc[-1]
-    ema21  = px.ewm(span=21,  adjust=False).mean().iloc[-1]
-    ema63  = px.ewm(span=63,  adjust=False).mean().iloc[-1]
-    last   = px.iloc[-1]
+    ema50 = px.ewm(span=50, adjust=False).mean().iloc[-1]
+    last  = px.iloc[-1]
 
-    # ── Priority 1: Death Cross — supersedes all other checks ──────────────
-    if ema50 < ema200:
-        label = (f"CASH  |  Death Cross: EMA50 ({ema50:.0f}) < EMA200 ({ema200:.0f})  "
-                 f"|  EXIT ALL -> LIQUID FUNDS (~2% p.a.)")
-        return label, True
+    if last > ema50:
+        return f"BUY  |  price ({last:.0f}) > EMA50 ({ema50:.0f})"
 
-    # ── Priority 2 & 3: Normal BUY / NOT BUY checks ────────────────────────
-    cond1 = last  > ema50   # price above EMA(50)
-    cond2 = ema21 > ema63   # short-term above medium-term trend
-
-    if cond1 and cond2:
-        return (f"BUY  |  EMA50 ({ema50:.0f}) > EMA200 ({ema200:.0f})  "
-                f"|  price ({last:.0f}) > EMA50  |  EMA21 > EMA63"), False
-
-    failures = []
-    if not cond1:
-        failures.append(f"price ({last:.0f}) below EMA50 ({ema50:.0f})")
-    if not cond2:
-        failures.append(f"EMA21 ({ema21:.0f}) < EMA63 ({ema63:.0f})")
-    return "NOT BUY  |  " + "  &  ".join(failures), False
+    return f"NOT BUY  |  price ({last:.0f}) <= EMA50 ({ema50:.0f})"
 
 
 # ── NORMALISATION ─────────────────────────────────────────────────────────────

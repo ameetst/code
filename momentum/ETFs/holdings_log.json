@@ -47,33 +47,33 @@
     ]
   },
   "2026-04": {
-    "run_date": "2026-04-08 17:41",
-    "regime": "BEAR",
-    "active_slots": 0,
+    "run_date": "2026-04-20 09:40",
+    "regime": "PARTIAL",
+    "active_slots": 3,
     "allocation": [
       {
         "slot": 1,
-        "ticker": "CASH",
-        "etf_name": "Cash / Money Market",
-        "sector": "CASH",
+        "ticker": "GROWWPOWER",
+        "etf_name": "Groww BSE Power ETF",
+        "sector": "ENERGY",
         "weight": 0.2,
-        "inv_rank": "-"
+        "inv_rank": "3"
       },
       {
         "slot": 2,
-        "ticker": "CASH",
-        "etf_name": "Cash / Money Market",
-        "sector": "CASH",
+        "ticker": "MONQ50",
+        "etf_name": "Motilal Oswal NASDAQ Q 50 ETF",
+        "sector": "INTERNATIONAL",
         "weight": 0.2,
-        "inv_rank": "-"
+        "inv_rank": "2"
       },
       {
         "slot": 3,
-        "ticker": "CASH",
-        "etf_name": "Cash / Money Market",
-        "sector": "CASH",
+        "ticker": "CPSEETF",
+        "etf_name": "CPSE ETF",
+        "sector": "PSE",
         "weight": 0.2,
-        "inv_rank": "-"
+        "inv_rank": "4"
       },
       {
         "slot": 4,

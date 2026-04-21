@@ -21,7 +21,7 @@ import sys
 # ─────────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────────
-EXCEL_FILE   = "BT DATA.xlsx"             
+EXCEL_FILE   = "N750.xlsx"             
 SHEET_NAME   = "DATA"
 BATCH_SIZE   = 20                     
 PRICE_COL    = "Close"                

@@ -147,35 +147,61 @@ def classify_sector(etf_name: str, ticker: str) -> str:
 # 1. DATA LOADING
 # =========================================================
 def load_etf_data(filepath: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    raw = pd.read_excel(filepath, sheet_name="DATA", header=None)
+    """
+    Load ETF data from ETF.xlsx.
 
-    header = raw.iloc[0]
-    date_cols = []
-    for c in range(2, raw.shape[1]):
-        val = header.iloc[c]
-        if pd.isna(val):
+    The date headers (row 1, col C onwards) are an Excel dynamic array formula:
+        =TRANSPOSE(LET(d, SEQUENCE(365,...TODAY()...), FILTER(d, WEEKDAY(d,2)<6)))
+    This formula is TODAY()-based and has no cached values readable by openpyxl.
+
+    Fix: read only the price grid via openpyxl (formula-safe), and reconstruct
+    the date index in Python by generating the last N business days (Mon-Fri)
+    to match the column count exactly.
+    """
+    from openpyxl import load_workbook
+
+    wb = load_workbook(filepath, data_only=True)
+    ws = wb["DATA"]
+    max_col = ws.max_column
+    max_row = ws.max_row
+
+    # Price data starts at Excel column 3 (C), 0-based index 2
+    PRICE_START_COL = 3   # Excel 1-indexed
+    n_price_cols = max_col - PRICE_START_COL + 1  # number of date columns
+
+    # Reconstruct date index: last N business days (Mon-Fri) ending today
+    # This mirrors the Excel formula which generates ~261 trading days per year
+    today = pd.Timestamp.today().normalize()
+    # Generate enough biz days; filter to exact count needed
+    candidate_dates = pd.bdate_range(end=today, periods=n_price_cols)
+    dates = list(candidate_dates)  # ascending order, length = n_price_cols
+
+    # Read ETF names, tickers and price rows
+    rows = list(ws.iter_rows(min_row=2, max_row=max_row, values_only=True))
+    wb.close()
+
+    etf_names, tickers, price_rows = [], [], []
+    for row in rows:
+        name   = str(row[0]).strip() if row[0] is not None else ""
+        ticker = str(row[1]).strip() if row[1] is not None else ""
+        if not ticker or ticker == "None":
             continue
-        try:
-            pd.Timestamp(val)
-            date_cols.append(c)
-        except Exception:
-            pass
+        etf_names.append(name)
+        tickers.append(ticker)
+        # cols 2 onwards (0-based) are price columns
+        price_rows.append(row[2: 2 + n_price_cols])
 
-    dates    = pd.to_datetime([header.iloc[c] for c in date_cols])
-    etf_rows = raw.iloc[1:].reset_index(drop=True)
+    meta = pd.DataFrame({"ETF_NAME": etf_names, "TICKER": tickers})
 
-    meta = pd.DataFrame({
-        "ETF_NAME" : etf_rows.iloc[:, 0].fillna("").astype(str).str.strip(),
-        "TICKER"   : etf_rows.iloc[:, 1].astype(str).str.strip(),
-    })
-
-    price_raw = etf_rows.iloc[:, date_cols].copy()
-    price_raw.columns = dates
-    price_raw.index   = meta["TICKER"].values
+    price_raw = pd.DataFrame(price_rows, index=tickers, columns=dates)
     price_raw = price_raw.apply(pd.to_numeric, errors="coerce").replace(0, np.nan)
 
     prices = price_raw.T.sort_index().ffill()
+    print(f"[load]   {filepath}")
+    print(f"         {len(tickers)} ETFs  |  {len(dates)} date cols  "
+          f"({prices.index[0].date()} -> {prices.index[-1].date()})")
     return meta.reset_index(drop=True), prices
+
 
 
 # =========================================================
@@ -244,16 +270,18 @@ def regime_status(prices: pd.DataFrame) -> dict:
             nifty_ema_50  = float(s.ewm(span=CONFIG.TREND_FAST_EMA_WINDOW, adjust=False).mean().iloc[-1])
             nifty_ema_100 = float(s.ewm(span=CONFIG.TREND_EMA_WINDOW, adjust=False).mean().iloc[-1])
             
-            # New Tiered logic
+            # Regime (Run 1 - best performing config):
+            #   BULL    : EMA50 > EMA100  AND  Price > EMA50  -> TOP_N slots
+            #   PARTIAL : Price > EMA100  (but not BULL)       -> TOP_N_PARTIAL slots
+            #   BEAR    : Price <= EMA100                       -> 0 slots, full cash
             if nifty_ema_50 > nifty_ema_100 and nifty_price > nifty_ema_50:
-                label = "BULL"
+                label        = "BULL"
                 active_slots = CONFIG.TOP_N
             elif nifty_price > nifty_ema_100:
-                label = "PARTIAL"
+                label        = "PARTIAL"
                 active_slots = CONFIG.TOP_N_PARTIAL
             else:
-                # Bear: price <= EMA100
-                label = "BEAR"
+                label        = "BEAR"
                 active_slots = 0
             
             trend_ok = active_slots > 0
@@ -318,7 +346,7 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
         else:
             wtd_sharpe = np.nan
 
-        # Sharpe × R² score (NaN → 0 before multiplying so a missing window = 0 contribution)
+        # Sharpe × R² score (NaN -> 0 before multiplying so a missing window = 0 contribution)
         _sh6 = 0.0 if np.isnan(sh6) else sh6
         _sh3 = 0.0 if np.isnan(sh3) else sh3
         _r6  = 0.0 if (r6 is None or np.isnan(r6)) else r6
@@ -1195,8 +1223,8 @@ def run_pipeline(fp=None, out=None):
         prev_month = prev_entry.get("run_date","?")[:7]
         print(f"         Previous month: {prev_month}  |  Changes: {len(changes)}")
         for ch in changes:
-            arrow = {"BUY":"+ BUY","SELL":"- SELL","ADD":"↑ ADD",
-                     "TRIM":"↓ TRIM","HOLD":"= HOLD","REGIME":"⚑ REGIME"}.get(ch["action"],"  ")
+            arrow = {"BUY":"+ BUY","SELL":"- SELL","ADD":"^ ADD",
+                     "TRIM":"v TRIM","HOLD":"= HOLD","REGIME":"! REGIME"}.get(ch["action"],"  ")
             print(f"           {arrow:8s} {ch['ticker']:<14} {ch['note']}")
     else:
         print("         First run — no previous holdings to compare.")
