@@ -56,9 +56,59 @@ warnings.filterwarnings("ignore")
 
 # ── DATA LOADING ──────────────────────────────────────────────────────────────
 
+def _infer_dates_for_columns(date_indices: list[int]) -> list:
+    """
+    Reconstruct trading dates when openpyxl cannot read cached header values.
+
+    Replicates the sheet formula:
+      SEQUENCE(365,1, WORKDAY(TODAY()-365)) filtered to Mon-Fri weekdays
+
+    The array formula always starts at col B (0-based index 1).
+    date_indices are the 0-based column indices where price data was found,
+    so date_indices[k] - 1 gives the offset into the formula's date sequence.
+    """
+    today = datetime.date.today()
+    start = today - datetime.timedelta(days=365)
+    while start.weekday() >= 5:        # advance to first weekday (WORKDAY)
+        start += datetime.timedelta(days=1)
+
+    # Build the full 365-date sequence the formula produces
+    formula_dates: list[datetime.date] = []
+    d = start
+    while len(formula_dates) < 365:
+        if d.weekday() < 5:
+            formula_dates.append(d)
+        d += datetime.timedelta(days=1)
+
+    # Map each price column index to its formula date
+    # formula is at col index 1 (col B), so col index i -> formula_dates[i - 1]
+    result = []
+    for i in date_indices:
+        offset = i - 1   # col B = index 1 = formula_dates[0]
+        if 0 <= offset < len(formula_dates):
+            result.append(formula_dates[offset])
+        else:
+            # Column is beyond formula range — extend forward
+            extra = offset - len(formula_dates) + 1
+            last = formula_dates[-1]
+            ext = []
+            while len(ext) < extra:
+                last += datetime.timedelta(days=1)
+                if last.weekday() < 5:
+                    ext.append(last)
+            formula_dates.extend(ext)
+            result.append(formula_dates[offset])
+    return result
+
+
 def load_prices(filepath: str):
     """
     Load the DATA sheet from an n500-format xlsx file.
+
+    The date header row is driven by a dynamic Excel array formula whose
+    cached values are wiped whenever openpyxl saves the file.  This function
+    first tries to read dates from the header; if none are found it infers
+    them by replicating the formula logic anchored to today's date.
 
     Returns
     -------
@@ -72,10 +122,39 @@ def load_prices(filepath: str):
     all_rows = list(ws.iter_rows(values_only=True))
     wb.close()
 
-    header       = all_rows[0]
+    header = all_rows[0]
+
+    # ── Try to read dates directly from the header row ────────────────────────
     date_indices = [i for i, h in enumerate(header)
                     if isinstance(h, (datetime.datetime, datetime.date))]
-    dates        = [header[i] for i in date_indices]
+
+    if date_indices:
+        dates = [h.date() if isinstance(h, datetime.datetime) else h
+                 for h in (header[i] for i in date_indices)]
+    else:
+        # ── Fallback: infer from where numeric price data sits ────────────────
+        print("  Note: date headers not cached in file — inferring dates from "
+              "price column positions and today's date.")
+        candidate: set[int] = set()
+        for row in all_rows[1: min(11, len(all_rows))]:
+            for i, v in enumerate(row):
+                if i == 0:
+                    continue
+                try:
+                    if v is not None and float(v) > 0:
+                        candidate.add(i)
+                except (TypeError, ValueError):
+                    pass
+        if not candidate:
+            raise ValueError(
+                "load_prices: no date columns found in header and no numeric "
+                "price data detected. Ensure the file was populated by "
+                "update_stock_price.py before running Sharpe.py."
+            )
+        date_indices = sorted(candidate)
+        dates        = _infer_dates_for_columns(date_indices)
+        print(f"  Inferred {len(dates)} trading dates: "
+              f"{dates[0].strftime('%d-%b-%Y')} -> {dates[-1].strftime('%d-%b-%Y')}")
 
     tickers, price_matrix = [], []
     for row in all_rows[1:]:
@@ -83,7 +162,7 @@ def load_prices(filepath: str):
             continue
         px = []
         for i in date_indices:
-            v = row[i]
+            v = row[i] if i < len(row) else None
             try:
                 px.append(float(v) if v and float(v) > 0 else np.nan)
             except Exception:
@@ -94,10 +173,8 @@ def load_prices(filepath: str):
         tickers.append(ticker_name)
         price_matrix.append(px)
 
-    prices_df     = pd.DataFrame(price_matrix, index=tickers, columns=dates)
-    # Drop duplicate ticker rows (keep first) — guards against duplicate NIFTY500
-    # or duplicate stock rows in the input file.
-    n_dupes = prices_df.index.duplicated(keep="first").sum()
+    prices_df = pd.DataFrame(price_matrix, index=tickers, columns=dates)
+    n_dupes   = prices_df.index.duplicated(keep="first").sum()
     if n_dupes:
         print(f"  Warning: {n_dupes} duplicate ticker row(s) found — keeping first occurrence only.")
     prices_df     = prices_df[~prices_df.index.duplicated(keep="first")]

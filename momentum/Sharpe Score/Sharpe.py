@@ -63,7 +63,7 @@ from pathlib import Path
 import momentum_lib as ml
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-FILE              = "N750.xlsx" if len(sys.argv) < 2 else sys.argv[1]
+FILE              = "N750_updated.xlsx" if len(sys.argv) < 2 else sys.argv[1]
 OUTPUT_FILE       = "N750_rankings.xlsx"
 LEDGER_FILE       = sys.argv[2] if len(sys.argv) >= 3 else "positions_ledger.json"
 
