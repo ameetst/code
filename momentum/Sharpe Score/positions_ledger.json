@@ -1,23 +1,7 @@
 {
-  "MTARTECH": {
-    "entry_date": "2026-04-21",
-    "entry_price": 4942.0
-  },
-  "STLTECH": {
-    "entry_date": "2026-04-21",
-    "entry_price": 271.63
-  },
-  "CUPID": {
-    "entry_date": "2026-04-21",
-    "entry_price": 105.42
-  },
   "NATIONALUM": {
     "entry_date": "2026-04-21",
     "entry_price": 426.65
-  },
-  "TDPOWERSYS": {
-    "entry_date": "2026-04-21",
-    "entry_price": 1030.7
   },
   "KIRLOSENG": {
     "entry_date": "2026-04-21",
@@ -59,28 +43,84 @@
     "entry_date": "2026-04-21",
     "entry_price": 1866.2
   },
-  "PFOCUS": {
-    "entry_date": "2026-04-21",
-    "entry_price": 327.55
-  },
-  "AVANTIFEED": {
-    "entry_date": "2026-04-21",
-    "entry_price": 1503.4
-  },
   "CPPLUS": {
     "entry_date": "2026-04-21",
     "entry_price": 2273.8
   },
-  "SANSERA": {
-    "entry_date": "2026-04-21",
-    "entry_price": 2275.5
-  },
-  "QPOWER": {
-    "entry_date": "2026-04-21",
-    "entry_price": 1277.25
-  },
   "GESHIP": {
     "entry_date": "2026-04-22",
     "entry_price": 1445.6
+  },
+  "ABB": {
+    "entry_date": "2026-04-22",
+    "entry_price": 7255.0
+  },
+  "ADANIPOWER": {
+    "entry_date": "2026-04-22",
+    "entry_price": 202.98
+  },
+  "FEDERALBNK": {
+    "entry_date": "2026-04-22",
+    "entry_price": 295.75
+  },
+  "APARINDS": {
+    "entry_date": "2026-04-22",
+    "entry_price": 11714.0
+  },
+  "HINDALCO": {
+    "entry_date": "2026-04-22",
+    "entry_price": 1021.65
+  },
+  "SCHNEIDER": {
+    "entry_date": "2026-04-22",
+    "entry_price": 1058.8
+  },
+  "MAHABANK": {
+    "entry_date": "2026-04-22",
+    "entry_price": 80.18
+  },
+  "MTARTECH": {
+    "entry_date": "2026-04-24",
+    "entry_price": 5347.5
+  },
+  "SBC": {
+    "entry_date": "2026-04-24",
+    "entry_price": 33.44
+  },
+  "CUPID": {
+    "entry_date": "2026-04-24",
+    "entry_price": 113.13
+  },
+  "STLTECH": {
+    "entry_date": "2026-04-24",
+    "entry_price": 276.45
+  },
+  "TDPOWERSYS": {
+    "entry_date": "2026-04-24",
+    "entry_price": 1070.45
+  },
+  "SEAMECLTD": {
+    "entry_date": "2026-04-24",
+    "entry_price": 1544.0
+  },
+  "SANGINITA": {
+    "entry_date": "2026-04-24",
+    "entry_price": 21.49
+  },
+  "SANSERA": {
+    "entry_date": "2026-04-24",
+    "entry_price": 2525.5
+  },
+  "BAJAJCON": {
+    "entry_date": "2026-04-24",
+    "entry_price": 463.95
+  },
+  "PRECWIRE": {
+    "entry_date": "2026-04-24",
+    "entry_price": 392.25
+  },
+  "QPOWER": {
+    "entry_date": "2026-04-24",
+    "entry_price": 1373.85
   }
 }

@@ -19,8 +19,8 @@ import yfinance as yf
 import openpyxl
 
 # ── Config ────────────────────────────────────────────────────────────────────
-INPUT_FILE  = "N750.xlsx"
-OUTPUT_FILE = "N750_updated.xlsx"
+INPUT_FILE  = "NSEAll.xlsx"
+OUTPUT_FILE = "NSEAll_updated.xlsx"
 BATCH_SIZE  = 50          # tickers per yfinance batch download
 SLEEP_SEC   = 2           # pause between batches (avoid rate-limiting)
 PERIOD      = "1y"        # history period for date columns
