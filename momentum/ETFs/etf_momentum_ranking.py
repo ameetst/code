@@ -79,6 +79,9 @@ class CONFIG:
     # Daily risk-free rate for Sharpe (7% annual / 252)
     DAILY_RF = 0.07 / 252
 
+    # Trailing Stop Loss — daily monitoring via --tsl flag
+    TSL_THRESHOLD = 0.10   # 10% drawdown from peak triggers alert
+
 
 
 # =========================================================
@@ -458,19 +461,10 @@ def build_allocation(df: pd.DataFrame, regime: dict) -> pd.DataFrame:
 
     is_partial = (active == CONFIG.TOP_N_PARTIAL)
 
-    if is_partial:
-        # PARTIAL REGIME: re-sort the investable pool by 3M Clenow score
-        # descending before trimming to TOP_N_PARTIAL slots.
-        # Rationale: when regime is weakening, 3M is the leading signal of
-        # deterioration. The two ETFs with the weakest recent momentum are
-        # dropped first, regardless of their 6M composite rank.
-        # NaN 3M scores sorted last so missing-data ETFs drop off first.
-        investable = investable.sort_values(
-            "SHARPE_3M", ascending=False, na_position="last"
-        ).reset_index(drop=True)
-        sort_label = "3M Sharpe (partial regime sort)"
-    else:
-        sort_label = "Investable composite rank (bull regime sort)"
+    # All regimes use the same WTD_SHARPE-based RANK_INVESTABLE ordering.
+    # In PARTIAL, the top-N_PARTIAL by composite rank are kept; the rest
+    # go to cash. This aligns with the backtested Run 1 configuration.
+    sort_label = "Investable composite rank (WTD_SHARPE)"
 
     slots = []
     sector_count: dict[str, int] = {}   # track how many slots each sector has filled
@@ -761,10 +755,12 @@ def diff_allocations(prev: dict, curr: dict) -> list[dict]:
 
 
 def update_log(script_dir: Path, allocation: pd.DataFrame,
-               regime: dict) -> tuple[dict, list[dict]]:
+               regime: dict, prices: pd.DataFrame = None) -> tuple[dict, list[dict]]:
     """
     Load log, diff vs previous month, save updated log.
-    Returns (prev_entry_or_None, list_of_changes).
+    When prices is provided, enriches each slot with entry_price and peak
+    for trailing stop loss tracking.
+    Returns (prev_entry_or_None, list_of_changes, full_log).
     """
     log      = load_holdings_log(script_dir)
     month_key = datetime.today().strftime("%Y-%m")
@@ -777,6 +773,39 @@ def update_log(script_dir: Path, allocation: pd.DataFrame,
     prev_keys   = [k for k in sorted_keys if k < month_key]
     prev_entry  = log[prev_keys[-1]] if prev_keys else None
 
+    # ── Enrich slots with entry_price / peak for TSL tracking ──────────
+    if prices is not None:
+        prev_alloc = (
+            {s["ticker"]: s for s in prev_entry.get("allocation", [])}
+            if prev_entry else {}
+        )
+        for slot in curr_entry["allocation"]:
+            t = slot["ticker"]
+            if t == "CASH":
+                slot["entry_price"] = None
+                slot["peak"]        = None
+                continue
+
+            # Current NAV from the loaded price grid
+            current_nav = None
+            if t in prices.columns:
+                s = prices[t].dropna()
+                if len(s) > 0:
+                    current_nav = float(s.iloc[-1])
+
+            prev_slot = prev_alloc.get(t)
+            if (prev_slot is not None
+                    and prev_slot.get("entry_price") is not None
+                    and prev_slot["ticker"] != "CASH"):
+                # HOLD — carry forward entry_price, update peak
+                slot["entry_price"] = prev_slot["entry_price"]
+                old_peak = prev_slot.get("peak") or 0
+                slot["peak"] = max(old_peak, current_nav) if current_nav else old_peak
+            else:
+                # New BUY
+                slot["entry_price"] = current_nav
+                slot["peak"]        = current_nav
+
     # Compute diff
     changes = diff_allocations(prev_entry, curr_entry) if prev_entry else []
 
@@ -786,6 +815,130 @@ def update_log(script_dir: Path, allocation: pd.DataFrame,
 
     return prev_entry, changes, log
 
+
+
+# =========================================================
+# 7c. DAILY TSL CHECK (via --tsl flag)
+# =========================================================
+def check_tsl(script_dir: Path):
+    """
+    Daily Trailing Stop Loss check.
+    Fetches live NAVs via yfinance for held ETFs (max 5),
+    compares against stored peaks, and flags any TSL breaches.
+    Advisory only — does NOT auto-sell positions.
+    """
+    import yfinance as yf
+
+    log = load_holdings_log(script_dir)
+    month_key = datetime.today().strftime("%Y-%m")
+
+    if month_key not in log:
+        print("[tsl] No allocation found for current month.")
+        print("      Run the monthly rebalance first: python etf_momentum_ranking.py")
+        return
+
+    entry = log[month_key]
+    allocation = entry.get("allocation", [])
+
+    # Get held tickers (non-CASH)
+    held = [s for s in allocation if s["ticker"] != "CASH"]
+    if not held:
+        print("[tsl] No active positions (all cash). Nothing to check.")
+        return
+
+    # Fetch live prices via yfinance (NSE tickers need .NS suffix)
+    tickers_nse = [s["ticker"] + ".NS" for s in held]
+    print(f"[tsl] Fetching live NAVs for {len(held)} position(s) via yfinance ...")
+
+    live_prices: dict[str, float] = {}
+    try:
+        data = yf.download(tickers_nse, period="5d", auto_adjust=True, progress=False)
+        close = data["Close"]
+        if isinstance(close, pd.Series):
+            close = close.to_frame(tickers_nse[0])
+        for s in held:
+            yf_t = s["ticker"] + ".NS"
+            if yf_t in close.columns:
+                vals = close[yf_t].dropna()
+                if len(vals) > 0:
+                    live_prices[s["ticker"]] = float(vals.iloc[-1])
+    except Exception as e:
+        print(f"[tsl] ERROR fetching prices: {e}")
+        return
+
+    # ── TSL Dashboard ────────────────────────────────────────────
+    threshold = CONFIG.TSL_THRESHOLD
+    W = 86
+    print("\n" + "=" * W)
+    print(f"  TSL CHECK  |  {datetime.today().strftime('%Y-%m-%d %H:%M')}"
+          f"  |  Threshold: {threshold*100:.0f}%")
+    print("=" * W)
+    print(f"  {'Slot':>4}  {'Ticker':<14} {'Entry':>8} {'Peak':>8}"
+          f" {'TSL NAV':>8} {'NAV':>8} {'DD%':>7}  Status")
+    print("  " + "-" * (W - 4))
+
+    breaches = []
+    for s in allocation:
+        t        = s["ticker"]
+        slot_num = s["slot"]
+
+        if t == "CASH":
+            print(f"  {slot_num:>4}  {'CASH':<14}"
+                  f" {'--':>8} {'--':>8} {'--':>8} {'--':>8} {'--':>7}  --")
+            continue
+
+        entry_price = s.get("entry_price")
+        peak        = s.get("peak")
+        nav         = live_prices.get(t)
+
+        if nav is None:
+            ep_str = f"{entry_price:.2f}" if entry_price else "--"
+            pk_str = f"{peak:.2f}"        if peak        else "--"
+            print(f"  {slot_num:>4}  {t:<14}"
+                  f" {ep_str:>8} {pk_str:>8} {'--':>8} {'ERR':>8} {'--':>7}  FETCH FAILED")
+            continue
+
+        # Update peak if current NAV is a new high
+        if peak is None or nav > peak:
+            peak = nav
+        s["peak"] = peak
+
+        # TSL NAV = the exact price at which the stop loss triggers
+        tsl_nav = peak * (1 - threshold)
+
+        # Compute drawdown
+        dd = (peak - nav) / peak if peak > 0 else 0.0
+
+        status = "!! TSL BREACH !!" if dd >= threshold else "OK"
+        if dd >= threshold:
+            breaches.append((t, s.get("etf_name", ""), dd, tsl_nav))
+
+        ep_str = f"{entry_price:.2f}" if entry_price else "--"
+        print(f"  {slot_num:>4}  {t:<14}"
+              f" {ep_str:>8} {peak:>8.2f} {tsl_nav:>8.2f} {nav:>8.2f} {dd*100:>6.1f}%  {status}")
+
+    print("=" * W)
+
+    if breaches:
+        print("\n  !! ACTION REQUIRED !!")
+        for ticker, name, dd, tsl_price in breaches:
+            print(f"  -> SELL {ticker} ({name})"
+                  f" -- drawdown {dd*100:.1f}% exceeds {threshold*100:.0f}% TSL"
+                  f" (trigger: {tsl_price:.2f})")
+        print(f"  -> Move proceeds to cash until next monthly rebalance.\n")
+    else:
+        print(f"\n  All positions within TSL threshold. No action needed.\n")
+
+    # Save updated peaks back to log
+    log[month_key] = entry
+    save_holdings_log(script_dir, log)
+    print(f"[tsl] Updated peaks saved to {HOLDINGS_LOG_FILE}")
+
+
+def run_tsl_check():
+    """Entry point for daily TSL monitoring via --tsl flag."""
+    SCRIPT_DIR = Path(__file__).resolve().parent
+    check_tsl(SCRIPT_DIR)
 
 
 # =========================================================
@@ -1217,7 +1370,7 @@ def run_pipeline(fp=None, out=None):
     print_summary(ranking, regime, allocation)
 
     print("[log]    Updating holdings log ...")
-    prev_entry, changes, log = update_log(SCRIPT_DIR, allocation, regime)
+    prev_entry, changes, log = update_log(SCRIPT_DIR, allocation, regime, prices)
 
     if prev_entry:
         prev_month = prev_entry.get("run_date","?")[:7]
@@ -1234,6 +1387,9 @@ def run_pipeline(fp=None, out=None):
 
 
 if __name__ == "__main__":
-    fp_arg  = sys.argv[1] if len(sys.argv) > 1 else None
-    out_arg = sys.argv[2] if len(sys.argv) > 2 else None
-    run_pipeline(fp_arg, out_arg)
+    if "--tsl" in sys.argv:
+        run_tsl_check()
+    else:
+        fp_arg  = sys.argv[1] if len(sys.argv) > 1 else None
+        out_arg = sys.argv[2] if len(sys.argv) > 2 else None
+        run_pipeline(fp_arg, out_arg)

@@ -3,7 +3,7 @@
 > **Script:** `etf_momentum_ranking.py`
 > **Universe:** NSE-listed ETFs (equity, sectoral, thematic, factor, gold, silver, bonds)
 > **Rebalance:** Monthly (first trading day of month)
-> **Monitoring:** Daily trailing stop loss (backtest) / manual (live)
+> **Monitoring:** Daily trailing stop loss via `--tsl` flag (live) / automatic (backtest)
 
 ---
 
@@ -117,8 +117,9 @@ EMA50  = 50-day EMA of MONIFTY500
 EMA100 = 100-day EMA of MONIFTY500
 
 if   EMA50 > EMA100  AND  Price > EMA50   ->  BULL    (5 slots)
-elif Price > EMA100                        ->  PARTIAL (3 slots)
-else                                       ->  BEAR    (0 slots, full cash)
+elif Price > EMA100  AND  Price < EMA50   ->  PARTIAL (3 slots)
+elif Price < EMA100  AND  Price < EMA50   ->  BEAR    (0 slots, full cash)
+else                                      ->  BEAR    (0 slots, full cash)
 ```
 
 > Regime is evaluated using the **last trading day of the previous month's close**.
@@ -126,8 +127,9 @@ else                                       ->  BEAR    (0 slots, full cash)
 
 ### PARTIAL Regime — How slots are filled
 
-In PARTIAL, only the top 3 from the investable ranked list are selected (same sector cap applies).
-The remaining 2 slots stay in cash earning 2% p.a. All other logic (rebalance, TSL) is identical.
+In PARTIAL, the top 3 from the investable ranked list (sorted by **Weighted Sharpe**, same as BULL)
+are selected. The same sector cap (1 per sector) applies. The remaining 2 slots stay in cash
+earning 2% p.a. All other logic (rebalance, TSL) is identical.
 
 PARTIAL acts as an **early warning buffer** — it reduces exposure before the EMA50/EMA100
 crossover (BEAR) is confirmed, but without going to full cash prematurely.
@@ -187,7 +189,7 @@ An ETF enters the portfolio when ALL of the following are simultaneously true:
 | Event | Frequency | Action |
 |:---|:---|:---|
 | Portfolio rebalance | Monthly — first trading day | Exit all → evaluate regime → enter Top N |
-| TSL check | Daily — intra-month | 10% trailing stop loss from running peak |
+| TSL check | Daily — via `python etf_momentum_ranking.py --tsl` | Fetches live NAVs via yfinance, compares against stored peaks, alerts on ≥10% drawdown |
 | Regime evaluation | Monthly — at rebalance | Uses previous month-end close of MONIFTY500 |
 | Cash interest accrual | Daily | 2% p.a. on all idle/cash capital |
 
@@ -242,12 +244,28 @@ TREND_EMA_WINDOW       = 100          # slow EMA for regime (EMA100)
 
 SECTOR_CAP             = 1            # max ETFs per sector in allocation
 DAILY_RF               = 0.07 / 252  # daily risk-free rate (7% p.a.)
+TSL_THRESHOLD          = 0.10         # 10% trailing stop loss (live + backtest)
 
 # Backtest only (etf_backtest.py)
-TSL_THRESHOLD          = 0.10         # 10% trailing stop loss
 CASH_INTEREST_PA       = 0.02         # 2% p.a. interest on idle cash
 TRADE_COST_FIXED       = 20.0         # INR per trade leg
 ```
+
+### Live TSL Monitoring
+
+```bash
+# Monthly rebalance (standard run)
+python etf_momentum_ranking.py
+
+# Daily TSL check — fetches live NAVs via yfinance for held ETFs
+python etf_momentum_ranking.py --tsl
+```
+
+The `--tsl` flag loads `holdings_log.json`, fetches real-time prices for the 3-5 held
+positions via yfinance (appends `.NS` for NSE), and displays a dashboard showing:
+- Entry price, peak price, TSL trigger price, current NAV, drawdown %
+- Flags any position with ≥10% drawdown as `!! TSL BREACH !!`
+- Advisory only — does not auto-sell. Updated peaks are saved back to `holdings_log.json`.
 
 ---
 
