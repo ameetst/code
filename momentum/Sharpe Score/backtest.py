@@ -162,14 +162,14 @@ for i in range(len(valid_dates) - 1):
         else:
             raw_weights[ticker] = comp_score # fallback
 
-    # Normalize weights and apply 8% cap
+    # Normalize weights and apply 5% cap
     total_raw = sum(raw_weights.values())
     actual_portfolio = {}
     for ticker in next_portfolio_tickers:
         # Normalize strictly to sum=1.0 initially
         norm_w = raw_weights[ticker] / total_raw if total_raw > 0 else 1.0 / len(next_portfolio_tickers)
-        # Cap strictly at 8%
-        capped_w = min(0.08, norm_w)
+        # Cap strictly at 5% — matches live Sharpe.py
+        capped_w = min(0.05, norm_w)
         
         if ticker in current_portfolio:
             actual_portfolio[ticker] = {'entry_date': current_portfolio[ticker]['entry_date'], 'weight': capped_w}

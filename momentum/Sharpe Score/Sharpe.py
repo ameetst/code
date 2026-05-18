@@ -47,7 +47,10 @@ Positions are tracked in a JSON file (LEDGER_FILE) with the structure:
 The ledger is loaded at the start of each run, used to evaluate exit
 conditions, and updated with new entries / removals at the end of the run.
 
-Usage:  python Sharpe.py path/to/n500.xlsx [path/to/ledger.json]
+Usage:  python Sharpe.py <UNIVERSE> [path/to/ledger.json]
+          UNIVERSE examples: N500, N750, NSEAll
+          Derives: <UNIVERSE>_updated.xlsx  →  <UNIVERSE>_rankings.xlsx
+                   <UNIVERSE>_positions_ledger.json (overridden by 2nd arg)
 """
 
 import sys
@@ -63,11 +66,12 @@ from pathlib import Path
 import momentum_lib as ml
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-FILE              = "NSEAll_updated.xlsx" if len(sys.argv) < 2 else sys.argv[1]
-OUTPUT_FILE       = "NSEAll_rankings.xlsx"
-LEDGER_FILE       = sys.argv[2] if len(sys.argv) >= 3 else "positions_ledger.json"
+UNIVERSE          = sys.argv[1] if len(sys.argv) >= 2 else "N500"
+FILE              = f"{UNIVERSE}_updated.xlsx"
+OUTPUT_FILE       = f"{UNIVERSE}_rankings.xlsx"
+LEDGER_FILE       = sys.argv[2] if len(sys.argv) >= 3 else f"{UNIVERSE}_positions_ledger.json"
 
-PORTFOLIO_CAPITAL = 2_000_000   # INR — baseline for allocation display
+PORTFOLIO_CAPITAL = 1_000_000   # INR — baseline for allocation display
 RFR_ANNUAL        = 0.07
 TRADING_DAYS      = 252
 TOP_N             = 20
@@ -145,6 +149,11 @@ print(f"Loading position ledger ...")
 ledger = load_ledger(LEDGER_FILE)
 
 # ── COMPUTE SCORES ────────────────────────────────────────────────────────────
+# ACTIVE: Raw Sharpe (production baseline: CAGR 38.3% / MDD -16.3%)
+# DORMANT: Adjusted Sharpe (Skew + Kurtosis penalty: CAGR 42.2% / MDD -20.2%)
+#   To activate, replace the line below with:
+#       sharpe_df, z_df = ml.compute_adjusted_sharpe(prices_df, stock_tickers,
+#                                                     SHARPE_WINDOWS, rfr_daily, TRADING_DAYS)
 sharpe_df, z_df = ml.compute_sharpe(prices_df, stock_tickers,
                                      SHARPE_WINDOWS, rfr_daily, TRADING_DAYS)
 
@@ -392,12 +401,12 @@ def ticker_status(ticker):
     if ticker in rank_exit_set:  return "EXIT-RANK"
     if ticker in new_entry_set:  return "NEW BUY"
     if ticker in currently_held: return "HOLD"
-    return ""
+    return "WATCH"
 
 print(f"\n{'':=<100}")
-print(f"  N500 MOMENTUM - TOP {TOP_N}  .  Sharpe Z + Sharpe 3W + Residual")
+print(f"  {UNIVERSE} MOMENTUM - TOP {TOP_N}  .  Sharpe Z + Sharpe 3W + Residual")
 print(f"  MARKET REGIME  : {regime_flag}")
-print(f"  Checks         : (1) NIFTY500 EMA50 > EMA200  (2) NIFTY500 price > EMA50")
+print(f"  Checks         : (1) {UNIVERSE} EMA50 > EMA200  (2) {UNIVERSE} price > EMA50")
 print(f"  Windows        : 12M/9M/6M/3M (Overlapping)  |  RFR={RFR_ANNUAL*100:.1f}%")
 print(f"  Policies       : Weekly Executions | {MIN_HOLD_DAYS}-Day Min Hold Lock | "
       f"52H% >= -25% | Rank buffer = {HOLD_RANK_BUFFER}")
@@ -487,7 +496,7 @@ ws1.freeze_panes = "C3"
 
 ws1.merge_cells("A1:G1")
 tc           = ws1["A1"]
-tc.value     = (f"N500 MOMENTUM  .  Top {TOP_N} by SHARPE_ALL  .  "
+tc.value     = (f"{UNIVERSE} MOMENTUM  .  Top {TOP_N} by SHARPE_ALL  .  "
                 f"Filter: PCT_FROM_52H >= -25%  .  RFR={RFR_ANNUAL*100:.1f}%  .  "
                 f"{dates[0].strftime('%d-%b-%Y')} -> {dates[-1].strftime('%d-%b-%Y')}  .  "
                 f"Regime: {regime_flag}  .  Run: {TODAY.strftime('%d-%b-%Y')}")
@@ -600,7 +609,7 @@ ws2.freeze_panes = "C3"
 
 ws2.merge_cells("A1:AD1")
 t2           = ws2["A1"]
-t2.value     = (f"N500  .  Full Calculations  .  All {len(stock_tickers)} stocks  .  "
+t2.value     = (f"{UNIVERSE}  .  Full Calculations  .  All {len(stock_tickers)} stocks  .  "
                 f"{dates[0].strftime('%d-%b-%Y')} -> {dates[-1].strftime('%d-%b-%Y')}  .  "
                 f"Regime: {regime_flag}")
 t2.font      = Font(name="Calibri",

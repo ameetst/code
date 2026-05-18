@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-fetch_nav.py (Grid Filler Version - Formula Safe)
+fetch_historical_nav.py (Grid Filler Version - Formula Safe)
 =================================================
 Reads dynamic date formulas from Row 1, fetches historical prices, 
 and fills the grid. Uses a two-pass system to prevent destroying 
@@ -21,7 +21,7 @@ import sys
 # ─────────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────────
-EXCEL_FILE   = "N750.xlsx"             
+EXCEL_FILE   = "ETF.xlsx"             
 SHEET_NAME   = "DATA"
 BATCH_SIZE   = 20                     
 PRICE_COL    = "Close"                

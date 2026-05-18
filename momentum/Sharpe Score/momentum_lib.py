@@ -14,6 +14,14 @@ compute_sharpe(prices_df, stock_tickers, windows, rfr_daily, trading_days)
     Returns (sharpe_df, z_df)
     z_df contains Z_<label> columns plus COMPOSITE, SHARPE_ALL, SHARPE_3.
 
+compute_adjusted_sharpe(prices_df, stock_tickers, windows, rfr_daily, trading_days)
+    [DORMANT — not used in live ranking. Activate by swapping into Sharpe.py]
+    Compute Pezier-White Adjusted Sharpe per window and cross-sectional Z-scores.
+    Rewards positive skewness; penalises excess kurtosis (fat-tail risk).
+    Formula: Adj_S = S * [1 + (Skew/6)*S - (ExcessKurt/24)*S^2]
+    Returns (adj_sharpe_df, z_df) — same shape as compute_sharpe output.
+    Backtest result: CAGR ~42.2% / MDD ~-20.2% vs baseline 38.3% / -16.3%.
+
 compute_clenow(prices_df, stock_tickers, windows, trading_days)
     Compute per-window Clenow scores (AnnSlope × R²) and Z-scores.
     Returns (slope_df, r2_df, raw_df, cz_df)
@@ -208,6 +216,51 @@ def _cross_section_z(series: pd.Series) -> pd.Series:
     return (series - mu) / sd if sd > 0 else series * 0.0
 
 
+def _adjusted_sharpe_ratio(series: pd.Series, window: int,
+                           rfr_daily: float, trading_days: int) -> float:
+    """
+    Pezier-White Adjusted Sharpe Ratio (DORMANT — not used in live ranking).
+
+    Extends the raw annualised Sharpe with two higher-order moment corrections:
+      • Positive skewness  → upside asymmetry bonus  (boosts score)
+      • Excess kurtosis    → fat-tail penalty         (reduces score)
+
+    Formula
+    -------
+    Adj_S = S * [1 + (Skew / 6) * S  -  (ExcessKurt / 24) * S^2]
+
+    where S          = raw annualised Sharpe ratio
+          Skew       = Fisher skewness of excess daily log-returns
+          ExcessKurt = Fisher kurtosis (already kurt - 3) of excess returns
+
+    Backtest evidence (Apr 2020 – Apr 2026, 500 stocks)
+    ----------------------------------------------------
+    Raw Sharpe baseline  →  CAGR 38.3%  /  MDD -16.3%
+    Adjusted Sharpe      →  CAGR 42.2%  /  MDD -20.2%
+    Trade-off: +3.9 pp CAGR gained, -3.9 pp extra drawdown risk.
+    """
+    px = series.dropna()
+    if len(px) < window * 0.90:
+        return np.nan
+    px_w     = px if len(px) < window + 1 else px.iloc[-(window + 1):]
+    log_rets = np.diff(np.log(px_w.values))
+    excess   = log_rets - rfr_daily
+    sd       = excess.std(ddof=1)
+    if sd < 1e-12:
+        return np.nan
+
+    raw_sharpe   = (excess.mean() / sd) * np.sqrt(trading_days)
+    skewness     = stats.skew(excess)
+    excess_kurt  = stats.kurtosis(excess, fisher=True)  # excess kurtosis (kurt - 3)
+
+    adjustment   = (
+        1
+        + (skewness / 6) * raw_sharpe
+        - (excess_kurt / 24) * raw_sharpe ** 2
+    )
+    return raw_sharpe * adjustment
+
+
 def compute_sharpe(prices_df: pd.DataFrame,
                    stock_tickers: list,
                    windows: dict,
@@ -270,6 +323,69 @@ def compute_sharpe(prices_df: pd.DataFrame,
     z_df["SHARPE_3"]  = z_df[["Z_12M", "Z_6M", "Z_3M"]].mean(axis=1)
 
     return sharpe_df, z_df
+
+
+def compute_adjusted_sharpe(prices_df: pd.DataFrame,
+                             stock_tickers: list,
+                             windows: dict,
+                             rfr_daily: float,
+                             trading_days: int = 252):
+    """
+    [DORMANT — not wired into live ranking]
+
+    Compute Pezier-White Adjusted Sharpe ratios and cross-sectional Z-scores.
+
+    Identical call signature and return shape to compute_sharpe(), making it
+    a drop-in replacement.  To activate in Sharpe.py, replace:
+
+        sharpe_df, z_df = ml.compute_sharpe(...)
+
+    with:
+
+        sharpe_df, z_df = ml.compute_adjusted_sharpe(...)
+
+    Parameters
+    ----------
+    Same as compute_sharpe().
+
+    Returns
+    -------
+    adj_sharpe_df : DataFrame  raw Adjusted Sharpe per window (cols = window labels)
+    z_df          : DataFrame  Z_<label> per window + COMPOSITE / SHARPE_3
+
+    Backtest evidence (Apr 2020 – Apr 2026, N500 universe)
+    -------------------------------------------------------
+    Raw Sharpe baseline  →  CAGR 38.3%  /  MDD -16.3%
+    Adjusted Sharpe      →  CAGR 42.2%  /  MDD -20.2%
+    Trade-off: +3.9 pp CAGR at the cost of -3.9 pp extra max drawdown.
+    """
+    print("Computing Adjusted Sharpe ratios (Skew + Kurtosis) ...")
+    adj_data = {}
+    for label, window in windows.items():
+        col = [_adjusted_sharpe_ratio(prices_df.loc[t], window, rfr_daily, trading_days)
+               for t in stock_tickers]
+        valid = sum(1 for v in col if not np.isnan(v))
+        adj_data[label] = col
+        print(f"  {label} ({window}d): {valid}/{len(stock_tickers)} valid")
+
+    adj_sharpe_df = pd.DataFrame(adj_data, index=stock_tickers)
+
+    print("\nZ-scoring Adjusted Sharpe cross-sectionally ...")
+    z_df = pd.DataFrame(index=stock_tickers)
+    for label in windows:
+        z_df[f"Z_{label}"] = _cross_section_z(adj_sharpe_df[label])
+
+    z_label_cols = [f"Z_{l}" for l in windows]
+    z_df[z_label_cols] = z_df[z_label_cols].fillna(0.0)
+
+    core_labels        = [l for l in windows if l != "1M"]
+    z_cols             = [f"Z_{l}" for l in core_labels]
+    z_df["COMPOSITE"]  = z_df[z_cols].mean(axis=1)
+
+    if all(k in windows for k in ["12M", "6M", "3M"]):
+        z_df["SHARPE_3"] = z_df[["Z_12M", "Z_6M", "Z_3M"]].mean(axis=1)
+
+    return adj_sharpe_df, z_df
 
 
 # ── CLENOW ────────────────────────────────────────────────────────────────────
