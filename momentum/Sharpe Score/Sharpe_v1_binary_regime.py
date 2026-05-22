@@ -49,7 +49,7 @@ conditions, and updated with new entries / removals at the end of the run.
 
 Usage:  python Sharpe.py <UNIVERSE> [path/to/ledger.json]
           UNIVERSE examples: N500, N750, NSEAll
-          Derives: <UNIVERSE>_updated.xlsx  ->  <UNIVERSE>_rankings.xlsx
+          Derives: <UNIVERSE>_updated.xlsx  →  <UNIVERSE>_rankings.xlsx
                    <UNIVERSE>_positions_ledger.json (overridden by 2nd arg)
 """
 
@@ -65,7 +65,7 @@ from pathlib import Path
 
 import momentum_lib as ml
 
-# -- CONFIG --------------------------------------------------------------------
+# ── CONFIG ────────────────────────────────────────────────────────────────────
 UNIVERSE          = sys.argv[1] if len(sys.argv) >= 2 else "N500"
 FILE              = f"{UNIVERSE}_updated.xlsx"
 OUTPUT_FILE       = f"{UNIVERSE}_rankings.xlsx"
@@ -74,23 +74,10 @@ LEDGER_FILE       = sys.argv[2] if len(sys.argv) >= 3 else f"{UNIVERSE}_position
 PORTFOLIO_CAPITAL = 1_000_000   # INR — baseline for allocation display
 RFR_ANNUAL        = 0.07
 TRADING_DAYS      = 252
-TOP_N             = 20         # used for Excel sheet label only; actual N is dynamic
-HOLD_RANK_BUFFER  = 40          # exit rank threshold
+TOP_N             = 20
+HOLD_RANK_BUFFER  = 40          # exit rank threshold (rank > this → eligible for exit)
 MIN_HOLD_DAYS     = 28          # calendar days before rank-based exit is permitted
-LIQUID_YIELD_PA   = 0.06        # 6% p.a. on idle cash
-
-# -- DYNAMIC REGIME PARAMETERS -------------------------------------------------
-MIN_N               = 5      # minimum holdings at lowest regime score
-MAX_N               = 25     # maximum holdings at highest regime score
-NEW_ENTRY_THRESHOLD = 0.40   # regime score below this — no new buys
-EMA50_BAND          = 0.10   # ±10% normalisation band around EMA50
-EMA_TREND_BAND      = 0.05   # ±5% normalisation band for EMA50 vs EMA200
-SIGNAL_WEIGHTS      = {      # must sum to 1.0
-    "ema50":     0.35,
-    "ema_trend": 0.25,
-    "breadth":   0.25,
-    "momentum":  0.15,
-}
+LIQUID_YIELD_PA   = 0.06        # 6% p.a. on idle cash (Blueprint spec)
 
 WINDOWS        = {"12M": 252, "9M": 189, "6M": 126, "3M": 63}
 SHARPE_WINDOWS = {"12M": 252, "9M": 189, "6M": 126, "3M": 63}
@@ -99,61 +86,7 @@ rfr_daily = RFR_ANNUAL / TRADING_DAYS
 
 TODAY = datetime.date.today()
 
-# -- POSITION LEDGER -----------------------------------------------------------
-
-
-def compute_regime_score(nifty_s: pd.Series,
-                         eligible_mask: pd.Series,
-                         composite_series: pd.Series) -> tuple:
-    """
-    Compute a continuous Regime Strength Score (0.0 to 1.0) from 4 signals:
-      Signal 1 (35%): EMA50 distance    — how far NIFTY500 is above/below EMA50
-      Signal 2 (25%): EMA trend         — EMA50 vs EMA200 alignment
-      Signal 3 (25%): 52H breadth       — % stocks within -25% of 52-week high
-      Signal 4 (15%): Momentum breadth  — % eligible stocks with COMPOSITE > 1.5
-
-    Returns (regime_score: float, detail: dict)
-    """
-    px = nifty_s.dropna()
-    if len(px) < 200:
-        return 0.5, {"regime_score": 0.5, "dynamic_n": 15, "note": "insufficient data"}
-
-    price  = px.iloc[-1]
-    ema50  = px.ewm(span=50,  adjust=False).mean().iloc[-1]
-    ema200 = px.ewm(span=200, adjust=False).mean().iloc[-1]
-
-    ema50_score     = float(np.clip((price / ema50  - 1.0) / EMA50_BAND      + 0.5, 0.0, 1.0))
-    ema_trend_score = float(np.clip((ema50  / ema200 - 1.0) / EMA_TREND_BAND  + 0.5, 0.0, 1.0))
-
-    total_stocks  = len(eligible_mask)
-    elig_count    = int(eligible_mask.sum())
-    breadth_score = elig_count / total_stocks if total_stocks > 0 else 0.5
-
-    elig_comp     = composite_series[eligible_mask]
-    pos_mom       = int((elig_comp > 1.5).sum())
-    momentum_score = pos_mom / max(1, elig_count)
-
-    regime_score = (
-        ema50_score     * SIGNAL_WEIGHTS["ema50"]     +
-        ema_trend_score * SIGNAL_WEIGHTS["ema_trend"] +
-        breadth_score   * SIGNAL_WEIGHTS["breadth"]   +
-        momentum_score  * SIGNAL_WEIGHTS["momentum"]
-    )
-    dynamic_n = int(MIN_N + regime_score * (MAX_N - MIN_N))
-
-    detail = {
-        "ema50_score":     round(ema50_score, 3),
-        "ema_trend_score": round(ema_trend_score, 3),
-        "breadth_score":   round(breadth_score, 3),
-        "momentum_score":  round(momentum_score, 3),
-        "regime_score":    round(regime_score, 3),
-        "dynamic_n":       dynamic_n,
-        "eligible":        elig_count,
-        "allow_new":       regime_score >= NEW_ENTRY_THRESHOLD,
-    }
-    return regime_score, detail
-
-
+# ── POSITION LEDGER ───────────────────────────────────────────────────────────
 def load_ledger(path: str) -> dict:
     """
     Load the position ledger from JSON.
@@ -191,7 +124,7 @@ def save_ledger(ledger: dict, path: str):
     }
     with open(path, "w") as f:
         json.dump(serialisable, f, indent=2)
-    print(f"  Ledger saved: {len(ledger)} position(s) -> '{path}'")
+    print(f"  Ledger saved: {len(ledger)} position(s) → '{path}'")
 
 
 def days_held(ticker: str, ledger: dict) -> int:
@@ -201,7 +134,7 @@ def days_held(ticker: str, ledger: dict) -> int:
     return (TODAY - ledger[ticker]["entry_date"]).days
 
 
-# -- LOAD PRICES ---------------------------------------------------------------
+# ── LOAD PRICES ───────────────────────────────────────────────────────────────
 print(f"Loading {FILE} ...")
 prices_df, nifty_series, stock_tickers, dates = ml.load_prices(FILE)
 
@@ -211,11 +144,11 @@ print(f"  {len(prices_df)} stocks  |  {len(dates)} date columns  "
       f"({valid_days} actual trading days)  "
       f"|  {dates[0].strftime('%d-%b-%Y')} -> {dates[-1].strftime('%d-%b-%Y')}\n")
 
-# -- LOAD LEDGER ---------------------------------------------------------------
+# ── LOAD LEDGER ───────────────────────────────────────────────────────────────
 print(f"Loading position ledger ...")
 ledger = load_ledger(LEDGER_FILE)
 
-# -- COMPUTE SCORES ------------------------------------------------------------
+# ── COMPUTE SCORES ────────────────────────────────────────────────────────────
 # ACTIVE: Raw Sharpe (production baseline: CAGR 38.3% / MDD -16.3%)
 # DORMANT: Adjusted Sharpe (Skew + Kurtosis penalty: CAGR 42.2% / MDD -20.2%)
 #   To activate, replace the line below with:
@@ -227,7 +160,7 @@ sharpe_df, z_df = ml.compute_sharpe(prices_df, stock_tickers,
 ret_df   = ml.compute_returns(prices_df, stock_tickers)
 pct_52h  = ml.compute_pct_from_52h(prices_df, stock_tickers)
 
-# -- COMBINE -------------------------------------------------------------------
+# ── COMBINE ───────────────────────────────────────────────────────────────────
 result = z_df.join(sharpe_df.rename(columns={l: f"S_{l}" for l in SHARPE_WINDOWS}))
 
 for col in ["COMPOSITE", "SHARPE_3"]:
@@ -239,7 +172,7 @@ result["RANK"] = result["COMPOSITE"].rank(ascending=False, method="first",
 result = result.sort_values("COMPOSITE", ascending=False)
 result = result.join(ret_df)
 
-# -- 52H FILTER + RE-RANK ------------------------------------------------------
+# ── 52H FILTER + RE-RANK ──────────────────────────────────────────────────────
 print("\nComputing 52-week high proximity ...")
 result["PCT_FROM_52H"] = pct_52h
 
@@ -252,29 +185,17 @@ result.loc[eligible, "RANK"] = (
 result = result.sort_values(["RANK", "COMPOSITE"], ascending=[True, False])
 print(f"  {eligible.sum()} / {len(result)} stocks eligible (PCT_FROM_52H >= -25%)")
 
-# -- RESIDUAL MOMENTUM ---------------------------------------------------------
+# ── RESIDUAL MOMENTUM ─────────────────────────────────────────────────────────
 resmom_df, rs_z_df = ml.compute_residual_momentum(prices_df, stock_tickers,
                                                     nifty_series, WINDOWS, TRADING_DAYS)
 result = result.join(resmom_df)
 result = result.join(rs_z_df)
 
-# -- MARKET REGIME (DYNAMIC SCORE) --------------------------------------------
-print("\nComputing Dynamic Regime Score ...")
-eligible = result["PCT_FROM_52H"] >= -25
-regime_score, regime_detail = compute_regime_score(
-    nifty_series, eligible, result["COMPOSITE"])
-dynamic_n  = regime_detail["dynamic_n"]
-allow_new  = regime_detail["allow_new"]
+# ── MARKET REGIME ─────────────────────────────────────────────────────────────
+regime_flag   = ml.compute_market_regime(nifty_series)
+regime_is_buy = regime_flag.startswith("BUY")
 
-print(f"  Regime Score  : {regime_score:.2f}  "
-      f"(EMA50={regime_detail['ema50_score']:.2f}  "
-      f"Trend={regime_detail['ema_trend_score']:.2f}  "
-      f"Breadth={regime_detail['breadth_score']:.2f}  "
-      f"Mom={regime_detail['momentum_score']:.2f})")
-print(f"  Dynamic N     : {dynamic_n}  "
-      f"({'NEW BUYS ALLOWED' if allow_new else 'NO NEW BUYS  (score < ' + str(NEW_ENTRY_THRESHOLD) + ')'}  )")
-
-# -- EXIT EVALUATION -----------------------------------------------------------
+# ── EXIT EVALUATION ───────────────────────────────────────────────────────────
 #
 # Two exit triggers — evaluated independently for every held position.
 #
@@ -287,13 +208,13 @@ print(f"  Dynamic N     : {dynamic_n}  "
 #   AND the stock has been held for at least MIN_HOLD_DAYS (28 days).
 #   The hold lock protects against rank whipsaw for recently bought stocks.
 #
-# DYNAMIC REGIME — new entries gated by regime_score >= NEW_ENTRY_THRESHOLD.
-#   Portfolio size = dynamic_n. Below threshold: exits only, no new buys.
+# NOT BUY regime — no new entries. Existing positions continue to be
+#   evaluated for both exit conditions normally.
 #
-print(f"\n{'-'*60}")
+print(f"\n{'─'*60}")
 print(f"  EXIT EVALUATION  ({TODAY.strftime('%d-%b-%Y')})")
 print(f"  Held positions   : {len(ledger)}")
-print(f"{'-'*60}")
+print(f"{'─'*60}")
 
 exit_52h_list   = []   # immediate exits — 52H breach (lock overridden)
 exit_rank_list  = []   # rank exits — rank > 40 AND hold >= 28 days
@@ -304,7 +225,7 @@ for ticker, rec in ledger.items():
     rank_val   = result.loc[ticker, "RANK"] if ticker in result.index else np.nan
     pct52h_val = result.loc[ticker, "PCT_FROM_52H"] if ticker in result.index else np.nan
 
-    # -- Trigger 1: 52H disqualification (NaN rank means failed the 52H gate)
+    # ── Trigger 1: 52H disqualification (NaN rank means failed the 52H gate)
     if pd.isna(rank_val):
         exit_52h_list.append({
             "ticker":       ticker,
@@ -316,7 +237,7 @@ for ticker, rec in ledger.items():
             "exit_trigger": "52H_BREACH",
         })
 
-    # -- Trigger 2: Rank exit (respects 28-day lock)
+    # ── Trigger 2: Rank exit (respects 28-day lock)
     elif rank_val > HOLD_RANK_BUFFER:
         if held_days >= MIN_HOLD_DAYS:
             exit_rank_list.append({
@@ -348,13 +269,13 @@ for ticker, rec in ledger.items():
             "note":      "HOLD",
         })
 
-# -- PRINT EXIT SUMMARY --------------------------------------------------------
+# ── PRINT EXIT SUMMARY ────────────────────────────────────────────────────────
 all_exits = exit_52h_list + exit_rank_list
 
 if exit_52h_list:
     print(f"\n  [EXIT — 52H BREACH]  Sell immediately. Hold lock overridden.")
     print(f"  {'TICKER':<14} {'HELD':>5}  {'RANK':>6}  {'52H%':>7}  {'ENTRY':>10}  {'@ PRICE':>10}")
-    print(f"  {'-'*62}")
+    print(f"  {'─'*62}")
     for e in exit_52h_list:
         print(f"  {e['ticker']:<14} {e['held_days']:>4}d  "
               f"  {'NaN':>6}  {str(e['pct_52h']):>7}  "
@@ -363,7 +284,7 @@ if exit_52h_list:
 if exit_rank_list:
     print(f"\n  [EXIT — RANK DROP]  Rank > {HOLD_RANK_BUFFER} and hold >= {MIN_HOLD_DAYS} days.")
     print(f"  {'TICKER':<14} {'HELD':>5}  {'RANK':>6}  {'52H%':>7}  {'ENTRY':>10}  {'@ PRICE':>10}")
-    print(f"  {'-'*62}")
+    print(f"  {'─'*62}")
     for e in exit_rank_list:
         print(f"  {e['ticker']:<14} {e['held_days']:>4}d  "
               f"  {e['rank']:>6}  {str(e['pct_52h']):>7}  "
@@ -372,7 +293,7 @@ if exit_rank_list:
 if hold_list:
     print(f"\n  [HOLD]  {len(hold_list)} position(s) retained.")
     print(f"  {'TICKER':<14} {'HELD':>5}  {'RANK':>6}  {'52H%':>7}  NOTE")
-    print(f"  {'-'*62}")
+    print(f"  {'─'*62}")
     for h in hold_list:
         print(f"  {h['ticker']:<14} {h['held_days']:>4}d  "
               f"  {str(h['rank']):>6}  {str(h['pct_52h']):>7}  {h['note']}")
@@ -382,35 +303,35 @@ if not ledger:
 
 print(f"\n  Summary: {len(exit_52h_list)} 52H exit(s)  |  "
       f"{len(exit_rank_list)} rank exit(s)  |  {len(hold_list)} hold(s)")
-print(f"{'-'*60}")
+print(f"{'─'*60}")
 
-# -- ENTRY CANDIDATES ----------------------------------------------------------
+# ── ENTRY CANDIDATES ──────────────────────────────────────────────────────────
 #
-# New entries this week:
-#   - Top dynamic_n stocks by SHARPE_ALL (not already held)
-#   - Only when regime_score >= NEW_ENTRY_THRESHOLD
+# Stocks eligible for new entry this week:
+#   - In Top 20 by SHARPE_ALL
+#   - Not already in the ledger (already held)
+#   - Regime must be BUY (no new entries in NOT BUY)
 #
 currently_held  = set(ledger.keys()) - {e["ticker"] for e in all_exits}
-top_n_tickers   = result.head(dynamic_n).index.tolist()
+top_n_tickers   = result.head(TOP_N).index.tolist()
 
-if allow_new:
+if regime_is_buy:
     entry_candidates = [t for t in top_n_tickers if t not in currently_held]
     if entry_candidates:
-        print(f"\n  [NEW ENTRIES — REGIME SCORE {regime_score:.2f}]  {len(entry_candidates)} candidate(s) "
-              f"(Top {dynamic_n} slots):")
+        print(f"\n  [NEW ENTRIES — BUY REGIME]  {len(entry_candidates)} candidate(s):")
         for t in entry_candidates:
             px = prices_df.loc[t].dropna()
             last_px = px.iloc[-1] if len(px) > 0 else np.nan
             print(f"    {t:<14}  rank {int(result.loc[t,'RANK']):>3}  "
                   f"last price: {last_px:,.2f}")
     else:
-        print(f"\n  [NEW ENTRIES]  All Top {dynamic_n} positions already held.")
+        print(f"\n  [NEW ENTRIES — BUY REGIME]  All Top {TOP_N} positions already held.")
 else:
     entry_candidates = []
-    print(f"\n  [NEW ENTRIES BLOCKED]  Regime score {regime_score:.2f} < threshold {NEW_ENTRY_THRESHOLD}")
+    print(f"\n  [NEW ENTRIES BLOCKED]  Regime = {regime_flag}")
     print(f"  No new buys this week. Existing positions monitored for exit only.")
 
-# -- UPDATE LEDGER -------------------------------------------------------------
+# ── UPDATE LEDGER ─────────────────────────────────────────────────────────────
 #
 # Remove exits from ledger, add new entries with today's price.
 # The caller is responsible for confirming execution before saving —
@@ -429,7 +350,7 @@ for ticker in entry_candidates:
 
 save_ledger(ledger, LEDGER_FILE)
 
-# -- CAPITAL ALLOCATION (VOLATILITY WEIGHTING) ---------------------------------
+# ── CAPITAL ALLOCATION (VOLATILITY WEIGHTING) ─────────────────────────────────
 print("\nCalculating Dynamic Volatility Weights for Top N Portfolio ...")
 
 result["TARGET_WT"] = np.nan
@@ -465,7 +386,7 @@ total_equity_weight = result.head(TOP_N)["TARGET_WT"].sum()
 total_cash_weight   = max(0.0, 1.0 - total_equity_weight)
 total_cash_inr      = total_cash_weight * PORTFOLIO_CAPITAL
 
-# -- CONSOLE OUTPUT ------------------------------------------------------------
+# ── CONSOLE OUTPUT ────────────────────────────────────────────────────────────
 SEP  = "-" * 100
 HEAD = (f"{'RNK':>4}  {'TICKER':<12}  {'STATUS':<10}  {'TARGET_WT':>9}  {'ALLOC_INR':>11}  "
         f"{'SHARPE_ALL':>10}  {'RES_MOM':>9}  {'SHARPE_3':>9}  {'52H%':>8}")
@@ -483,18 +404,14 @@ def ticker_status(ticker):
     return "WATCH"
 
 print(f"\n{'':=<100}")
-print(f"  {UNIVERSE} MOMENTUM - TOP {dynamic_n} (Dynamic N)  .  Sharpe Z + Sharpe 3W + Residual")
-print(f"  REGIME SCORE   : {regime_score:.2f}  "
-      f"(EMA50={regime_detail['ema50_score']:.2f}  "
-      f"Trend={regime_detail['ema_trend_score']:.2f}  "
-      f"Breadth={regime_detail['breadth_score']:.2f}  "
-      f"Mom={regime_detail['momentum_score']:.2f})  "
-      f"{'| NEW BUYS ALLOWED' if allow_new else '| NEW BUYS BLOCKED'}")
+print(f"  {UNIVERSE} MOMENTUM - TOP {TOP_N}  .  Sharpe Z + Sharpe 3W + Residual")
+print(f"  MARKET REGIME  : {regime_flag}")
+print(f"  Checks         : (1) {UNIVERSE} EMA50 > EMA200  (2) {UNIVERSE} price > EMA50")
 print(f"  Windows        : 12M/9M/6M/3M (Overlapping)  |  RFR={RFR_ANNUAL*100:.1f}%")
-print(f"  Policies       : Weekly | {MIN_HOLD_DAYS}-Day Hold Lock | "
+print(f"  Policies       : Weekly Executions | {MIN_HOLD_DAYS}-Day Min Hold Lock | "
       f"52H% >= -25% | Rank buffer = {HOLD_RANK_BUFFER}")
-print(f"  Capital Model  : {PORTFOLIO_CAPITAL:,.0f} INR | 5% Cap Vol Sizing | "
-      f"Cash yield {LIQUID_YIELD_PA*100:.0f}% p.a. | Entry threshold {NEW_ENTRY_THRESHOLD}")
+print(f"  Capital Model  : {PORTFOLIO_CAPITAL:,.0f} INR Base | 5% Capped Volatility Sizing | "
+      f"Cash yield {LIQUID_YIELD_PA*100:.0f}% p.a.")
 print(f"{'':=<100}")
 
 print(HEAD); print(SEP)
@@ -519,7 +436,7 @@ print(f"\n  SHARPE_ALL = mean(Z_12M..Z_3M)  |  "
       f"SHARPE_3 = mean(Z_12M,Z_6M,Z_3M)  |  "
       f"RES_MOM = residual Sharpe composite (display only)\n")
 
-# -- EXCEL OUTPUT --------------------------------------------------------------
+# ── EXCEL OUTPUT ──────────────────────────────────────────────────────────────
 print(f"Writing {OUTPUT_FILE} ...")
 wb_out = openpyxl.Workbook()
 wb_out.remove(wb_out.active)
@@ -572,21 +489,21 @@ def row_style(ticker):
     if ticker in new_entry_set:  return GREEN_FONT, NEWBY_FILL
     return GOLD_FONT, HOLD_FILL
 
-# -- SHEET 1 — TOP20 -----------------------------------------------------------
+# ── SHEET 1 — TOP20 ───────────────────────────────────────────────────────────
 ws1 = wb_out.create_sheet("TOP20")
 ws1.sheet_view.showGridLines = False
 ws1.freeze_panes = "C3"
 
 ws1.merge_cells("A1:G1")
 tc           = ws1["A1"]
-tc.value     = (f"{UNIVERSE} MOMENTUM  .  Top {dynamic_n} (Dynamic N)  .  "
+tc.value     = (f"{UNIVERSE} MOMENTUM  .  Top {TOP_N} by SHARPE_ALL  .  "
                 f"Filter: PCT_FROM_52H >= -25%  .  RFR={RFR_ANNUAL*100:.1f}%  .  "
                 f"{dates[0].strftime('%d-%b-%Y')} -> {dates[-1].strftime('%d-%b-%Y')}  .  "
-                f"Regime Score: {regime_score:.2f} ({'BUY' if allow_new else 'NO NEW BUYS'})  .  Run: {TODAY.strftime('%d-%b-%Y')}")
+                f"Regime: {regime_flag}  .  Run: {TODAY.strftime('%d-%b-%Y')}")
 tc.font      = Font(name="Calibri",
-                    color="FF2222" if not allow_new else "1A365D",
+                    color="FF2222" if "NOT BUY" in regime_flag else "1A365D",
                     bold=True, size=11)
-tc.fill      = fill("2A0000") if not allow_new else fill("F0F4F8")
+tc.fill      = fill("2A0000") if "NOT BUY" in regime_flag else fill("F0F4F8")
 tc.alignment = Alignment(horizontal="center", vertical="center")
 ws1.row_dimensions[1].height = 22
 
@@ -636,7 +553,7 @@ set_cell(ws1.cell(row=summary_row, column=5), total_cash_inr,  GOLD_FONT, fill("
 for extra_col in range(6, 10):
     set_cell(ws1.cell(row=summary_row, column=extra_col), "-", MUTED_FONT, fill("FFFFFF"), None)
 
-# -- SHEET 2 — EXITS -----------------------------------------------------------
+# ── SHEET 2 — EXITS ───────────────────────────────────────────────────────────
 ws_exit = wb_out.create_sheet("EXITS")
 ws_exit.sheet_view.showGridLines = False
 
@@ -685,7 +602,7 @@ if not all_exits:
     nc.font  = MUTED_FONT
     nc.alignment = Alignment(horizontal="center", vertical="center")
 
-# -- SHEET 3 — CALCS -----------------------------------------------------------
+# ── SHEET 3 — CALCS ───────────────────────────────────────────────────────────
 ws2 = wb_out.create_sheet("CALCS")
 ws2.sheet_view.showGridLines = False
 ws2.freeze_panes = "C3"
@@ -694,11 +611,11 @@ ws2.merge_cells("A1:AD1")
 t2           = ws2["A1"]
 t2.value     = (f"{UNIVERSE}  .  Full Calculations  .  All {len(stock_tickers)} stocks  .  "
                 f"{dates[0].strftime('%d-%b-%Y')} -> {dates[-1].strftime('%d-%b-%Y')}  .  "
-                f"Regime Score: {regime_score:.2f}")
+                f"Regime: {regime_flag}")
 t2.font      = Font(name="Calibri",
-                    color="FF2222" if not allow_new else "1A365D",
+                    color="FF2222" if "NOT BUY" in regime_flag else "1A365D",
                     bold=True, size=11)
-t2.fill      = fill("2A0000") if not allow_new else fill("F0F4F8")
+t2.fill      = fill("2A0000") if "NOT BUY" in regime_flag else fill("F0F4F8")
 t2.alignment = Alignment(horizontal="center", vertical="center")
 ws2.row_dimensions[1].height = 22
 

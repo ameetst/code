@@ -1,0 +1,56 @@
+[
+  {
+    "id": "1779348119596",
+    "date": "2026-05-21",
+    "timestamp": "2026-05-21T12:51:59.596567",
+    "ticker": "GOKEX",
+    "action": "BUY",
+    "quantity": 10,
+    "price": 687.7
+  },
+  {
+    "id": "1779348587268",
+    "date": "2026-05-21",
+    "timestamp": "2026-05-21T12:59:47.268006",
+    "ticker": "GOKEX",
+    "action": "SELL",
+    "quantity": 10,
+    "price": 690.0
+  },
+  {
+    "id": "5b9ba990-f47b-47da-be8b-109e9c739409",
+    "date": "2026-05-21",
+    "timestamp": "2026-05-21T13:16:09.549700",
+    "ticker": "UTLSOLAR",
+    "action": "BUY",
+    "quantity": 10,
+    "price": 274.5
+  },
+  {
+    "id": "2194aa81-93be-49a9-a9e2-e92f6d819be0",
+    "date": "2026-05-21",
+    "timestamp": "2026-05-21T14:01:45.311256",
+    "ticker": "UTLSOLAR",
+    "action": "SELL",
+    "quantity": 10,
+    "price": 274.5
+  },
+  {
+    "id": "1cc6dc20-cc52-43e9-81b9-fd0e4946f39e",
+    "date": "2026-05-21",
+    "timestamp": "2026-05-21T14:02:42.993925",
+    "ticker": "MTARTECH",
+    "action": "BUY",
+    "quantity": 10,
+    "price": 274.5
+  },
+  {
+    "id": "81f2d7e1-c98d-4c7b-b74b-1c19eb5400c8",
+    "date": "2026-05-21",
+    "timestamp": "2026-05-21T14:02:50.049640",
+    "ticker": "MTARTECH",
+    "action": "SELL",
+    "quantity": 10,
+    "price": 7234.0
+  }
+]

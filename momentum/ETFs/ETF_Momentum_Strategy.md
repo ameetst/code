@@ -23,7 +23,7 @@ SCREEN  -->  SCORE  -->  REGIME  -->  ALLOCATE
 
 ## Step 1 — Screen (Investability Filter)
 
-Each ETF must pass a hard filter before it is eligible for ranking:
+Each ETF must pass this hard filter before it is eligible for ranking:
 
 ### 52-Week High Proximity Filter
 
@@ -42,8 +42,10 @@ FAIL  otherwise  (ETF excluded from investable universe)
 **Rationale:** Removes ETFs in sustained downtrends or bouncing off bottoms. Only ETFs close to
 their structural highs exhibit genuine upward momentum.
 
-> Note: 52-week high and current NAV are both derived dynamically from the historical price grid
+> **This is the sole screen applied before ranking.** No EMA-based investability filter is applied.
+> 52-week high and current NAV are both derived dynamically from the historical price grid
 > in ETF.xlsx — no manual input required.
+> ETFs with missing price data default to PASS (no penalty for insufficient history).
 
 ---
 
@@ -69,8 +71,8 @@ Weighted Sharpe   = 0.5 * Sharpe_6M + 0.5 * Sharpe_3M
 ```
 
 **Data rules:**
-- ETFs with < 3 months of data are excluded entirely
-- ETFs with 3–6 months of data: Sharpe_6M is set to 0 (3M Sharpe contributes fully)
+- ETFs with < 3 months of data are excluded entirely (both Sharpe windows return NaN → WTD_SHARPE = NaN)
+- ETFs with 3–6 months of data: Sharpe_6M is excluded (NaN), and WTD_SHARPE = Sharpe_3M alone (the 6M window gets no weight, it is not zeroed)
 
 ### B. SR2 Blend — Reference Metric (displayed only, not used for allocation)
 
@@ -104,6 +106,8 @@ R² = 1.0 means a perfectly linear trend; R² = 0 means random noise.
 before large caps during Indian market corrections — this makes Nifty 500 a more sensitive
 early-warning indicator than Nifty 50.
 
+> Both EMA50 and EMA100 are **exponential moving averages** (EWM, `adjust=False`) — not simple SMAs.
+
 ### Three-State Tiered Regime
 
 | State | Condition | Active Slots | Portfolio Action |
@@ -118,18 +122,20 @@ EMA100 = 100-day EMA of MONIFTY500
 
 if   EMA50 > EMA100  AND  Price > EMA50   ->  BULL    (5 slots)
 elif Price > EMA100  AND  Price < EMA50   ->  PARTIAL (3 slots)
-elif Price < EMA100  AND  Price < EMA50   ->  BEAR    (0 slots, full cash)
+elif Price <= EMA100                       ->  BEAR    (0 slots, full cash)
 else                                      ->  BEAR    (0 slots, full cash)
 ```
 
-> Regime is evaluated using the **last trading day of the previous month's close**.
+> Regime is evaluated using the **most recent available close** in the loaded price data
+> (last trading day with data — typically the prior day or current day depending on refresh time).
 > No look-ahead bias.
 
 ### PARTIAL Regime — How slots are filled
 
-In PARTIAL, the top 3 from the investable ranked list (sorted by **Weighted Sharpe**, same as BULL)
-are selected. The same sector cap (1 per sector) applies. The remaining 2 slots stay in cash
-earning 2% p.a. All other logic (rebalance, TSL) is identical.
+In PARTIAL, the top 3 from the investable ranked list are selected using the **same
+Weighted Sharpe ordering as BULL** — the top 3 by `RANK_INVESTABLE` (WTD_SHARPE) are kept,
+the bottom 2 slots go to cash. The same sector cap (1 per sector) applies.
+All other logic (rebalance, TSL) is identical.
 
 PARTIAL acts as an **early warning buffer** — it reduces exposure before the EMA50/EMA100
 crossover (BEAR) is confirmed, but without going to full cash prematurely.
@@ -288,24 +294,46 @@ positions via yfinance (appends `.NS` for NSE), and displays a dashboard showing
 
 ## Output Files
 
+### `etf_rankings.xlsx` — 4 sheets
+
+| Sheet | Description |
+|:---|:---|
+| **Rankings** | All ETFs ranked by investable rank first, then universe rank; all scoring metrics |
+| **Rebalance** | Current allocation + BUY/SELL/HOLD diff vs previous month + 12-month history grid |
+| **Allocation** | 5 allocation slots with sector, weight, and detail on why each ETF was selected or skipped |
+| **Regime** | Live regime state: MONIFTY500 price, EMA50, EMA100, active slots |
+
+### Supporting Files
+
 | File | Description |
 |:---|:---|
-| `etf_rankings.xlsx` | Full ranked output with all metrics, regime status, and allocation |
+| `holdings_log.json` | Auto-maintained monthly holdings history (keyed by `YYYY-MM`). Never edit manually. |
 | `backtest_trade_log.csv` | Every buy/sell with entry/exit date, price, P&L, and exit reason |
 | `backtest_equity.csv` | Daily portfolio equity series |
 | `equity_curve.png` | Equity curve chart vs Nifty 500 benchmark |
 
-### Key Output Columns in etf_rankings.xlsx
+### Key Output Columns in etf_rankings.xlsx — Rankings sheet
 
 | Column | Description |
 |:---|:---|
-| `RANK_INVESTABLE` | Rank within screen-pass universe — drives allocation |
+| `RANK_INVESTABLE` | Rank within screen-pass universe — drives allocation; 0 if screened out |
 | `RANK_UNIVERSE` | Rank across all ETFs regardless of screen |
-| `SCREEN_PASS` | True/False — 52-week high proximity filter |
+| `SCREEN_PASS` | True/False — 52-week high proximity filter (sole investability screen) |
 | `WTD_SHARPE` | Primary ranking metric |
-| `SR2_BLEND` | Reference metric (Sharpe x R² blend) |
+| `SR2_BLEND` | Reference metric (Sharpe x R² blend) — displayed only, not used for allocation |
 | `SHARPE_6M` / `SHARPE_3M` | Component Sharpe ratios |
 | `R2_6M` / `R2_3M` | Trend consistency scores |
 | `% From 52Wk High` | Drawdown from 52-week peak |
 | `% From EOM` | Return since prev month-end |
 | `EMA 100` | 100-day EMA of ETF NAV |
+
+### Rebalance Sheet — Change Codes
+
+| Code | Meaning |
+|:---|:---|
+| 🟢 **BUY** | New entry this month |
+| 🔴 **SELL** | Exited this month |
+| 🔵 **ADD** | Weight increased |
+| 🟡 **TRIM** | Weight reduced |
+| ⬜ **HOLD** | No change (rank drift ≥3 flagged in note) |
+| ⬛ **REGIME** | Regime state changed (shown first) |

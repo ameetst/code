@@ -17,11 +17,20 @@ warnings.filterwarnings("ignore")
 FILE         = "n500_bt.xlsx"
 RFR_ANNUAL   = 0.07
 TRADING_DAYS = 252
-TOP_N        = 20
-FRICTION     = 0.002  # 0.20% per trade (0.4% round trip on turnover)
+TOP_N        = 20           # kept for reference; actual N is dynamic
+FRICTION     = 0.002        # 0.20% per trade
 
-SHARPE_WINDOWS = {"12M": 252, "9M": 189, "6M": 126, "3M": 63, "1M": 21}
+SHARPE_WINDOWS = {"12M": 252, "9M": 189, "6M": 126, "3M": 63}
 rfr_daily = RFR_ANNUAL / TRADING_DAYS
+
+# ── DYNAMIC REGIME PARAMETERS ──────────────────────────────────────────
+MIN_N               = 5
+MAX_N               = 25
+NEW_ENTRY_THRESHOLD = 0.40
+EMA50_BAND          = 0.10
+EMA_TREND_BAND      = 0.05
+SIGNAL_WEIGHTS      = {"ema50": 0.35, "ema_trend": 0.25,
+                        "breadth": 0.25, "momentum": 0.15}
 
 # Temporarily swallows stdout from momentum_lib functions
 @contextmanager
@@ -33,6 +42,31 @@ def suppress_stdout():
             yield
         finally:
             sys.stdout = old_stdout
+
+
+def compute_regime_score(nifty_s, eligible_mask, composite_series):
+    """Continuous Regime Strength Score (0.0 to 1.0) from 4 signals."""
+    px = nifty_s.dropna()
+    if len(px) < 200:
+        return 0.5, {"dynamic_n": 15, "allow_new": True}
+    price  = px.iloc[-1]
+    ema50  = px.ewm(span=50,  adjust=False).mean().iloc[-1]
+    ema200 = px.ewm(span=200, adjust=False).mean().iloc[-1]
+    ema50_score     = float(np.clip((price / ema50  - 1.0) / EMA50_BAND     + 0.5, 0.0, 1.0))
+    ema_trend_score = float(np.clip((ema50  / ema200 - 1.0) / EMA_TREND_BAND + 0.5, 0.0, 1.0))
+    total  = len(eligible_mask)
+    elig   = int(eligible_mask.sum())
+    breadth_score  = elig / total if total > 0 else 0.5
+    pos_mom        = int((composite_series[eligible_mask] > 1.5).sum())
+    momentum_score = pos_mom / max(1, elig)
+    score = (
+        ema50_score     * SIGNAL_WEIGHTS["ema50"]     +
+        ema_trend_score * SIGNAL_WEIGHTS["ema_trend"] +
+        breadth_score   * SIGNAL_WEIGHTS["breadth"]   +
+        momentum_score  * SIGNAL_WEIGHTS["momentum"]
+    )
+    dyn_n = int(MIN_N + score * (MAX_N - MIN_N))
+    return score, {"dynamic_n": dyn_n, "allow_new": score >= NEW_ENTRY_THRESHOLD}
 
 print(f"Loading {FILE} for historical simulation ...")
 prices_df, nifty_series, stock_tickers, dates = ml.load_prices(FILE)
@@ -107,39 +141,36 @@ for i in range(len(valid_dates) - 1):
     elig_df["RANK"] = elig_df["COMPOSITE"].rank(ascending=False, method="first", na_option="bottom")
     elig_df = elig_df.sort_values("RANK", ascending=True)
     
+    # 4. ── FILTER AND RANK ──────────────────────────────────────
+    elig_df = result[eligible_mask].copy()
+    elig_df["RANK"] = elig_df["COMPOSITE"].rank(ascending=False, method="first", na_option="bottom")
+    elig_df = elig_df.sort_values("RANK", ascending=True)
     top_candidates = elig_df.index.tolist()
-    
-    # Apply Hysteresis Buffer and Regime constraints
+
+    # 5. ── PORTFOLIO CONSTRUCTION (Dynamic Regime) ──────────────────
     next_portfolio_tickers = []
-    
-    if not is_cash:
-        # Pass 1: Keep existing stocks if they are still OK
-        for ticker, state in current_portfolio.items():
-            entry_date = state['entry_date']
-            days_held = (t_date - entry_date).days
-            if ticker in top_candidates:
-                rank = elig_df.loc[ticker, "RANK"]
-                pct_from_52 = elig_df.loc[ticker, "PCT_FROM_52H"]
-                
-                # Check emergency stop loss (Bypasses hold time lock)
-                if pct_from_52 < -25:
-                    continue # Discard
-                
-                # Check hold period vs Rank
-                if rank <= 40:
-                    next_portfolio_tickers.append(ticker)
-                elif days_held < 28:
-                    next_portfolio_tickers.append(ticker) # Locked in due to 1-month rule
-        
-        # Pass 2: Fill empty slots up to TOP_N, ONLY if in a strong BUY regime
-        if regime.startswith("BUY"):
-            slots_to_fill = TOP_N - len(next_portfolio_tickers)
-            for ticker in top_candidates:
-                if slots_to_fill <= 0:
-                    break
-                if ticker not in next_portfolio_tickers:
-                    next_portfolio_tickers.append(ticker)
-                    slots_to_fill -= 1
+
+    # Pass 1: retain held stocks (exit evaluation always runs)
+    for ticker, state in current_portfolio.items():
+        entry_date  = state['entry_date']
+        days_held   = (t_date - entry_date).days
+        if ticker in top_candidates:
+            rank        = elig_df.loc[ticker, "RANK"]
+            pct_from_52 = elig_df.loc[ticker, "PCT_FROM_52H"]
+            if pct_from_52 < -25:
+                continue  # 52H breach
+            if rank <= 40 or days_held < 28:
+                next_portfolio_tickers.append(ticker)
+
+    # Pass 2: fill new slots up to dynamic_n, gated by regime score
+    if allow_new:
+        slots_to_fill = dynamic_n - len(next_portfolio_tickers)
+        for ticker in top_candidates:
+            if slots_to_fill <= 0:
+                break
+            if ticker not in next_portfolio_tickers:
+                next_portfolio_tickers.append(ticker)
+                slots_to_fill -= 1
                     
     # Calculate Volatility-Adjusted Weights for exactly next_portfolio_tickers
     raw_weights = {}
@@ -225,8 +256,8 @@ for i in range(len(valid_dates) - 1):
     
     # Print status
     sys.stdout.write(f"\r  [{i+1}/{len(valid_dates)-1}] {t_date.strftime('%b %Y')} | "
-                     f"Eq: {equity:6.1f} | NIFTY: {nifty_equity:6.1f} | "
-                     f"Turnover: {turnover*100:3.0f}% | Regime: {regime.split(' ')[0]:<10}")
+                     f"Eq: {equity:12,.0f} | RS: {regime_score:.2f} | N={dynamic_n:2d} | "
+                     f"Held: {len(actual_portfolio):2d}")
     sys.stdout.flush()
     
     # Log loop variables

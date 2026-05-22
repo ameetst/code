@@ -1,14 +1,15 @@
 """
-N750 Excel Updater — fetches historical daily close prices for all date columns
+Excel Updater — fetches historical daily close prices for all date columns
 in the template. CLOSE and 52WK HIGH columns have been removed from the sheet.
 
 Usage:
     pip install yfinance openpyxl pandas
-    python update_n750.py
+    python update_stock_price.py {NSEAll|N750|N500}
 
-Input/Output:  N750.xlsx  (updated in place; a backup is saved first)
+Input/Output:  <universe>.xlsx -> <universe>_updated.xlsx
 """
 
+import argparse
 import datetime
 import time
 import sys
@@ -19,8 +20,6 @@ import yfinance as yf
 import openpyxl
 
 # ── Config ────────────────────────────────────────────────────────────────────
-INPUT_FILE  = "N750.xlsx"
-OUTPUT_FILE = "N750_updated.xlsx"
 BATCH_SIZE  = 50          # tickers per yfinance batch download
 SLEEP_SEC   = 2           # pause between batches (avoid rate-limiting)
 PERIOD      = "1y"        # history period for date columns
@@ -94,9 +93,9 @@ def batch_download(tickers_ns: list[str]) -> pd.DataFrame:
     close.index = close.index.date   # datetime → date
     return close
 
-def main():
-    print(f"Loading template: {INPUT_FILE}")
-    wb, ws, tickers, ticker_rows, date_cols = load_template(INPUT_FILE)
+def main(input_file: str, output_file: str):
+    print(f"Loading template: {input_file}")
+    wb, ws, tickers, ticker_rows, date_cols = load_template(input_file)
 
     total = len(tickers)
     print(f"  {total} tickers | {len(date_cols)} date columns "
@@ -167,8 +166,8 @@ def main():
     errors = [t for t in tickers if not all_close.get(t)]
 
     # ── Save ──────────────────────────────────────────────────────────────────
-    print(f"\nSaving → {OUTPUT_FILE}")
-    wb.save(OUTPUT_FILE)
+    print(f"\nSaving → {output_file}")
+    wb.save(output_file)
     print("Done ✓")
 
     if errors:
@@ -178,7 +177,15 @@ def main():
     else:
         print("All tickers fetched successfully.")
 if __name__ == "__main__":
-    if not Path(INPUT_FILE).exists():
-        print(f"ERROR: {INPUT_FILE} not found. Place it in the same folder as this script.")
+    parser = argparse.ArgumentParser(description="Update stock prices in an Excel template.")
+    parser.add_argument("universe", choices=["NSEAll", "N750", "N500"], help="Universe name (e.g., N750)")
+    args = parser.parse_args()
+
+    input_file = f"{args.universe}.xlsx"
+    output_file = f"{args.universe}_updated.xlsx"
+
+    if not Path(input_file).exists():
+        print(f"ERROR: {input_file} not found. Place it in the same folder as this script.")
         sys.exit(1)
-    main()
+        
+    main(input_file, output_file)
