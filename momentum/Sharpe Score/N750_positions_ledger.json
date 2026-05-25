@@ -1,54 +1,50 @@
 {
-  "STLTECH": {
-    "entry_date": "2026-05-22",
-    "entry_price": 419.8
-  },
   "MTARTECH": {
-    "entry_date": "2026-05-22",
-    "entry_price": 7234.0
-  },
-  "MCX": {
-    "entry_date": "2026-05-22",
-    "entry_price": 3391.0
+    "entry_date": "2026-05-25",
+    "entry_price": 7992.0
   },
   "CUPID": {
-    "entry_date": "2026-05-22",
-    "entry_price": 120.36
-  },
-  "TDPOWERSYS": {
-    "entry_date": "2026-05-22",
-    "entry_price": 1311.3
+    "entry_date": "2026-05-25",
+    "entry_price": 123.1
   },
   "HFCL": {
-    "entry_date": "2026-05-22",
-    "entry_price": 147.89
+    "entry_date": "2026-05-25",
+    "entry_price": 162.15
+  },
+  "BBOX": {
+    "entry_date": "2026-05-25",
+    "entry_price": 978.81
+  },
+  "MCX": {
+    "entry_date": "2026-05-25",
+    "entry_price": 3337.9
+  },
+  "TDPOWERSYS": {
+    "entry_date": "2026-05-25",
+    "entry_price": 1306.43
   },
   "LAURUSLABS": {
-    "entry_date": "2026-05-22",
-    "entry_price": 1323.6
+    "entry_date": "2026-05-25",
+    "entry_price": 1348.0
   },
-  "KIRLOSENG": {
-    "entry_date": "2026-05-22",
-    "entry_price": 1740.2
+  "POWERINDIA": {
+    "entry_date": "2026-05-25",
+    "entry_price": 35305.0
   },
-  "ADANIPOWER": {
-    "entry_date": "2026-05-22",
-    "entry_price": 221.33
-  },
-  "ATHERENERG": {
-    "entry_date": "2026-05-22",
-    "entry_price": 937.4
+  "SANSERA": {
+    "entry_date": "2026-05-25",
+    "entry_price": 2921.89
   },
   "ACUTAAS": {
-    "entry_date": "2026-05-22",
-    "entry_price": 2731.0
+    "entry_date": "2026-05-25",
+    "entry_price": 2911.75
   },
-  "WELCORP": {
-    "entry_date": "2026-05-22",
-    "entry_price": 1309.0
+  "ADANIPOWER": {
+    "entry_date": "2026-05-25",
+    "entry_price": 232.79
   },
-  "ANANDRATHI": {
-    "entry_date": "2026-05-22",
-    "entry_price": 3583.1
+  "NATIONALUM": {
+    "entry_date": "2026-05-25",
+    "entry_price": 402.75
   }
 }

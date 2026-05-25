@@ -1,56 +1,101 @@
 [
   {
-    "id": "1779348119596",
-    "date": "2026-05-21",
-    "timestamp": "2026-05-21T12:51:59.596567",
-    "ticker": "GOKEX",
-    "action": "BUY",
-    "quantity": 10,
-    "price": 687.7
-  },
-  {
-    "id": "1779348587268",
-    "date": "2026-05-21",
-    "timestamp": "2026-05-21T12:59:47.268006",
-    "ticker": "GOKEX",
-    "action": "SELL",
-    "quantity": 10,
-    "price": 690.0
-  },
-  {
-    "id": "5b9ba990-f47b-47da-be8b-109e9c739409",
-    "date": "2026-05-21",
-    "timestamp": "2026-05-21T13:16:09.549700",
-    "ticker": "UTLSOLAR",
-    "action": "BUY",
-    "quantity": 10,
-    "price": 274.5
-  },
-  {
-    "id": "2194aa81-93be-49a9-a9e2-e92f6d819be0",
-    "date": "2026-05-21",
-    "timestamp": "2026-05-21T14:01:45.311256",
-    "ticker": "UTLSOLAR",
-    "action": "SELL",
-    "quantity": 10,
-    "price": 274.5
-  },
-  {
-    "id": "1cc6dc20-cc52-43e9-81b9-fd0e4946f39e",
-    "date": "2026-05-21",
-    "timestamp": "2026-05-21T14:02:42.993925",
+    "id": "7013099e-3fd1-466a-8ced-dfb0a53957f7",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:26:18.548259",
     "ticker": "MTARTECH",
     "action": "BUY",
-    "quantity": 10,
-    "price": 274.5
+    "quantity": 6,
+    "price": 7992.0
   },
   {
-    "id": "81f2d7e1-c98d-4c7b-b74b-1c19eb5400c8",
-    "date": "2026-05-21",
-    "timestamp": "2026-05-21T14:02:50.049640",
-    "ticker": "MTARTECH",
-    "action": "SELL",
-    "quantity": 10,
-    "price": 7234.0
+    "id": "7113882c-1394-4172-a4ae-54288d867b1c",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:26:39.203958",
+    "ticker": "CUPID",
+    "action": "BUY",
+    "quantity": 406,
+    "price": 123.1
+  },
+  {
+    "id": "c09efd89-d63d-412d-bab0-a959df69c689",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:26:53.274718",
+    "ticker": "HFCL",
+    "action": "BUY",
+    "quantity": 308,
+    "price": 162.15
+  },
+  {
+    "id": "02eda000-f940-44e2-8474-e68fce613fd8",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:27:10.987955",
+    "ticker": "BBOX",
+    "action": "BUY",
+    "quantity": 51,
+    "price": 978.81
+  },
+  {
+    "id": "d1fe9b3c-16de-4c8c-b773-654caf5f9e0c",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:27:49.042893",
+    "ticker": "MCX",
+    "action": "BUY",
+    "quantity": 14,
+    "price": 3337.9
+  },
+  {
+    "id": "0ba0eac3-2e70-4016-a906-c21dc50caec3",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:28:16.115920",
+    "ticker": "TDPOWERSYS",
+    "action": "BUY",
+    "quantity": 38,
+    "price": 1306.43
+  },
+  {
+    "id": "a00dc9ad-2b3c-4368-9102-80cdccda281a",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:28:43.476345",
+    "ticker": "LAURUSLABS",
+    "action": "BUY",
+    "quantity": 37,
+    "price": 1348.0
+  },
+  {
+    "id": "10213e9a-7717-4611-a80e-d78ce939943a",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:29:04.213268",
+    "ticker": "POWERINDIA",
+    "action": "BUY",
+    "quantity": 1,
+    "price": 35305.0
+  },
+  {
+    "id": "fe65a2c5-0c65-4d93-8825-30eddaf8d338",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:33:12.459316",
+    "ticker": "SANSERA",
+    "action": "BUY",
+    "quantity": 17,
+    "price": 2921.89
+  },
+  {
+    "id": "6e74ad76-c018-446c-b0ac-43d21b36d738",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:33:32.224629",
+    "ticker": "ACUTAAS",
+    "action": "BUY",
+    "quantity": 17,
+    "price": 2911.75
+  },
+  {
+    "id": "7bb40421-f420-421f-9168-47a265bb6216",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:33:50.496879",
+    "ticker": "ADANIPOWER",
+    "action": "BUY",
+    "quantity": 214,
+    "price": 232.79
   }
 ]

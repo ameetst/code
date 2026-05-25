@@ -445,10 +445,35 @@ with c1:
         f"<span class='{badge_cls}' style='font-size:17px;'>"
         f"{emoji} Score: {regime_score:.2f}</span></div>",
         unsafe_allow_html=True)
-with c2: st.metric("Dynamic N", f"{dynamic_n} stocks")
-with c3: st.metric("Entry Gate", entry_label)
-with c4: st.metric("Eligible (52H)", f"{(result['PCT_FROM_52H'] >= -25).sum()}")
-with c5: st.metric("Data Range", f"{dates[0].strftime('%d-%b-%y')} to {dates[-1].strftime('%d-%b-%y')}")
+with c2:
+    st.markdown(
+        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
+        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Dynamic N</p>"
+        f"<p style='font-size:20px; font-weight:700; margin:0;'>{dynamic_n} stocks</p>"
+        f"</div>",
+        unsafe_allow_html=True)
+with c3:
+    st.markdown(
+        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
+        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Entry Gate</p>"
+        f"<p style='font-size:20px; font-weight:700; margin:0;'>{entry_label}</p>"
+        f"</div>",
+        unsafe_allow_html=True)
+with c4:
+    eligible_count = (result['PCT_FROM_52H'] >= -25).sum()
+    st.markdown(
+        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
+        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Eligible (52H)</p>"
+        f"<p style='font-size:20px; font-weight:700; margin:0;'>{eligible_count}</p>"
+        f"</div>",
+        unsafe_allow_html=True)
+with c5:
+    st.markdown(
+        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
+        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Data Range</p>"
+        f"<p style='font-size:20px; font-weight:700; margin:0;'>{dates[0].strftime('%d-%b-%y')} to {dates[-1].strftime('%d-%b-%y')}</p>"
+        f"</div>",
+        unsafe_allow_html=True)
 
 # Signal breakdown
 with st.expander("📡 Regime Score Breakdown", expanded=False):
@@ -490,12 +515,17 @@ with tab_top:
         else:
             status = "⚪ WATCH"
 
+        ltp = latest_prices.get(ticker, 0.0)
+        units = int(alloc // ltp) if ltp > 0 else 0
+
         rows.append({
             "Rank":       int(row["RANK"]) if pd.notna(row["RANK"]) else None,
             "Ticker":     ticker,
             "Status":     status,
             "Weight":     wt,
             "Alloc (Rs)": round(alloc),
+            "LTP":        round(ltp, 2) if ltp > 0 else None,
+            "Units":      units if units > 0 else None,
             "SHARPE_ALL": round(row["COMPOSITE"], 3) if pd.notna(row["COMPOSITE"]) else None,
             "RES_MOM":    round(row["RES_MOM"], 3)   if pd.notna(row.get("RES_MOM")) else None,
             "SHARPE_3":   round(row["SHARPE_3"], 3)  if pd.notna(row.get("SHARPE_3")) else None,
@@ -505,6 +535,7 @@ with tab_top:
     rows.append({
         "Rank": None, "Ticker": "CASH (LIQUID)", "Status": "—",
         "Weight": cash_wt, "Alloc (Rs)": round(cash_wt * capital),
+        "LTP": None, "Units": None,
         "SHARPE_ALL": None, "RES_MOM": None, "SHARPE_3": None, "52H%": None,
     })
 
@@ -521,7 +552,8 @@ with tab_top:
 
     st.dataframe(
         top_df.style.apply(style_top, axis=1).format(
-            {"Weight": "{:.1%}", "Alloc (Rs)": "Rs{:,.0f}",
+            {"Rank": "{:.0f}", "Weight": "{:.1%}", "Alloc (Rs)": "Rs{:,.0f}",
+             "LTP": "Rs{:,.2f}", "Units": "{:.0f}",
              "SHARPE_ALL": "{:.3f}", "RES_MOM": "{:.3f}",
              "SHARPE_3": "{:.3f}", "52H%": "{:.1f}"}, na_rep="—"),
         use_container_width=True, hide_index=True, height=min(780, (dynamic_n + 3) * 36))
@@ -581,7 +613,8 @@ with tab_exits:
             if "Locked"  in str(row["Action"]):          return ["background-color:#FFF8E1;"] * len(row)
             return ["background-color:#E8F5E9;"] * len(row)
 
-        st.dataframe(exit_df.style.apply(style_exits, axis=1),
+        st.dataframe(exit_df.style.apply(style_exits, axis=1).format(
+                         {"Rank": "{:.0f}"}, na_rep="—"),
                      use_container_width=True, hide_index=True)
 
         st.markdown(
@@ -767,7 +800,6 @@ with tab_tradelog:
         display_tx = []
         for tx in reversed(tradelog):
             display_tx.append({
-                "ID": tx["id"],
                 "Date": tx["date"],
                 "Ticker": tx["ticker"],
                 "Action": tx["action"],
