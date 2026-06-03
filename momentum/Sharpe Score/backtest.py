@@ -45,7 +45,7 @@ def suppress_stdout():
 
 
 def compute_regime_score(nifty_s, eligible_mask, composite_series):
-    """Continuous Regime Strength Score (0.0 to 1.0) from 4 signals."""
+    """Continuous Regime Strength Score (0.0 to 1.0) from 4 signals + Vol Penalty."""
     px = nifty_s.dropna()
     if len(px) < 200:
         return 0.5, {"dynamic_n": 15, "allow_new": True}
@@ -59,12 +59,30 @@ def compute_regime_score(nifty_s, eligible_mask, composite_series):
     breadth_score  = elig / total if total > 0 else 0.5
     pos_mom        = int((composite_series[eligible_mask] > 1.5).sum())
     momentum_score = pos_mom / max(1, elig)
-    score = (
+    
+    raw_score = (
         ema50_score     * SIGNAL_WEIGHTS["ema50"]     +
         ema_trend_score * SIGNAL_WEIGHTS["ema_trend"] +
         breadth_score   * SIGNAL_WEIGHTS["breadth"]   +
         momentum_score  * SIGNAL_WEIGHTS["momentum"]
     )
+
+    # NEW: Volatility Panic Brake
+    # Calculate 20-day annualized realized volatility of the NIFTY500
+    if len(px) >= 21:
+        px_20 = px.iloc[-21:]
+        log_rets = np.diff(np.log(px_20.values))
+        ann_vol = np.std(log_rets, ddof=1) * np.sqrt(252)
+        
+        # Linear penalty: 0 at 15% vol, scales up to max 0.50 penalty at 25% vol
+        if ann_vol > 0.15:
+            vol_penalty = min(0.50, (ann_vol - 0.15) * (0.50 / 0.10))
+        else:
+            vol_penalty = 0.0
+    else:
+        vol_penalty = 0.0
+
+    score = max(0.0, raw_score - vol_penalty)
     dyn_n = int(MIN_N + score * (MAX_N - MIN_N))
     return score, {"dynamic_n": dyn_n, "allow_new": score >= NEW_ENTRY_THRESHOLD}
 
@@ -123,7 +141,6 @@ for i in range(len(valid_dates) - 1):
     with suppress_stdout():
         sharpe_df, z_df = ml.compute_sharpe(sliced_prices, stock_tickers, SHARPE_WINDOWS, rfr_daily, TRADING_DAYS)
         pct_52h = ml.compute_pct_from_52h(sliced_prices, stock_tickers)
-        regime, is_cash = ml.compute_market_regime(sliced_nifty)
         
     result = z_df.copy()
     result["PCT_FROM_52H"] = pct_52h
@@ -146,6 +163,13 @@ for i in range(len(valid_dates) - 1):
     elig_df["RANK"] = elig_df["COMPOSITE"].rank(ascending=False, method="first", na_option="bottom")
     elig_df = elig_df.sort_values("RANK", ascending=True)
     top_candidates = elig_df.index.tolist()
+
+    # Calculate dynamic regime score
+    regime_score, regime_detail = compute_regime_score(sliced_nifty, eligible_mask, result["COMPOSITE"])
+    allow_new = regime_detail["allow_new"]
+    dynamic_n = regime_detail["dynamic_n"]
+    is_cash = not allow_new
+    regime = f"BUY ({regime_score:.2f})" if allow_new else f"CASH ({regime_score:.2f})"
 
     # 5. ── PORTFOLIO CONSTRUCTION (Dynamic Regime) ──────────────────
     next_portfolio_tickers = []

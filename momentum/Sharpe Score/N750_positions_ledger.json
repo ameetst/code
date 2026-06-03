@@ -1,50 +1,58 @@
 {
   "MTARTECH": {
     "entry_date": "2026-05-25",
-    "entry_price": 7992.0
+    "entry_price": 7646.4
   },
   "CUPID": {
     "entry_date": "2026-05-25",
-    "entry_price": 123.1
+    "entry_price": 125.17744755244755
   },
   "HFCL": {
     "entry_date": "2026-05-25",
-    "entry_price": 162.15
+    "entry_price": 167.2765206812652
   },
   "BBOX": {
     "entry_date": "2026-05-25",
-    "entry_price": 978.81
+    "entry_price": 998.35
   },
   "MCX": {
     "entry_date": "2026-05-25",
-    "entry_price": 3337.9
+    "entry_price": 3150.9423076923076
   },
   "TDPOWERSYS": {
     "entry_date": "2026-05-25",
-    "entry_price": 1306.43
+    "entry_price": 1281.5590000000002
   },
   "LAURUSLABS": {
     "entry_date": "2026-05-25",
-    "entry_price": 1348.0
+    "entry_price": 1360.0754716981132
   },
   "POWERINDIA": {
     "entry_date": "2026-05-25",
-    "entry_price": 35305.0
+    "entry_price": 35875.0
   },
   "SANSERA": {
     "entry_date": "2026-05-25",
-    "entry_price": 2921.89
+    "entry_price": 2892.8857692307693
   },
   "ACUTAAS": {
     "entry_date": "2026-05-25",
-    "entry_price": 2911.75
+    "entry_price": 2945.65625
   },
   "ADANIPOWER": {
     "entry_date": "2026-05-25",
-    "entry_price": 232.79
+    "entry_price": 232.55263803680984
   },
   "NATIONALUM": {
     "entry_date": "2026-05-25",
-    "entry_price": 402.75
+    "entry_price": 412.3517341040463
+  },
+  "WELCORP": {
+    "entry_date": "2026-06-01",
+    "entry_price": 1372.03
+  },
+  "CPPLUS": {
+    "entry_date": "2026-06-01",
+    "entry_price": 3094.0
   }
 }

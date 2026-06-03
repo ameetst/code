@@ -1,233 +1,293 @@
+import streamlit as st
+import yfinance as yf
 import pandas as pd
 import numpy as np
-from scipy.stats import linregress
+import datetime
+import warnings
+import os
 
-def calculate_indicators(df, index_closes=None):
-    """
-    Calculates technical indicators for a single stock's dataframe.
-    df should have 'Close', 'High', 'Low', 'Volume'.
-    index_closes: optional pd.Series of Nifty 500 closes aligned to trading dates,
-                  used to compute 3M relative strength vs the index.
-    """
-    if len(df) < 200:
-        return None  # Not enough data
+# Suppress yfinance warnings about failed downloads
+warnings.filterwarnings('ignore')
 
-    df = df.copy()
+TRADE_LOG_FILE = "trade_log.csv"
 
-    # EMAs
-    df['50EMA'] = df['Close'].ewm(span=50, adjust=False).mean()
-    df['200EMA'] = df['Close'].ewm(span=200, adjust=False).mean()
-
-    # 52-Week High (approx 252 trading days)
-    df['52W_High'] = df['High'].rolling(window=252, min_periods=100).max()
-    # P/52H: ratio of current Close to 52W High. 1.0 = at the high, 0.85 = 15% below.
-    df['P/52H'] = df['Close'] / df['52W_High']
-
-    # 6M HIGH — uses the lagged high to stay consistent with 6M BO calculation
-    df['6M_High'] = df['High'].shift(5).rolling(window=126, min_periods=80).max()
-
-    # Breakouts: 90 and 180 calendar days, lagged by 7 days.
-    # Since yfinance gives us trading days, 90 calendar days is ~63 trading days.
-    # 7 days lag is ~5 trading days.
-
-    # High over the past 63 trading days (lagged by 5 days)
-    df['3M_High_Lagged'] = df['High'].shift(5).rolling(window=63, min_periods=40).max()
-    # High over the past 126 trading days (lagged by 5 days)
-    df['6M_High_Lagged'] = df['High'].shift(5).rolling(window=126, min_periods=80).max()
-
-    # 1M breakout (21 trading days, lagged by 5 days)
-    df['1M_High_Lagged'] = df['High'].shift(5).rolling(window=21, min_periods=15).max()
-
-    # Calculate BO: >0 means current Close is higher than the historical high
-    df['3M BO'] = (df['Close'] - df['3M_High_Lagged']) / df['3M_High_Lagged']
-    df['6M BO'] = (df['Close'] - df['6M_High_Lagged']) / df['6M_High_Lagged']
-    df['1M BO'] = (df['Close'] - df['1M_High_Lagged']) / df['1M_High_Lagged']
-
-    # Risk/Reward ratios
-    # 3M R/R: ratio of upside potential (distance to 3M high) vs downside (distance below)
-    df['3M_Low_Lagged'] = df['Low'].shift(5).rolling(window=63, min_periods=40).min()
-    df['6M_Low_Lagged'] = df['Low'].shift(5).rolling(window=126, min_periods=80).min()
-    df['3M R/R'] = (df['3M_High_Lagged'] - df['Close']) / (df['Close'] - df['3M_Low_Lagged']).replace(0, np.nan)
-    df['6M R/R'] = (df['6M_High_Lagged'] - df['Close']) / (df['Close'] - df['6M_Low_Lagged']).replace(0, np.nan)
-
-    # Volumes: Median volume over 1M (~21 days) and Prior 3M (~63 days, shifted by 21)
-    df['1M_MED_VOL'] = df['Volume'].rolling(window=21).median()
-    df['Prior_3M_MED_VOL'] = df['Volume'].shift(21).rolling(window=63).median()
-    df['V_RANK'] = df['1M_MED_VOL'] / df['Prior_3M_MED_VOL']
-
-    # INR_VOL: median daily traded value in INR over last 21 days (shares × close price)
-    # Used for liquidity filtering. 1 Cr = 10_000_000 INR.
-    df['Daily_INR_Vol'] = df['Volume'] * df['Close']
-    df['INR_VOL'] = df['Daily_INR_Vol'].rolling(window=21).median()
-
-    # RS_3M: 3-month relative strength vs Nifty 500.
-    # = (stock 3M return) - (index 3M return), expressed as a decimal.
-    # Positive = outperforming the index over 3 months.
-    if index_closes is not None:
-        try:
-            # Align index to stock dates
-            idx_aligned = index_closes.reindex(df.index, method='ffill')
-            stock_ret_3m = df['Close'] / df['Close'].shift(63) - 1
-            index_ret_3m = idx_aligned / idx_aligned.shift(63) - 1
-            df['RS_3M'] = stock_ret_3m - index_ret_3m
-        except Exception:
-            df['RS_3M'] = np.nan
+def load_trade_log():
+    if os.path.exists(TRADE_LOG_FILE):
+        return pd.read_csv(TRADE_LOG_FILE)
     else:
-        df['RS_3M'] = np.nan
+        return pd.DataFrame(columns=["Ticker", "Entry Price", "Quantity", "Buy Date"])
 
-    # LOSS = 10% of current price (i.e. the stop loss amount)
-    df['LOSS'] = df['Close'] * 0.10
+def save_trade_log(df):
+    df.to_csv(TRADE_LOG_FILE, index=False)
 
-    return df
-
-
-def get_latest_r_squared(series):
-    """Calculates the R-squared of a linear regression on the given series."""
-    if len(series) < 2:
-        return 0.0
-    x = np.arange(len(series))
-    y = series.values
-    # Filter out NaN
-    mask = ~np.isnan(y)
-    if mask.sum() < 2:
-        return 0.0
-    slope, intercept, r_value, p_value, std_err = linregress(x[mask], y[mask])
-    return r_value ** 2
-
-
-def check_regime(index_data):
-    """Check the market regime: Nifty 500 Close vs 50EMA."""
+def get_tickers_from_csv(file_path="tickers.csv"):
+    """Reads tickers from a CSV file and appends .NS for Yahoo Finance India."""
     try:
-        if isinstance(index_data.columns, pd.MultiIndex):
-            close_series = index_data['Close'].iloc[:, 0]
+        df = pd.read_csv(file_path)
+        if 'TICKER' in df.columns:
+            tickers = df['TICKER'].dropna().astype(str).tolist()
+            return [f"{t.strip()}.NS" for t in tickers if t.strip()]
         else:
-            close_series = index_data['Close']
-
-        ema_series = close_series.ewm(span=50, adjust=False).mean()
-
-        nifty_close = float(close_series.iloc[-1])
-        nifty_ema = float(ema_series.iloc[-1])
-        regime_bullish = nifty_close > nifty_ema
-
-        return regime_bullish, nifty_close, nifty_ema
+            st.error(f"Error: 'TICKER' column not found in {file_path}")
+            return []
     except Exception as e:
-        print(f"Error checking market regime: {e}")
-        return True, 0.0, 0.0
+        st.error(f"Error reading {file_path}: {e}")
+        return []
 
-
-def build_universe_table(market_data, index_data=None):
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_data(tickers, start_date, end_date):
     """
-    Builds a full indicator table for all stocks in the universe,
-    matching the column layout of the Excel 'DATA' sheet.
-
-    index_data: optional index DataFrame (Nifty 500) used to compute RS_3M.
-    Returns a DataFrame with one row per stock.
+    Fetches data using yfinance. 
+    Decorated with st.cache_data so tweaking the slider doesn't trigger a re-download!
+    Caches the result for 1 hour (3600 seconds).
     """
-    all_stocks = []
+    return yf.download(tickers, start=start_date, end=end_date, group_by='ticker', threads=True, progress=False)
 
-    # Extract index close series once for RS calculation
-    index_closes = None
-    if index_data is not None:
+def check_daily_signals(tickers, threshold):
+    """Evaluates the EMA crossover signal and 52-week high filter."""
+    if not tickers:
+        st.warning("No tickers to process.")
+        return []
+
+    # Calculate date range (need 1 year of history for the 52-week high)
+    end_date = datetime.date.today()
+    start_date = end_date - datetime.timedelta(days=365) 
+
+    with st.spinner(f"Downloading 1-year data for {len(tickers)} tickers... This might take 20-30 seconds."):
+        data = fetch_data(tickers, start_date, end_date)
+    
+    actionable_signals = []
+
+    progress_text = "Processing signals & calculating 52-week highs..."
+    my_bar = st.progress(0, text=progress_text)
+    
+    for idx, ticker in enumerate(tickers):
+        # Update progress bar every 20 tickers
+        if idx % 20 == 0:
+            my_bar.progress(idx / len(tickers), text=progress_text)
+            
         try:
-            if isinstance(index_data.columns, pd.MultiIndex):
-                index_closes = index_data['Close'].iloc[:, 0]
+            if len(tickers) == 1:
+                df = data.copy()
             else:
-                index_closes = index_data['Close']
-        except Exception:
-            index_closes = None
-
-    # Get ticker list
-    if isinstance(market_data.columns, pd.MultiIndex):
-        tickers = market_data.columns.get_level_values(0).unique().tolist()
-    else:
-        tickers = [market_data.columns.name] if market_data.columns.name else []
-
-    for ticker in tickers:
-        try:
-            if isinstance(market_data.columns, pd.MultiIndex):
-                df = market_data[ticker].dropna(subset=['Close'])
-            else:
-                df = market_data.dropna(subset=['Close'])
-
-            if len(df) < 200:
+                if ticker not in data.columns.levels[0]:
+                    continue
+                df = data[ticker].copy()
+                
+            df.dropna(subset=['Close', 'High'], inplace=True)
+            
+            # Need at least 200 days of data to calculate the 200 EMA
+            if df.empty or len(df) < 200:
                 continue
 
-            df = calculate_indicators(df, index_closes=index_closes)
-            if df is None:
-                continue
+            # Calculate the EMAs
+            df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
+            df['EMA_63'] = df['Close'].ewm(span=63, adjust=False).mean()
+            df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
 
-            latest = df.iloc[-1]
-            # R-Squared on last 63 trading days (~3 months)
-            r2 = get_latest_r_squared(df['Close'].tail(63))
+            # Calculate 52-Week High (max high over the past 365 calendar days)
+            high_52w = df['High'].max()
+            
+            # Check if 52-week high occurred in the last 63 trading days
+            high_52w_in_last_63d = (high_52w == df['High'].tail(63).max())
+            
+            # Calculate 63-day Momentum
+            df['Momentum_63'] = df['Close'] / df['Close'].shift(63) - 1
 
-            # 6M R/R: filter out negative values (meaningless — price below range low)
-            rr6m = latest.get('6M R/R', np.nan)
-            if pd.notna(rr6m) and rr6m < 0:
-                rr6m = np.nan
+            # Generate Trading Signals
+            df['Signal'] = 0
+            df.loc[df['EMA_21'] > df['EMA_63'], 'Signal'] = 1
+            df['Position'] = df['Signal'].diff()
 
-            all_stocks.append({
-                'Symbol':     ticker.replace('.NS', ''),
-                'Price':      latest['Close'],
-                'P/52H':      latest['P/52H'],
-                '50EMA':      latest['50EMA'],
-                '200EMA':     latest['200EMA'],
-                '3M BO':      latest['3M BO'],
-                '6M BO':      latest['6M BO'],
-                'VCHK':       latest['V_RANK'],
-                '3M R/R':     latest.get('3M R/R', np.nan),
-                '6M R/R':     rr6m,
-                '6M HIGH':    latest.get('6M_High_Lagged', np.nan),
-                'LOSS':       latest['LOSS'],
-                'R-Squared':  r2,
-                'RS_3M':      latest.get('RS_3M', np.nan),
-                'INR_VOL':    latest.get('INR_VOL', np.nan),
-            })
-        except Exception:
-            pass
+            # Isolate today's data
+            latest_data = df.iloc[-1]
+            latest_position = latest_data['Position']
+            latest_close = latest_data['Close']
+            latest_ema_200 = latest_data['EMA_200']
+            latest_momentum_63 = latest_data['Momentum_63']
+            
+            # Calculate P/52H
+            p_52h = latest_close / high_52w if high_52w > 0 else 0
+            
+            # Record if a new Buy signal was triggered, it meets our 52W High threshold, AND price > 200 EMA AND Momentum > 0 AND 52W high in last 63 days
+            if (latest_position == 1 and 
+                p_52h >= threshold and 
+                latest_close > latest_ema_200 and 
+                latest_momentum_63 > 0 and 
+                high_52w_in_last_63d):
+                signal_type = 'BUY'
+                actionable_signals.append({
+                    'Ticker': ticker.replace('.NS', ''), 
+                    'Signal': signal_type, 
+                    'Close Price': round(latest_close, 2),
+                    '52W High': round(high_52w, 2),
+                    'P/52H': round(p_52h, 3)
+                })
+                
+        except Exception as e:
+            continue
+            
+    my_bar.empty() # Clear progress bar when done
+    return actionable_signals
 
-    return pd.DataFrame(all_stocks)
+def main():
+    st.set_page_config(page_title="Daily Market Screener & Trade Log", layout="wide")
+    
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.title("📈 EMA Crossover System")
+        st.markdown("This screener finds stocks with a **21/63 EMA Crossover** today, filtered by their proximity to the **52-week high**.")
+    with col2:
+        st.write("")
+        st.write("")
+        run_screener_btn = st.button("Run Screener", type="primary", use_container_width=True)
+    
+    tab1, tab2, tab3 = st.tabs(["Actionable Signals (Screener)", "Open Trade Log", "Configuration"])
+    
+    # --- CONFIGURATION TAB ---
+    with tab3:
+        st.header("Screener Configuration")
+        threshold = st.slider(
+            "Min P/52W High Ratio", 
+            min_value=0.50, 
+            max_value=1.00, 
+            value=0.75, 
+            step=0.01,
+            help="Only show stocks where (Current Price / 52 Week High) is greater than this value. 0.75 means within 25% of the high."
+        )
+    
+    # --- SCREENER TAB ---
+    with tab1:
+        if run_screener_btn:
+            tickers_list = get_tickers_from_csv(file_path="tickers.csv")
+            if tickers_list:
+                signals = check_daily_signals(tickers_list, threshold)
+                
+                st.subheader(f"Actionable Signals Today (P/52H >= {threshold:.2f})")
+                if signals:
+                    results_df = pd.DataFrame(signals)
+                    results_df = results_df.sort_values(by='P/52H', ascending=False).reset_index(drop=True)
+                    results_df = results_df.astype(str)
+                    
+                    st.dataframe(results_df, use_container_width=True, hide_index=True)
+                    st.success(f"Found {len(signals)} actionable BUY signals matching your criteria!")
+                else:
+                    st.info("No new BUY signals generated today that meet the filter criteria.")
+        else:
+            st.info("Click 'Run Screener' at the top to generate today's signals.")
+                    
+    # --- TRADE LOG TAB ---
+    with tab2:
+        st.header("Trade Log & Position Monitor")
+        
+        # Load trade log
+        trade_log = load_trade_log()
+        
+        # Add new trade form
+        with st.expander("➕ Add New Trade", expanded=False):
+            with st.form("add_trade_form", clear_on_submit=True):
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    new_ticker = st.text_input("Ticker Symbol (e.g. RELIANCE)")
+                with col2:
+                    new_price = st.number_input("Entry Price (INR)", min_value=0.0, format="%.2f")
+                with col3:
+                    new_qty = st.number_input("Quantity", min_value=1, step=1)
+                with col4:
+                    new_date = st.date_input("Buy Date")
+                    
+                submit_btn = st.form_submit_button("Add to Log")
+                if submit_btn and new_ticker:
+                    ticker_str = new_ticker.upper().strip()
+                    if not ticker_str.endswith(".NS"):
+                        ticker_str += ".NS"
+                        
+                    new_trade = pd.DataFrame({
+                        "Ticker": [ticker_str],
+                        "Entry Price": [new_price],
+                        "Quantity": [new_qty],
+                        "Buy Date": [new_date.strftime("%Y-%m-%d")]
+                    })
+                    trade_log = pd.concat([trade_log, new_trade], ignore_index=True)
+                    save_trade_log(trade_log)
+                    st.success(f"Added {ticker_str} to Trade Log!")
+                    st.rerun()
+                    
+        # Editable Dataframe to allow deletions or manual edits
+        if not trade_log.empty:
+            st.markdown("### Open Positions")
+            
+            # Button to refresh live data
+            if st.button("🔄 Refresh Live Market Data & Check Exit Signals"):
+                with st.spinner("Fetching latest data for open positions..."):
+                    tickers_to_fetch = trade_log["Ticker"].tolist()
+                    end_date = datetime.date.today()
+                    start_date = end_date - datetime.timedelta(days=200) # Need enough for 63 EMA
+                    
+                    live_data = yf.download(tickers_to_fetch, start=start_date, end=end_date, group_by='ticker', threads=True, progress=False)
+                    
+                    status_list = []
+                    
+                    for idx, row in trade_log.iterrows():
+                        t = row["Ticker"]
+                        try:
+                            if len(tickers_to_fetch) == 1:
+                                df = live_data.copy()
+                            else:
+                                df = live_data[t].copy()
+                                
+                            df.dropna(subset=['Close'], inplace=True)
+                            
+                            if df.empty:
+                                status_list.append({"Current Price": 0, "P&L (%)": 0, "21 EMA": 0, "63 EMA": 0, "Status": "No Data"})
+                                continue
+                                
+                            df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
+                            df['EMA_63'] = df['Close'].ewm(span=63, adjust=False).mean()
+                            
+                            latest = df.iloc[-1]
+                            curr_price = latest['Close']
+                            e21 = latest['EMA_21']
+                            e63 = latest['EMA_63']
+                            
+                            pnl_pct = ((curr_price - row['Entry Price']) / row['Entry Price']) * 100
+                            
+                            status = "🟢 HOLD"
+                            if e21 < e63:
+                                status = "🔴 SELL (Trend Broken)"
+                                
+                            status_list.append({
+                                "Current Price": round(curr_price, 2),
+                                "P&L (%)": round(pnl_pct, 2),
+                                "21 EMA": round(e21, 2),
+                                "63 EMA": round(e63, 2),
+                                "Status": status
+                            })
+                        except Exception as e:
+                            status_list.append({"Current Price": 0, "P&L (%)": 0, "21 EMA": 0, "63 EMA": 0, "Status": "Error"})
+                            
+                    # Merge status into display dataframe
+                    display_df = trade_log.copy()
+                    status_df = pd.DataFrame(status_list)
+                    for col in status_df.columns:
+                        display_df[col] = status_df[col]
+                        
+                    # Reorder columns for display
+                    display_df = display_df[['Ticker', 'Buy Date', 'Quantity', 'Entry Price', 'Current Price', 'P&L (%)', '21 EMA', '63 EMA', 'Status']]
+                    display_df = display_df.astype(str)
+                    
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+            
+            st.markdown("*(Use the table below to manually edit cells, or select a row on the far left and press Delete/Backspace to remove a closed trade. Changes save automatically!)*")
+            edited_df = st.data_editor(trade_log, num_rows="dynamic", use_container_width=True)
+            
+            if not edited_df.equals(trade_log):
+                save_trade_log(edited_df)
+                st.success("Trade log updated!")
+                st.rerun()
+                
+        else:
+            st.info("Your trade log is empty. Add a new trade above!")
 
-
-def run_screener(universe_df, r2_threshold=0.6, regime_bullish=True):
-    """
-    Filters the universe table to find stocks meeting all entry criteria.
-    R-Squared is pre-computed in build_universe_table — no second pass needed.
-    Candidates are sorted by RS_3M descending (strongest relative strength first).
-    """
-    if not regime_bullish:
-        return pd.DataFrame()
-
-    if universe_df.empty:
-        return pd.DataFrame()
-
-    df = universe_df.copy()
-
-    # Rule 1: Trend Alignment — Price > 50EMA > 200EMA
-    df = df[(df['Price'] > df['50EMA']) & (df['50EMA'] > df['200EMA']) & (df['200EMA'] > 0)]
-
-    # Rule 2: 3M BO > 0 AND 6M BO < 0
-    df = df[(df['3M BO'] > 0) & (df['6M BO'] < 0)]
-
-    # Rule 3: Proximity — 3M BO < 0.10 (within 10% of breakout level)
-    df = df[df['3M BO'] < 0.10]
-
-    # Rule 4: Volume Confirmation — VCHK > 1.5
-    df = df[df['VCHK'] > 1.5]
-
-    # Rule 5: Liquidity — median daily INR traded volume >= ₹1 Crore (10_000_000)
-    INR_1CR = 10_000_000
-    if 'INR_VOL' in df.columns:
-        df = df[df['INR_VOL'].notna() & (df['INR_VOL'] >= INR_1CR)]
-
-    # Rule 6: R-Squared (smoothness) — pre-computed in build_universe_table
-    if 'R-Squared' in df.columns:
-        df = df[df['R-Squared'].notna() & (df['R-Squared'] > r2_threshold)]
-
-    # Sort by RS_3M descending — strongest relative performers vs Nifty 500 ranked first.
-    # Falls back to P/52H if RS_3M is unavailable.
-    if 'RS_3M' in df.columns and df['RS_3M'].notna().any():
-        df = df.sort_values(by='RS_3M', ascending=False).reset_index(drop=True)
-    else:
-        df = df.sort_values(by='P/52H', ascending=False).reset_index(drop=True)
-
-    return df
+if __name__ == "__main__":
+    main()

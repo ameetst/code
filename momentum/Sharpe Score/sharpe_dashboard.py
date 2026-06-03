@@ -9,6 +9,8 @@ from pathlib import Path
 import streamlit as st
 import pandas as pd
 import numpy as np
+import yfinance as yf
+from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -58,6 +60,68 @@ def safe_write_json(path, data):
         if tmp_path.exists():
             tmp_path.unlink()
         raise e
+
+@st.cache_data(ttl=3600)
+def get_live_vix():
+    """Fetch live India VIX value, cached for 1 hour."""
+    try:
+        data = yf.Ticker('^INDIAVIX').history(period='1d')
+        if not data.empty:
+            return float(data['Close'].iloc[-1])
+    except Exception:
+        pass
+    return None
+
+@st.cache_data(ttl=86400)
+def compute_cap_tier_momentum(prices_df, stock_tickers):
+    """Calculate the % of stocks with positive 63-day momentum per cap tier. Cached 24h."""
+    mom_63 = {}
+    for t in stock_tickers:
+        px = prices_df.loc[t].dropna()
+        if len(px) >= 63:
+            ret = (px.iloc[-1] / px.iloc[-63]) - 1.0
+            mom_63[t] = ret
+        else:
+            mom_63[t] = np.nan
+            
+    def fetch_mcap(ticker):
+        try:
+            info = yf.Ticker(f"{ticker}.NS").fast_info
+            return ticker, info.market_cap
+        except:
+            try:
+                info = yf.Ticker(f"{ticker}.BO").fast_info
+                return ticker, info.market_cap
+            except:
+                return ticker, 0
+                
+    market_caps = {}
+    with ThreadPoolExecutor(max_workers=30) as exe:
+        results = exe.map(fetch_mcap, stock_tickers)
+        for t, mcap in results:
+            market_caps[t] = mcap
+            
+    df = pd.DataFrame({"MOM_63": pd.Series(mom_63), "MCAP": pd.Series(market_caps)})
+    df = df[df["MCAP"] > 0]
+    df = df.sort_values("MCAP", ascending=False)
+    df["Rank"] = range(1, len(df) + 1)
+    
+    def get_tier(rank):
+        if rank <= 100: return "Large Cap (1-100)"
+        if rank <= 250: return "Mid Cap (101-250)"
+        if rank <= 500: return "Small Cap (251-500)"
+        return "Micro Cap (501+)"
+        
+    df["Cap Tier"] = df["Rank"].map(get_tier)
+    df["Is_Positive"] = df["MOM_63"] > 0
+    
+    summary = df.groupby("Cap Tier")["Is_Positive"].agg(["count", "sum"])
+    summary["% Positive"] = (summary["sum"] / summary["count"] * 100).round(1)
+    summary = summary.rename(columns={"count": "Total Stocks", "sum": "Positive Mom Stocks"})
+    
+    order = ["Large Cap (1-100)", "Mid Cap (101-250)", "Small Cap (251-500)", "Micro Cap (501+)"]
+    summary = summary.reindex(order).dropna()
+    return summary
 
 def validate_tradelog_integrity(transactions):
     """Replay all transactions chronologically and check no ticker ever goes negative.
@@ -111,6 +175,39 @@ def save_tradelog(universe_name, tradelog):
         safe_write_json(path, tradelog)
     except Exception as e:
         st.error(f"Error saving tradelog: {e}")
+
+def append_regime_history(universe_name, score, detail):
+    """Record today's regime score to a per-universe JSON file.
+    One entry per calendar day — if run multiple times, the latest overwrites."""
+    path = SCRIPT_DIR / f"{universe_name}_regime_history.json"
+    try:
+        history = json.load(open(path)) if path.exists() else []
+    except Exception:
+        history = []
+
+    today_str = datetime.date.today().isoformat()
+    entry = {
+        "date":      today_str,
+        "Composite": round(score, 4),
+        "Breadth":   round(detail.get("breadth_score",  0.0), 4),
+        "Momentum":  round(detail.get("momentum_score", 0.0), 4),
+        "Dynamic N": detail.get("dynamic_n", 0),
+    }
+
+    # Update today's entry if it exists, otherwise append
+    for i, h in enumerate(history):
+        if h.get("date") == today_str:
+            history[i] = entry
+            break
+    else:
+        history.append(entry)
+
+    try:
+        safe_write_json(path, history)
+    except Exception:
+        pass  # Non-critical — never crash the dashboard over history writes
+
+    return history
 
 def get_latest_price(ticker, prices_df):
     if ticker in prices_df.index:
@@ -269,51 +366,34 @@ def compute_regime_score(nifty_s, eligible_mask, composite_series):
                    "breadth_score": round(breadth_score, 3),
                    "momentum_score": round(momentum_score, 3)}
 
-# ── SIDEBAR ───────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("## ⚙️ Configuration")
-    st.divider()
+# ── CONFIGURATION (session-state driven, rendered in Config tab) ──────────────
+# Scan available xlsx files first (needed to set the default)
+_cfg_files = sorted([f.name for f in SCRIPT_DIR.glob("*.xlsx")
+                     if not f.name.startswith("~")
+                     and "ranking" not in f.name.lower()])
+_cfg_preferred = next((f for f in ["N750_updated.xlsx", "N750.xlsx"] if f in _cfg_files), None)
 
-    st.markdown("#### 📁 Data Source")
-    default_files = sorted([f.name for f in SCRIPT_DIR.glob("*.xlsx")
-                            if not f.name.startswith("~")
-                            and "ranking" not in f.name.lower()])
-    preferred = next((f for f in ["N750_updated.xlsx", "N750.xlsx"] if f in default_files), None)
-    default_idx = default_files.index(preferred) if preferred else 0
-    selected_file = st.selectbox("Input File", default_files, index=default_idx)
-    input_path = str(SCRIPT_DIR / selected_file)
+# Initialise session-state defaults on first run
+if "cfg_file" not in st.session_state:
+    st.session_state.cfg_file = _cfg_preferred if _cfg_preferred else (_cfg_files[0] if _cfg_files else "")
+if "cfg_capital" not in st.session_state:
+    st.session_state.cfg_capital = 1_500_000
+if "cfg_max_wt_pct" not in st.session_state:
+    st.session_state.cfg_max_wt_pct = 5
 
-    # Derive universe name and ledger path
-    universe = selected_file.replace("_updated.xlsx", "").replace(".xlsx", "")
-    ledger_candidates = [
-        SCRIPT_DIR / f"{universe}_positions_ledger.json",
-        SCRIPT_DIR / "positions_ledger.json",
-    ]
-    LEDGER_FILE = next((str(p) for p in ledger_candidates if p.exists()),
-                       str(ledger_candidates[0]))
-
-    st.divider()
-    st.markdown("#### 💰 Capital & Sizing")
-    capital = st.number_input("Portfolio Capital (INR)", value=1_500_000,
-                               step=100_000, format="%d")
-    max_wt_pct = st.slider("Max Position Weight (%)", 3, 10, 5, 1,
-                            format="%d%%")
-    max_wt = max_wt_pct / 100.0
-
-    st.divider()
-    st.markdown("#### 📋 Strategy Parameters")
-    st.markdown(f"**RFR:** `7.0%`")
-    st.markdown(f"**Windows:** `12M / 9M / 6M / 3M`")
-    st.markdown(f"**Top N:** `Dynamic ({MIN_N}–{MAX_N})`")
-    st.markdown(f"**Entry Gate:** `Regime score >= {NEW_ENTRY_THRESHOLD}`")
-    st.markdown(f"**Hold Lock:** `28 days`")
-    st.markdown(f"**52H Filter:** `>= -25%`")
-    st.markdown(f"**Rank Buffer:** `40`")
-    st.markdown(f"**Cash Yield:** `6% p.a.`")
-    st.markdown(f"**Ledger:** `{Path(LEDGER_FILE).name}`")
-
-    st.divider()
-    st.caption("Sharpe Momentum Strategy v3.0 — Dynamic Regime")
+# Derive runtime values from session state
+selected_file = st.session_state.cfg_file
+input_path    = str(SCRIPT_DIR / selected_file)
+universe      = selected_file.replace("_updated.xlsx", "").replace(".xlsx", "")
+ledger_candidates = [
+    SCRIPT_DIR / f"{universe}_positions_ledger.json",
+    SCRIPT_DIR / "positions_ledger.json",
+]
+LEDGER_FILE = next((str(p) for p in ledger_candidates if p.exists()),
+                   str(ledger_candidates[0]))
+capital    = st.session_state.cfg_capital
+max_wt_pct = st.session_state.cfg_max_wt_pct
+max_wt     = max_wt_pct / 100.0
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 RFR_ANNUAL   = 0.07
@@ -411,12 +491,20 @@ try:
 except Exception as e:
     st.error(f"Error computing rankings: {e}"); st.stop()
 
+# Record today's regime score and load full history for trend chart
+regime_history = append_regime_history(universe, regime_score, regime_detail)
+
 dynamic_n = regime_detail["dynamic_n"]
 allow_new = regime_detail["allow_new"]
 weights, cash_wt = compute_weights(result, dynamic_n, capital, max_wt)
 
 # Load trade log and synchronize the positions ledger
 latest_prices = {ticker: get_latest_price(ticker, prices_df) for ticker in stock_tickers}
+if "live_prices" in st.session_state:
+    for tk, price in st.session_state.live_prices.items():
+        if tk in latest_prices:
+            latest_prices[tk] = price
+
 tradelog = load_tradelog(universe)
 tradelog_result = calculate_holdings_and_pnl(tradelog, latest_prices)
 active_holdings = tradelog_result["active_holdings"]
@@ -475,95 +563,135 @@ with c5:
         f"</div>",
         unsafe_allow_html=True)
 
-# Signal breakdown
+# Signal breakdown + trend
 with st.expander("📡 Regime Score Breakdown", expanded=False):
-    sc1, sc2, sc3, sc4 = st.columns(4)
+    live_vix = get_live_vix()
+    vix_str = f"{live_vix:.2f}" if live_vix else "N/A"
+    
+    sc1, sc2, sc3, sc4, sc5 = st.columns(5)
     with sc1: st.metric("EMA50 Distance (35%)",    f"{regime_detail['ema50_score']:.3f}")
     with sc2: st.metric("EMA Trend 50v200 (25%)",  f"{regime_detail['ema_trend_score']:.3f}")
     with sc3: st.metric("52H Breadth (25%)",       f"{regime_detail['breadth_score']:.3f}")
     with sc4: st.metric("Momentum Breadth (15%)",  f"{regime_detail['momentum_score']:.3f}")
+    with sc5: st.metric("Live India VIX",          vix_str)
     st.progress(regime_score, text=f"Composite Regime Score: {regime_score:.3f}")
+
+    st.markdown("---")
+    st.markdown("**📈 Regime Score Trend**")
+    if len(regime_history) >= 2:
+        hist_df = pd.DataFrame(regime_history)
+        hist_df["date"] = pd.to_datetime(hist_df["date"])
+        hist_df = hist_df.set_index("date").sort_index()
+        chart_df = hist_df[["Composite", "Breadth", "Momentum"]].copy()
+        chart_df["Entry Threshold"] = NEW_ENTRY_THRESHOLD
+        st.line_chart(chart_df, height=260)
+        st.caption(
+            f"📊 {len(regime_history)} day(s) recorded  |  "
+            f"Latest: {hist_df.index[-1].strftime('%d-%b-%Y')}  |  "
+            f"Entry Threshold line = {NEW_ENTRY_THRESHOLD}")
+    else:
+        st.caption("📅 Trend chart appears after 2+ days of recorded data. Come back tomorrow!")
+
+# Cap Tier breakdown
+with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
+    st.markdown("Percentage of stocks with a positive 63-day return across each Cap Tier. *(Cached daily)*")
+    try:
+        with st.spinner("Crunching Market Caps from Yahoo Finance (takes ~15 seconds on first run)..."):
+            tier_summary = compute_cap_tier_momentum(prices_df, stock_tickers)
+        st.dataframe(tier_summary, use_container_width=True)
+    except Exception as e:
+        st.error(f"Could not load Market Cap data: {e}")
 
 st.divider()
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
-tab_top, tab_exits, tab_tradelog, tab_calcs = st.tabs([
-    f"📊 Top {dynamic_n} Portfolio",
+tab_top, tab_exits, tab_tradelog, tab_calcs, tab_config = st.tabs([
+    "📊 Top 25 Rankings",
     "🚨 Exit Monitor",
     "📝 Tradelog & MTM",
-    "📋 Full Rankings"])
+    "📋 Full Rankings",
+    "⚙️ Configuration"])
 
-# ── TAB 1: PORTFOLIO ──────────────────────────────────────────────────────────
+# ── TAB 1: TOP 25 RANKINGS ────────────────────────────────────────────────────
 with tab_top:
-    st.markdown(f"## 📊 Top {dynamic_n} Portfolio  —  Regime Score {regime_score:.2f}")
+    st.markdown(
+        f"## 📊 Top 25 Rankings  —  "
+        f"Regime Score: **{regime_score:.2f}**  |  "
+        f"Dynamic N (Strategy): **{dynamic_n}**")
 
+    DISPLAY_N = 25
+    held_tickers = set(active_holdings.keys())
     rows = []
-    for i, (ticker, row) in enumerate(result.head(dynamic_n).iterrows(), 1):
-        wt    = weights.get(ticker, 0.0)
-        alloc = wt * capital
-        if ticker in ledger:
-            held = (TODAY - ledger[ticker]["entry_date"]).days
-            rank = row["RANK"]
-            if pd.isna(rank) or row["PCT_FROM_52H"] < -25:
-                status = "🔴 EXIT-52H"
-            elif rank > 40 and held >= 28:
-                status = "🟠 EXIT-RANK"
-            else:
-                status = f"🔵 HOLD ({held}d)"
-        elif allow_new:
-            status = "🟢 NEW BUY"
-        else:
-            status = "⚪ WATCH"
 
+    for ticker, row in result.head(DISPLAY_N).iterrows():
         ltp = latest_prices.get(ticker, 0.0)
-        units = int(alloc // ltp) if ltp > 0 else 0
+
+        # Compute annualised volatility — mean across 4 windows (same as weight-sizing engine)
+        mean_vol = None
+        if ticker in prices_df.index:
+            px = prices_df.loc[ticker].dropna()
+            if len(px) > 10:
+                vols = []
+                for w in [252, 189, 126, 63]:
+                    pw = px.iloc[-w:] if len(px) >= w else px
+                    lr = np.diff(np.log(pw.values))
+                    if len(lr) > 5:
+                        vols.append(np.std(lr, ddof=1) * np.sqrt(252))
+                if vols:
+                    mean_vol = float(np.mean(vols))
+
+        comp = row["COMPOSITE"] if pd.notna(row["COMPOSITE"]) else None
+        vol_adj = round(comp / mean_vol, 3) if (comp is not None and mean_vol and mean_vol > 0) else None
 
         rows.append({
-            "Rank":       int(row["RANK"]) if pd.notna(row["RANK"]) else None,
-            "Ticker":     ticker,
-            "Status":     status,
-            "Weight":     wt,
-            "Alloc (Rs)": round(alloc),
-            "LTP":        round(ltp, 2) if ltp > 0 else None,
-            "Units":      units if units > 0 else None,
-            "SHARPE_ALL": round(row["COMPOSITE"], 3) if pd.notna(row["COMPOSITE"]) else None,
-            "RES_MOM":    round(row["RES_MOM"], 3)   if pd.notna(row.get("RES_MOM")) else None,
-            "SHARPE_3":   round(row["SHARPE_3"], 3)  if pd.notna(row.get("SHARPE_3")) else None,
-            "52H%":       round(row["PCT_FROM_52H"], 1) if pd.notna(row["PCT_FROM_52H"]) else None,
+            "Rank":          int(row["RANK"]) if pd.notna(row["RANK"]) else None,
+            "Ticker":        ticker,
+            "Composite":     round(comp, 3) if comp is not None else None,
+            "Res Mom":       round(row["RES_MOM"], 3) if pd.notna(row.get("RES_MOM")) else None,
+            "Volatility %":  round(mean_vol * 100, 1) if mean_vol is not None else None,
+            "Vol-Adj Score": vol_adj,
+            "LTP":           round(ltp, 2) if ltp > 0 else None,
         })
 
-    rows.append({
-        "Rank": None, "Ticker": "CASH (LIQUID)", "Status": "—",
-        "Weight": cash_wt, "Alloc (Rs)": round(cash_wt * capital),
-        "LTP": None, "Units": None,
-        "SHARPE_ALL": None, "RES_MOM": None, "SHARPE_3": None, "52H%": None,
-    })
+    top25_df = pd.DataFrame(rows)
 
-    top_df = pd.DataFrame(rows)
-
-    def style_top(row):
-        if row["Ticker"] == "CASH (LIQUID)":
-            return ["background-color:#F5F7FA; color:#6B7A8D; font-weight:bold;"] * len(row)
-        if "EXIT" in str(row["Status"]):
-            return ["background-color:#FFF3E0;"] * len(row)
-        if "NEW BUY" in str(row["Status"]):
-            return ["background-color:#E8F5E9;"] * len(row)
-        return [""] * len(row)
+    def style_top25(row):
+        if row["Ticker"] in held_tickers:
+            return ["background-color:#FFFDE7;"] * len(row)   # light yellow — currently held
+        return ["background-color:#FFFFFF;"] * len(row)        # white
 
     st.dataframe(
-        top_df.style.apply(style_top, axis=1).format(
-            {"Rank": "{:.0f}", "Weight": "{:.1%}", "Alloc (Rs)": "Rs{:,.0f}",
-             "LTP": "Rs{:,.2f}", "Units": "{:.0f}",
-             "SHARPE_ALL": "{:.3f}", "RES_MOM": "{:.3f}",
-             "SHARPE_3": "{:.3f}", "52H%": "{:.1f}"}, na_rep="—"),
-        use_container_width=True, hide_index=True, height=min(780, (dynamic_n + 3) * 36))
+        top25_df.style.apply(style_top25, axis=1).format(
+            {"Rank":          "{:.0f}",
+             "Composite":     "{:.3f}",
+             "Res Mom":       "{:.3f}",
+             "Volatility %":  "{:.1f}%",
+             "Vol-Adj Score": "{:.3f}",
+             "LTP":           "Rs{:,.2f}"}, na_rep="—"),
+        use_container_width=True, hide_index=True,
+        height=min(950, (DISPLAY_N + 2) * 36))
 
-    eq_invested = sum(weights.values())
+    st.caption("🟡 Yellow rows = currently held positions  |  White rows = not yet in portfolio")
+
+    st.divider()
+    
+    # Calculate exact portfolio valuation based on active holdings
+    actual_cost_basis = sum(h["Cost Value"] for h in holdings_metrics)
+    
+    # Cash = Starting Capital - What we spent
+    actual_cash_liquid = capital - actual_cost_basis
+    actual_cash_liquid = max(0.0, actual_cash_liquid) # Prevent negative cash display
+    
+    # Weights strictly based on original configuration capital
+    actual_equity_wt = (actual_cost_basis / capital) if capital > 0 else 0.0
+    actual_cash_wt = (actual_cash_liquid / capital) if capital > 0 else 0.0
+
     mc1, mc2, mc3, mc4 = st.columns(4)
-    with mc1: st.metric("Equity Deployed",  f"Rs{eq_invested * capital:,.0f}")
-    with mc2: st.metric("Equity Weight",    f"{eq_invested:.1%}")
-    with mc3: st.metric("Cash (Liquid)",    f"Rs{cash_wt * capital:,.0f}")
-    with mc4: st.metric("Cash Weight",      f"{cash_wt:.1%}")
+    with mc1: st.metric("Equity Deployed",  f"Rs {actual_cost_basis:,.0f}")
+    with mc2: st.metric("Equity Weight",    f"{actual_equity_wt:.1%}")
+    with mc3: st.metric("Cash (Liquid)",    f"Rs {actual_cash_liquid:,.0f}")
+    with mc4: st.metric("Cash Weight",      f"{actual_cash_wt:.1%}")
+
 
 # ── TAB 2: EXIT MONITOR ───────────────────────────────────────────────────────
 with tab_exits:
@@ -647,7 +775,31 @@ with tab_tradelog:
     st.divider()
 
     # 2. Active Holdings Table
-    st.markdown("### 💼 Active Holdings")
+    hc1, hc2 = st.columns([0.7, 0.3])
+    with hc1: 
+        st.markdown("### 💼 Active Holdings")
+    with hc2:
+        if st.button("🔄 Refresh Live Market Prices", use_container_width=True):
+            live_prices = {}
+            if holdings_metrics:
+                with st.spinner("Fetching latest prices from Yahoo Finance..."):
+                    def fetch_price(tkr):
+                        try:
+                            return tkr, yf.Ticker(f"{tkr}.NS").fast_info.last_price
+                        except:
+                            try:
+                                return tkr, yf.Ticker(f"{tkr}.BO").fast_info.last_price
+                            except:
+                                return tkr, None
+                    
+                    with ThreadPoolExecutor(max_workers=20) as exe:
+                        results = exe.map(fetch_price, [h["Ticker"] for h in holdings_metrics])
+                        for tkr, price in results:
+                            if price: live_prices[tkr] = price
+            
+            if live_prices:
+                st.session_state.live_prices = live_prices
+                st.rerun()
 
     # Initialize state keys for tracking row selection and dropdown state
     if "last_selected_row" not in st.session_state:
@@ -660,7 +812,7 @@ with tab_tradelog:
     else:
         holdings_df = pd.DataFrame(holdings_metrics)
         cols_order = ["Ticker", "Qty", "Avg Price", "Current Price", "Cost Value", "Market Value", "Unrealized PnL", "Unrealized PnL %", "First Buy Date"]
-        holdings_df = holdings_df[cols_order]
+        holdings_df = holdings_df[cols_order].sort_values(by="Unrealized PnL", ascending=False)
 
         def style_holdings(row):
             pnl = row["Unrealized PnL"]
@@ -991,6 +1143,40 @@ with tab_calcs:
         f"Eligible: {(result['PCT_FROM_52H'] >= -25).sum()}  |  "
         f"Disqualified: {(result['PCT_FROM_52H'] < -25).sum()}  |  "
         f"Regime N (green rows): {dynamic_n}")
+
+# ── TAB 5: CONFIGURATION ─────────────────────────────────────────────────────
+with tab_config:
+    st.markdown("## ⚙️ Configuration")
+
+    st.markdown("#### 📁 Data Source")
+    st.selectbox("Input File", _cfg_files, key="cfg_file")
+
+    st.divider()
+    st.markdown("#### 💰 Capital & Sizing")
+    st.number_input("Portfolio Capital (INR)", min_value=100_000,
+                    step=100_000, format="%d", key="cfg_capital")
+    st.slider("Max Position Weight (%)", min_value=3, max_value=10,
+              step=1, format="%d%%", key="cfg_max_wt_pct")
+
+    st.divider()
+    st.markdown("#### 📋 Strategy Parameters (Read-only)")
+    params = {
+        "RFR":          "7.0%",
+        "Windows":      "12M / 9M / 6M / 3M",
+        "Top N":        f"Dynamic ({MIN_N}–{MAX_N})",
+        "Entry Gate":   f"Regime score >= {NEW_ENTRY_THRESHOLD}",
+        "Hold Lock":    "28 days",
+        "52H Filter":   ">= -25%",
+        "Rank Buffer":  "40",
+        "Cash Yield":   "6% p.a.",
+        "Ledger File":  Path(LEDGER_FILE).name,
+    }
+    for k, v in params.items():
+        st.markdown(f"**{k}:** `{v}`")
+
+    st.divider()
+    st.caption("Sharpe Momentum Strategy v3.0 — Dynamic Regime")
+    st.info("Changes to Data Source, Capital, or Max Weight take effect immediately on the next rerun.")
 
 # ── ACTIONS ───────────────────────────────────────────────────────────────────
 st.divider()

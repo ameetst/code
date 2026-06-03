@@ -14,7 +14,7 @@
     "timestamp": "2026-05-25T14:26:39.203958",
     "ticker": "CUPID",
     "action": "BUY",
-    "quantity": 406,
+    "quantity": 402,
     "price": 123.1
   },
   {
@@ -23,7 +23,7 @@
     "timestamp": "2026-05-25T14:26:53.274718",
     "ticker": "HFCL",
     "action": "BUY",
-    "quantity": 308,
+    "quantity": 311,
     "price": 162.15
   },
   {
@@ -32,7 +32,7 @@
     "timestamp": "2026-05-25T14:27:10.987955",
     "ticker": "BBOX",
     "action": "BUY",
-    "quantity": 51,
+    "quantity": 50,
     "price": 978.81
   },
   {
@@ -41,7 +41,7 @@
     "timestamp": "2026-05-25T14:27:49.042893",
     "ticker": "MCX",
     "action": "BUY",
-    "quantity": 14,
+    "quantity": 15,
     "price": 3337.9
   },
   {
@@ -95,7 +95,7 @@
     "timestamp": "2026-05-25T14:33:50.496879",
     "ticker": "ADANIPOWER",
     "action": "BUY",
-    "quantity": 214,
+    "quantity": 220,
     "price": 232.79
   },
   {
@@ -106,5 +106,131 @@
     "action": "BUY",
     "quantity": 124,
     "price": 402.75
+  },
+  {
+    "id": "0bea2650-c6a1-42c8-9d30-973566d3f5ba",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:01:31.377456",
+    "ticker": "WELCORP",
+    "action": "BUY",
+    "quantity": 54,
+    "price": 1372.03
+  },
+  {
+    "id": "5e66c099-24f1-404f-be13-b185a228a8d7",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:01:57.023628",
+    "ticker": "CPPLUS",
+    "action": "BUY",
+    "quantity": 24,
+    "price": 3094.0
+  },
+  {
+    "id": "eb867072-8ba2-4070-9c62-18fca850b668",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:14:29.232339",
+    "ticker": "ACUTAAS",
+    "action": "BUY",
+    "quantity": 7,
+    "price": 3028.0
+  },
+  {
+    "id": "a2e519d3-180e-46b7-81f1-5ce94da54edf",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:14:44.929652",
+    "ticker": "ADANIPOWER",
+    "action": "BUY",
+    "quantity": 106,
+    "price": 232.06
+  },
+  {
+    "id": "0cbe3d55-2888-45af-bff7-de2611306574",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:14:57.283353",
+    "ticker": "BBOX",
+    "action": "BUY",
+    "quantity": 20,
+    "price": 1047.2
+  },
+  {
+    "id": "5198d961-3db9-44d9-983f-443dd1c99cad",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:15:14.432833",
+    "ticker": "CUPID",
+    "action": "BUY",
+    "quantity": 170,
+    "price": 130.09
+  },
+  {
+    "id": "0096ad34-af21-4f79-bb1e-c4598e08924a",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:15:27.891109",
+    "ticker": "HFCL",
+    "action": "BUY",
+    "quantity": 100,
+    "price": 183.22
+  },
+  {
+    "id": "1b9fc7ae-6df9-43d3-846e-52fd7cee639f",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:15:42.635035",
+    "ticker": "POWERINDIA",
+    "action": "BUY",
+    "quantity": 1,
+    "price": 36445.0
+  },
+  {
+    "id": "f197b6fb-603b-4b55-908a-5332769cc822",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:16:01.243337",
+    "ticker": "LAURUSLABS",
+    "action": "BUY",
+    "quantity": 16,
+    "price": 1388.0
+  },
+  {
+    "id": "380c0fd0-92dd-471d-afa1-8d2541ba16e1",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:16:13.159790",
+    "ticker": "MTARTECH",
+    "action": "BUY",
+    "quantity": 4,
+    "price": 7128.0
+  },
+  {
+    "id": "d05c940a-a268-49cc-8cce-356bf211ab70",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:16:30.070194",
+    "ticker": "MCX",
+    "action": "BUY",
+    "quantity": 11,
+    "price": 2896.0
+  },
+  {
+    "id": "62391d8d-d89a-468b-8586-362745d997c1",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:16:43.319760",
+    "ticker": "NATIONALUM",
+    "action": "BUY",
+    "quantity": 49,
+    "price": 436.65
+  },
+  {
+    "id": "6e41b317-beb9-46c7-b787-5e199271aa0d",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:16:59.501189",
+    "ticker": "SANSERA",
+    "action": "BUY",
+    "quantity": 9,
+    "price": 2838.1
+  },
+  {
+    "id": "6f855982-0cc6-4a15-b2bb-ddb825457245",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:17:13.590231",
+    "ticker": "TDPOWERSYS",
+    "action": "BUY",
+    "quantity": 22,
+    "price": 1238.6
   }
 ]

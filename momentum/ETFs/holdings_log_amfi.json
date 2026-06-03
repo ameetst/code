@@ -1,0 +1,59 @@
+{
+  "2026-06": {
+    "run_date": "2026-06-01 15:46",
+    "regime": "BEAR",
+    "active_slots": 0,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      },
+      {
+        "slot": 2,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      },
+      {
+        "slot": 3,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      },
+      {
+        "slot": 4,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      },
+      {
+        "slot": 5,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      }
+    ]
+  }
+}

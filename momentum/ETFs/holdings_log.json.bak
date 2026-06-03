@@ -1,0 +1,220 @@
+{
+  "2026-03": {
+    "run_date": "2026-03-29 18:08",
+    "regime": "BEAR",
+    "active_slots": 0,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-"
+      },
+      {
+        "slot": 2,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-"
+      },
+      {
+        "slot": 3,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-"
+      },
+      {
+        "slot": 4,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-"
+      },
+      {
+        "slot": 5,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-"
+      }
+    ]
+  },
+  "2026-04": {
+    "run_date": "2026-04-27 13:00",
+    "regime": "PARTIAL",
+    "active_slots": 3,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "ENERGY",
+        "etf_name": "Mirae Asset Nifty Energy ETF",
+        "sector": "ENERGY",
+        "weight": 0.2,
+        "inv_rank": "1",
+        "entry_price": 39.11,
+        "peak": 39.11
+      },
+      {
+        "slot": 2,
+        "ticker": "MONQ50",
+        "etf_name": "Motilal Oswal NASDAQ Q 50 ETF",
+        "sector": "INTERNATIONAL",
+        "weight": 0.2,
+        "inv_rank": "2",
+        "entry_price": 122.73,
+        "peak": 122.73
+      },
+      {
+        "slot": 3,
+        "ticker": "CPSEETF",
+        "etf_name": "CPSE ETF",
+        "sector": "PSE",
+        "weight": 0.2,
+        "inv_rank": "4",
+        "entry_price": 106.85,
+        "peak": 106.85
+      },
+      {
+        "slot": 4,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      },
+      {
+        "slot": 5,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      }
+    ]
+  },
+  "2026-05": {
+    "run_date": "2026-05-25 09:37",
+    "regime": "PARTIAL",
+    "active_slots": 3,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "MON100",
+        "etf_name": "Motilal Oswal NASDAQ 100 ETF",
+        "sector": "INTERNATIONAL",
+        "weight": 0.2,
+        "inv_rank": "1",
+        "entry_price": 332.13,
+        "peak": 332.13
+      },
+      {
+        "slot": 2,
+        "ticker": "GROWWCAPM",
+        "etf_name": "Groww Nifty Capital Mrkts ETF",
+        "sector": "FIN_SERVICES",
+        "weight": 0.2,
+        "inv_rank": "5",
+        "entry_price": 11.73,
+        "peak": 11.73
+      },
+      {
+        "slot": 3,
+        "ticker": "GROWWPOWER",
+        "etf_name": "Groww BSE Power ETF",
+        "sector": "ENERGY",
+        "weight": 0.2,
+        "inv_rank": "6",
+        "entry_price": 12.16,
+        "peak": 12.16
+      },
+      {
+        "slot": 4,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      },
+      {
+        "slot": 5,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      }
+    ]
+  },
+  "2026-06": {
+    "run_date": "2026-06-01 09:44",
+    "regime": "PARTIAL",
+    "active_slots": 3,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "MON100",
+        "etf_name": "Motilal Oswal NASDAQ 100 ETF",
+        "sector": "INTERNATIONAL",
+        "weight": 0.2,
+        "inv_rank": "1",
+        "entry_price": 332.13,
+        "peak": 336.1
+      },
+      {
+        "slot": 2,
+        "ticker": "GROWWPOWER",
+        "etf_name": "Groww BSE Power ETF",
+        "sector": "ENERGY",
+        "weight": 0.2,
+        "inv_rank": "3",
+        "entry_price": 12.16,
+        "peak": 12.65
+      },
+      {
+        "slot": 3,
+        "ticker": "GROWWCAPM",
+        "etf_name": "Groww Nifty Capital Mrkts ETF",
+        "sector": "FIN_SERVICES",
+        "weight": 0.2,
+        "inv_rank": "8",
+        "entry_price": 11.73,
+        "peak": 11.73
+      },
+      {
+        "slot": 4,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      },
+      {
+        "slot": 5,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      }
+    ]
+  }
+}
