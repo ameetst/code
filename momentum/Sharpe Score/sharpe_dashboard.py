@@ -580,10 +580,13 @@ with st.expander("📡 Regime Score Breakdown", expanded=False):
     st.markdown("**📈 Regime Score Trend**")
     if len(regime_history) >= 2:
         hist_df = pd.DataFrame(regime_history)
-        hist_df["date"] = pd.to_datetime(hist_df["date"])
+        # Defensively strip any time component (handles both "YYYY-MM-DD" and full datetimes)
+        hist_df["date"] = pd.to_datetime(hist_df["date"]).dt.normalize()
         hist_df = hist_df.set_index("date").sort_index()
         chart_df = hist_df[["Composite", "Breadth", "Momentum"]].copy()
         chart_df["Entry Threshold"] = NEW_ENTRY_THRESHOLD
+        # Convert index to date-only strings so x-axis shows no time component
+        chart_df.index = chart_df.index.strftime("%d-%b-%Y")
         st.line_chart(chart_df, height=260)
         st.caption(
             f"📊 {len(regime_history)} day(s) recorded  |  "
@@ -595,12 +598,59 @@ with st.expander("📡 Regime Score Breakdown", expanded=False):
 # Cap Tier breakdown
 with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
     st.markdown("Percentage of stocks with a positive 63-day return across each Cap Tier. *(Cached daily)*")
-    try:
-        with st.spinner("Crunching Market Caps from Yahoo Finance (takes ~15 seconds on first run)..."):
-            tier_summary = compute_cap_tier_momentum(prices_df, stock_tickers)
-        st.dataframe(tier_summary, use_container_width=True)
-    except Exception as e:
-        st.error(f"Could not load Market Cap data: {e}")
+
+    def _tier_color(pct):
+        """Return (bar_fill, bar_track, text_color) based on % positive momentum."""
+        if pct >= 60:
+            return "#2E7D32", "#E8F5E9", "#2E7D32"   # green
+        elif pct >= 30:
+            return "#F57F17", "#FFF8E1", "#E65100"   # orange
+        else:
+            return "#C62828", "#FFEBEE", "#C62828"   # red
+
+    def _render_tier_bars(tier_summary):
+        cards_html = "<div style='display:flex; flex-direction:column; gap:5px; margin-top:6px;'>"
+        for tier, row in tier_summary.iterrows():
+            pct      = float(row["% Positive"])
+            total    = int(row["Total Stocks"])
+            positive = int(row["Positive Mom Stocks"])
+            fill, track, txt = _tier_color(pct)
+            bar_w    = min(100, max(0, pct))
+
+            cards_html += f"""
+            <div style='background:#F8F9FA; border:1px solid #E8ECF1; border-radius:8px;
+                        padding:8px 14px; display:flex; align-items:center; gap:12px;'>
+                <div style='min-width:160px;'>
+                    <div style='font-weight:600; font-size:13px; color:#1A1A2E;'>{tier}</div>
+                    <div style='font-size:11px; color:#9E9E9E; margin-top:1px;'>
+                        {positive} of {total} stocks
+                    </div>
+                </div>
+                <div style='flex:1; background:{track}; border-radius:999px; height:8px; overflow:hidden;'>
+                    <div style='width:{bar_w:.1f}%; height:100%; background:{fill};
+                                border-radius:999px; transition:width 0.4s ease;'></div>
+                </div>
+                <div style='min-width:48px; text-align:right; font-weight:700;
+                            font-size:14px; color:{txt};'>{pct:.1f}%</div>
+            </div>"""
+        cards_html += "</div>"
+        st.markdown(cards_html, unsafe_allow_html=True)
+
+    # Show cached result immediately if already fetched this session
+    if "cap_tier_summary" in st.session_state:
+        _render_tier_bars(st.session_state["cap_tier_summary"])
+        if st.button("🔄 Refresh Market Cap Data", key="refresh_cap_tier"):
+            del st.session_state["cap_tier_summary"]
+            st.rerun()
+    else:
+        st.info("📡 Market Cap data is fetched on demand to keep the dashboard fast.")
+        if st.button("📊 Load Market Cap Data", key="load_cap_tier"):
+            try:
+                with st.spinner("Crunching Market Caps from Yahoo Finance (takes ~15 seconds on first run)..."):
+                    st.session_state["cap_tier_summary"] = compute_cap_tier_momentum(prices_df, stock_tickers)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Could not load Market Cap data: {e}")
 
 st.divider()
 

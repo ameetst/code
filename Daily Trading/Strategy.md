@@ -24,6 +24,7 @@ To trigger a **BUY** signal, a stock must meet all of the following conditions o
 3. **Positive Momentum:** The stock must have a positive return over the last 63 trading days (`Momentum_63 > 0`).
 4. **Proximity to Highs:** The stock must be trading within a configurable threshold of its 52-week high (Default: `P/52H >= 0.75`).
 5. **Recent Breakout:** The stock's 52-week high must have been achieved within the last 63 trading days (`High_52W == High_63D`).
+6. **Liquidity Filter:** The 21-day Median Traded Value (ADTV) must be strictly greater than ₹1 Crore (`Median_TV_21 > 10,000,000`).
 
 ### Exit Rules (Stop-Loss & Profit-Taking)
 This strategy **does not use a fixed profit target** (e.g., +15% or +20%). Instead, the exit rule is entirely dynamic and acts as both a trailing stop-loss and a profit-taking mechanism.

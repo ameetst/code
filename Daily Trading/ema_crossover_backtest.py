@@ -62,6 +62,9 @@ def calculate_indicators(df):
     
     df['Momentum_63'] = df['Close'] / df['Close'].shift(63) - 1
     
+    df['Traded_Value'] = df['Close'] * df['Volume']
+    df['Median_TV_21'] = df['Traded_Value'].rolling(window=21).median()
+    
     df['Cross_Up'] = (df['EMA_21'] > df['EMA_63']) & (df['EMA_21'].shift(1) <= df['EMA_63'].shift(1))
     df['Cross_Down'] = (df['EMA_21'] < df['EMA_63']) & (df['EMA_21'].shift(1) >= df['EMA_63'].shift(1))
     
@@ -72,7 +75,8 @@ def calculate_indicators(df):
                           (df['P_52H'] >= 0.75) & 
                           (df['Close'] > df['EMA_200']) & 
                           (df['Momentum_63'] > 0) & 
-                          (df['High_52W'] == df['High_63D']))
+                          (df['High_52W'] == df['High_63D']) &
+                          (df['Median_TV_21'] > 10_000_000))
     
     return df
 
@@ -189,6 +193,7 @@ def run_backtest():
     print("=======================================================")
     
     trades_df = pd.DataFrame(trade_log)
+    trades_df.to_csv("backtest_trades.csv", index=False)
     if not trades_df.empty:
         win_rate = len(trades_df[trades_df['Return (%)'] > 0]) / len(trades_df) * 100
         print(f"Total Trades: {len(trades_df)}")
