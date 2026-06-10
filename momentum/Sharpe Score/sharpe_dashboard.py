@@ -74,7 +74,8 @@ def get_live_vix():
 
 @st.cache_data(ttl=86400)
 def compute_cap_tier_momentum(prices_df, stock_tickers):
-    """Calculate the % of stocks with positive 63-day momentum per cap tier. Cached 24h."""
+    """Calculate the % of stocks with positive 63-day momentum per cap tier. Cached 24h.
+    Uses Yahoo Finance for live market cap classification (slow, ~15s)."""
     mom_63 = {}
     for t in stock_tickers:
         px = prices_df.loc[t].dropna()
@@ -122,6 +123,70 @@ def compute_cap_tier_momentum(prices_df, stock_tickers):
     order = ["Large Cap (1-100)", "Mid Cap (101-250)", "Small Cap (251-500)", "Micro Cap (501+)"]
     summary = summary.reindex(order).dropna()
     return summary
+
+
+@st.cache_data
+def load_stockdb():
+    """Load stock cap classification from STOCKDB.csv. Fast — no network call needed."""
+    stockdb_path = SCRIPT_DIR / "STOCKDB.csv"
+    if not stockdb_path.exists():
+        return {}
+    df = pd.read_csv(stockdb_path)
+    return dict(zip(df["SYMBOL"].str.strip(), df["MARKETCAP"].str.strip()))
+
+
+def compute_cap_tier_dual(result_df, prices_df, stock_tickers, stockdb):
+    """
+    Compute dual market cap momentum breakdown using STOCKDB classification.
+    Signal 1: 63-day raw price return > 0%  (existing metric)
+    Signal 2: 3M Sharpe score > 0           (new metric — risk-adjusted)
+    Returns a DataFrame with both signals and delta per cap tier.
+    """
+    CAP_ORDER   = ["LARGECAP", "MIDCAP", "SMALLCAP", "MICROCAP"]
+    CAP_LABELS  = {
+        "LARGECAP":  "Large Cap",
+        "MIDCAP":    "Mid Cap",
+        "SMALLCAP":  "Small Cap",
+        "MICROCAP":  "Micro Cap",
+    }
+    records = []
+    for t in stock_tickers:
+        tier = stockdb.get(t)
+        if tier is None:
+            continue
+        # 63-day raw return
+        px     = prices_df.loc[t].dropna()
+        ret_63 = float(px.iloc[-1] / px.iloc[-63] - 1.0) if len(px) >= 63 else np.nan
+        # 3M raw Sharpe (S_3M column, not Z-score)
+        s3m    = result_df.loc[t, "S_3M"] if (t in result_df.index and "S_3M" in result_df.columns) else np.nan
+        records.append({
+            "Ticker":         t,
+            "Cap_Tier":       tier,
+            "Ret_63_Pos":     (ret_63 > 0)  if pd.notna(ret_63) else False,
+            "Sharpe_3M_Pos":  (float(s3m) > 0) if pd.notna(s3m)  else False,
+        })
+
+    df   = pd.DataFrame(records)
+    rows = []
+    for tier in CAP_ORDER:
+        sub = df[df["Cap_Tier"] == tier]
+        if sub.empty:
+            continue
+        total      = len(sub)
+        ret_pos    = int(sub["Ret_63_Pos"].sum())
+        sharpe_pos = int(sub["Sharpe_3M_Pos"].sum())
+        delta      = sharpe_pos - ret_pos
+        rows.append({
+            "Cap Tier":            CAP_LABELS.get(tier, tier),
+            "Total":               total,
+            "63D Ret +ve":         ret_pos,
+            "63D Ret % +ve":       round(ret_pos    / total * 100, 1),
+            "3M Sharpe +ve":       sharpe_pos,
+            "3M Sharpe % +ve":     round(sharpe_pos / total * 100, 1),
+            "Delta (Sharpe-Ret)": delta,
+        })
+    return pd.DataFrame(rows)
+
 
 def validate_tradelog_integrity(transactions):
     """Replay all transactions chronologically and check no ticker ever goes negative.
@@ -470,6 +535,144 @@ def load_ledger(path):
         except (KeyError, ValueError): pass
     return ledger
 
+
+# ── SCORE HISTORY TRACKING ────────────────────────────────────────────────────
+MAX_HISTORY_RUNS    = 50
+FAST_MOVER_RANK_CAP = 200
+
+def load_score_history(universe_name):
+    """Load composite score history from {universe}_score_history.json."""
+    path = SCRIPT_DIR / f"{universe_name}_score_history.json"
+    if not path.exists():
+        return []
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def append_score_history(universe_name, input_path, result_df):
+    """
+    Append the current run's composite scores to the history file.
+    Only writes if the price file mtime has changed since the last recorded run.
+    Caps at MAX_HISTORY_RUNS entries (rolling window).
+    Returns the updated history list.
+    """
+    history = load_score_history(universe_name)
+
+    try:
+        mtime_ts  = Path(input_path).stat().st_mtime
+        mtime_str = datetime.datetime.fromtimestamp(mtime_ts).strftime("%Y-%m-%dT%H:%M:%S")
+    except Exception:
+        mtime_str = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+    # Skip if this exact file version was already recorded
+    if history and history[-1].get("file_mtime") == mtime_str:
+        return history
+
+    scores = {}
+    for ticker in result_df.index:
+        val = result_df["COMPOSITE"].get(ticker)
+        if val is not None and pd.notna(val):
+            scores[ticker] = round(float(val), 4)
+
+    history.append({
+        "run_date":   datetime.date.today().isoformat(),
+        "file_mtime": mtime_str,
+        "scores":     scores,
+    })
+
+    if len(history) > MAX_HISTORY_RUNS:
+        history = history[-MAX_HISTORY_RUNS:]
+
+    try:
+        safe_write_json(SCRIPT_DIR / f"{universe_name}_score_history.json", history)
+    except Exception:
+        pass
+
+    return history
+
+
+def compute_rising_candidates(history, result_df, held_tickers):
+    """
+    Identify unowned stocks whose composite score is rising.
+    Requires >= 3 historical runs.
+    Returns (candidates_df, n_runs).
+    """
+    n_runs = len(history)
+    if n_runs < 3:
+        return pd.DataFrame(), n_runs
+
+    all_tickers = set()
+    for entry in history:
+        all_tickers.update(entry["scores"].keys())
+
+    score_series = {t: [] for t in all_tickers}
+    for entry in history:
+        for t in all_tickers:
+            score_series[t].append(entry["scores"].get(t, np.nan))
+
+    candidates = []
+    for ticker in all_tickers:
+        if ticker in held_tickers:
+            continue
+        if ticker not in result_df.index:
+            continue
+        rank_val = result_df.loc[ticker, "RANK"]
+        if pd.isna(rank_val):
+            continue
+        rank = int(rank_val)
+
+        scores_arr = np.array(score_series[ticker], dtype=float)
+        valid      = ~np.isnan(scores_arr)
+        if valid.sum() < 3:
+            continue
+        clean = scores_arr[valid]
+
+        # Velocity: linear slope of last 5 valid points
+        window = clean[-5:]
+        slope  = float(np.polyfit(np.arange(len(window)), window, 1)[0]) if len(window) >= 2 else 0.0
+
+        # Streak: consecutive rising runs from the tail
+        streak = 0
+        for i in range(len(clean) - 1, 0, -1):
+            if clean[i] > clean[i - 1]:
+                streak += 1
+            else:
+                break
+
+        zone = "🔴 Near-Term" if rank <= 50 else ("🟡 Building" if rank <= 100 else None)
+        s_now   = float(clean[-1])
+        s_prev  = float(clean[-2]) if len(clean) >= 2 else None
+        s_prev2 = float(clean[-3]) if len(clean) >= 3 else None
+        candidates.append({
+            "Ticker":    ticker,
+            "Zone":      zone,
+            "_zo":       0 if rank <= 50 else (1 if rank <= 100 else 2),
+            "Rank":      rank,
+            "Score Now": round(s_now, 3),
+            "Score -1":  round(s_prev, 3) if s_prev is not None else None,
+            "Score -2":  round(s_prev2, 3) if s_prev2 is not None else None,
+            "Velocity":  round(slope, 4),
+            "Streak ↑":  streak,
+        })
+
+    if not candidates:
+        return pd.DataFrame(), n_runs
+
+    df = pd.DataFrame(candidates)
+
+    # Fast Mover: top 10 by velocity among rank <= FAST_MOVER_RANK_CAP, not already zoned
+    none_zone   = df[df["Zone"].isna() & (df["Rank"] <= FAST_MOVER_RANK_CAP)]
+    fast_tickers = none_zone.nlargest(10, "Velocity")["Ticker"].tolist()
+    df.loc[df["Ticker"].isin(fast_tickers) & df["Zone"].isna(), "Zone"] = "\u26a1 Fast Mover"
+
+    df = df[df["Zone"].notna() & (df["Velocity"] > 0)].copy()
+    df = df.sort_values(["_zo", "Velocity"], ascending=[True, False]).drop(columns=["_zo"])
+    return df, n_runs
+
+
 # ── TITLE ─────────────────────────────────────────────────────────────────────
 st.markdown(
     "<h1 style='color:#1F4E79; margin-bottom:0;'>📊 Sharpe Momentum Strategy</h1>"
@@ -515,6 +718,22 @@ unrealized_pnl = tradelog_result["unrealized_pnl"]
 # Sync tradelog to positions ledger on startup to ensure consistency
 sync_to_positions_ledger(LEDGER_FILE, active_holdings)
 ledger = load_ledger(LEDGER_FILE)
+
+# Score history: record scores if price file has been refreshed
+held_tickers_global = set(active_holdings.keys())
+try:
+    score_history  = append_score_history(universe, input_path, result)
+    rising_df, n_hist_runs = compute_rising_candidates(
+        score_history, result, held_tickers_global)
+except Exception as _eh:
+    score_history       = []
+    rising_df           = pd.DataFrame()
+    n_hist_runs         = 0
+    _score_history_err  = str(_eh)
+else:
+    _score_history_err  = None
+
+
 
 # ── REGIME HEADER ─────────────────────────────────────────────────────────────
 if regime_score >= 0.65:
@@ -580,12 +799,10 @@ with st.expander("📡 Regime Score Breakdown", expanded=False):
     st.markdown("**📈 Regime Score Trend**")
     if len(regime_history) >= 2:
         hist_df = pd.DataFrame(regime_history)
-        # Defensively strip any time component (handles both "YYYY-MM-DD" and full datetimes)
         hist_df["date"] = pd.to_datetime(hist_df["date"]).dt.normalize()
         hist_df = hist_df.set_index("date").sort_index()
         chart_df = hist_df[["Composite", "Breadth", "Momentum"]].copy()
         chart_df["Entry Threshold"] = NEW_ENTRY_THRESHOLD
-        # Convert index to date-only strings so x-axis shows no time component
         chart_df.index = chart_df.index.strftime("%d-%b-%Y")
         st.line_chart(chart_df, height=260)
         st.caption(
@@ -597,69 +814,156 @@ with st.expander("📡 Regime Score Breakdown", expanded=False):
 
 # Cap Tier breakdown
 with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
-    st.markdown("Percentage of stocks with a positive 63-day return across each Cap Tier. *(Cached daily)*")
+
 
     def _tier_color(pct):
-        """Return (bar_fill, bar_track, text_color) based on % positive momentum."""
-        if pct >= 60:
-            return "#2E7D32", "#E8F5E9", "#2E7D32"   # green
-        elif pct >= 30:
-            return "#F57F17", "#FFF8E1", "#E65100"   # orange
-        else:
-            return "#C62828", "#FFEBEE", "#C62828"   # red
+        if pct >= 60:  return "#2E7D32", "#E8F5E9", "#2E7D32"
+        elif pct >= 30: return "#F57F17", "#FFF8E1", "#E65100"
+        else:           return "#C62828", "#FFEBEE", "#C62828"
 
-    def _render_tier_bars(tier_summary):
-        cards_html = "<div style='display:flex; flex-direction:column; gap:5px; margin-top:6px;'>"
-        for tier, row in tier_summary.iterrows():
-            pct      = float(row["% Positive"])
-            total    = int(row["Total Stocks"])
-            positive = int(row["Positive Mom Stocks"])
-            fill, track, txt = _tier_color(pct)
-            bar_w    = min(100, max(0, pct))
+    def _delta_color(d):
+        if d > 0:  return "#2E7D32"   # green  — Sharpe sees more positive
+        if d < 0:  return "#C62828"   # red    — Sharpe sees less positive
+        return "#9E9E9E"              # grey   — identical
 
-            cards_html += f"""
-            <div style='background:#F8F9FA; border:1px solid #E8ECF1; border-radius:8px;
-                        padding:8px 14px; display:flex; align-items:center; gap:12px;'>
-                <div style='min-width:160px;'>
-                    <div style='font-weight:600; font-size:13px; color:#1A1A2E;'>{tier}</div>
-                    <div style='font-size:11px; color:#9E9E9E; margin-top:1px;'>
-                        {positive} of {total} stocks
+    def _render_dual_bars(dual_df):
+        """Render side-by-side bars: 63-day return vs 3M Sharpe per cap tier."""
+        hdr1, hdr2 = st.columns(2)
+        hdr1.markdown(
+            "<div style='font-weight:700; font-size:13px; color:#1A1A2E; "
+            "padding:4px 0 4px 14px;'>📈 63-Day Raw Return &gt; 0%</div>",
+            unsafe_allow_html=True)
+        hdr2.markdown(
+            "<div style='font-weight:700; font-size:13px; color:#1F4E79; "
+            "padding:4px 0 4px 14px;'>⚡ 3M Sharpe Score &gt; 0 &nbsp;"
+            "<span style='font-size:11px; color:#9E9E9E;'>(risk-adjusted)</span></div>",
+            unsafe_allow_html=True)
+
+        for _, row in dual_df.iterrows():
+            tier       = row["Cap Tier"]
+            total      = int(row["Total"])
+            ret_pos    = int(row["63D Ret +ve"])
+            ret_pct    = float(row["63D Ret % +ve"])
+            sharpe_pos = int(row["3M Sharpe +ve"])
+            sharpe_pct = float(row["3M Sharpe % +ve"])
+            delta      = int(row["Delta (Sharpe-Ret)"])
+
+            rf, rt, rtxt = _tier_color(ret_pct)
+            sf, st_, stxt = _tier_color(sharpe_pct)
+            dcol = _delta_color(delta)
+            delta_str = (f"+{delta}" if delta > 0 else str(delta))
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"""
+                <div style='background:#F8F9FA; border:1px solid #E8ECF1; border-radius:8px;
+                            padding:8px 14px; display:flex; align-items:center; gap:12px; margin-bottom:4px;'>
+                    <div style='min-width:100px;'>
+                        <div style='font-weight:600; font-size:13px; color:#1A1A2E;'>{tier}</div>
+                        <div style='font-size:11px; color:#9E9E9E; margin-top:1px;'>{ret_pos} of {total}</div>
                     </div>
-                </div>
-                <div style='flex:1; background:{track}; border-radius:999px; height:8px; overflow:hidden;'>
-                    <div style='width:{bar_w:.1f}%; height:100%; background:{fill};
-                                border-radius:999px; transition:width 0.4s ease;'></div>
-                </div>
-                <div style='min-width:48px; text-align:right; font-weight:700;
-                            font-size:14px; color:{txt};'>{pct:.1f}%</div>
-            </div>"""
-        cards_html += "</div>"
-        st.markdown(cards_html, unsafe_allow_html=True)
+                    <div style='flex:1; background:{rt}; border-radius:999px; height:8px; overflow:hidden;'>
+                        <div style='width:{min(100,ret_pct):.1f}%; height:100%; background:{rf};
+                                    border-radius:999px;'></div>
+                    </div>
+                    <div style='min-width:44px; text-align:left; font-weight:700;
+                                font-size:14px; color:{rtxt};'>{ret_pct:.1f}%</div>
+                </div>""", unsafe_allow_html=True)
+            with col2:
+                st.markdown(f"""
+                <div style='background:#F8F9FA; border:1px solid #E8ECF1; border-radius:8px;
+                            padding:8px 14px; display:flex; align-items:center; gap:12px; margin-bottom:4px;'>
+                    <div style='min-width:100px;'>
+                        <div style='font-weight:600; font-size:13px; color:#1A1A2E;'>{tier}</div>
+                        <div style='font-size:11px; color:#9E9E9E; margin-top:1px;'>
+                            {sharpe_pos} of {total} &nbsp;
+                            <span style='color:{dcol}; font-weight:600;'>({delta_str})</span>
+                        </div>
+                    </div>
+                    <div style='flex:1; background:{st_}; border-radius:999px; height:8px; overflow:hidden;'>
+                        <div style='width:{min(100,sharpe_pct):.1f}%; height:100%; background:{sf};
+                                    border-radius:999px;'></div>
+                    </div>
+                    <div style='min-width:44px; text-align:left; font-weight:700;
+                                font-size:14px; color:{stxt};'>{sharpe_pct:.1f}%</div>
+                </div>""", unsafe_allow_html=True)
 
-    # Show cached result immediately if already fetched this session
-    if "cap_tier_summary" in st.session_state:
-        _render_tier_bars(st.session_state["cap_tier_summary"])
-        if st.button("🔄 Refresh Market Cap Data", key="refresh_cap_tier"):
-            del st.session_state["cap_tier_summary"]
-            st.rerun()
+        st.caption(
+            "Delta (shown in count next to 3M Sharpe) = Sharpe positive count minus Return positive count. "
+            "Green = Sharpe identifies MORE positive-momentum stocks than raw return. "
+            "Red = Sharpe is more conservative.")
+
+    # ── Primary view: STOCKDB-based dual metric (instant, no network) ──────────
+    stockdb = load_stockdb()
+    if stockdb:
+        st.markdown(
+            "Comparing **63-day raw return > 0%** vs **3M Sharpe score > 0** across cap tiers. "
+            "Classification sourced from STOCKDB.csv.")
+        dual_df = compute_cap_tier_dual(result, prices_df, stock_tickers, stockdb)
+        if not dual_df.empty:
+            _render_dual_bars(dual_df)
+
+        else:
+            st.warning("No stocks matched STOCKDB classification. Check that tickers align.")
     else:
-        st.info("📡 Market Cap data is fetched on demand to keep the dashboard fast.")
-        if st.button("📊 Load Market Cap Data", key="load_cap_tier"):
-            try:
-                with st.spinner("Crunching Market Caps from Yahoo Finance (takes ~15 seconds on first run)..."):
-                    st.session_state["cap_tier_summary"] = compute_cap_tier_momentum(prices_df, stock_tickers)
+        st.warning("STOCKDB.csv not found. Cap tier classification unavailable.")
+
+    # ── Optional: Yahoo Finance market cap fetch (slow) ────────────────────────
+    st.markdown("---")
+    with st.expander("📡 Yahoo Finance Market Cap View (slow, ~15s)", expanded=False):
+        st.markdown("Fetches live market cap from Yahoo Finance for classification. Cached for 24h.")
+        if "cap_tier_summary" in st.session_state:
+            def _render_tier_bars(tier_summary):
+                cards_html = "<div style='display:flex; flex-direction:column; gap:5px; margin-top:6px;'>"
+                for tier, row in tier_summary.iterrows():
+                    pct      = float(row["% Positive"])
+                    total    = int(row["Total Stocks"])
+                    positive = int(row["Positive Mom Stocks"])
+                    fill, track, txt = _tier_color(pct)
+                    bar_w    = min(100, max(0, pct))
+                    cards_html += f"""
+                    <div style='background:#F8F9FA; border:1px solid #E8ECF1; border-radius:8px;
+                                padding:8px 14px; display:flex; align-items:center; gap:12px;'>
+                        <div style='min-width:160px;'>
+                            <div style='font-weight:600; font-size:13px; color:#1A1A2E;'>{tier}</div>
+                            <div style='font-size:11px; color:#9E9E9E; margin-top:1px;'>
+                                {positive} of {total} stocks
+                            </div>
+                        </div>
+                        <div style='flex:1; background:{track}; border-radius:999px; height:8px; overflow:hidden;'>
+                            <div style='width:{bar_w:.1f}%; height:100%; background:{fill};
+                                        border-radius:999px; transition:width 0.4s ease;'></div>
+                        </div>
+                        <div style='min-width:48px; text-align:right; font-weight:700;
+                                    font-size:14px; color:{txt};'>{pct:.1f}%</div>
+                    </div>"""
+                cards_html += "</div>"
+                st.markdown(cards_html, unsafe_allow_html=True)
+            _render_tier_bars(st.session_state["cap_tier_summary"])
+            if st.button("Refresh Yahoo Market Cap Data", key="refresh_cap_tier"):
+                del st.session_state["cap_tier_summary"]
                 st.rerun()
-            except Exception as e:
-                st.error(f"Could not load Market Cap data: {e}")
+        else:
+            st.info("Yahoo Finance market cap data not yet loaded.")
+            if st.button("Load Yahoo Market Cap Data", key="load_cap_tier"):
+                try:
+                    with st.spinner("Fetching Market Caps from Yahoo Finance (~15 seconds)..."):
+                        st.session_state["cap_tier_summary"] = compute_cap_tier_momentum(
+                            prices_df, stock_tickers)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Could not load Market Cap data: {e}")
+
 
 st.divider()
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
-tab_top, tab_exits, tab_tradelog, tab_calcs, tab_config = st.tabs([
+tab_top, tab_exits, tab_tradelog, tab_calcs, tab_early, tab_config = st.tabs([
     "📊 Top 25 Rankings",
     "🚨 Exit Monitor",
     "📝 Tradelog & MTM",
     "📋 Full Rankings",
+    "📈 Early Movers",
     "⚙️ Configuration"])
 
 # ── TAB 1: TOP 25 RANKINGS ────────────────────────────────────────────────────
@@ -694,32 +998,27 @@ with tab_top:
         vol_adj = round(comp / mean_vol, 3) if (comp is not None and mean_vol and mean_vol > 0) else None
 
         rows.append({
-            "Rank":          int(row["RANK"]) if pd.notna(row["RANK"]) else None,
+            "Rank":          str(int(row["RANK"])) if pd.notna(row["RANK"]) else "—",
             "Ticker":        ticker,
-            "Composite":     round(comp, 3) if comp is not None else None,
-            "Res Mom":       round(row["RES_MOM"], 3) if pd.notna(row.get("RES_MOM")) else None,
-            "Volatility %":  round(mean_vol * 100, 1) if mean_vol is not None else None,
-            "Vol-Adj Score": vol_adj,
-            "LTP":           round(ltp, 2) if ltp > 0 else None,
+            "Composite":     f"{comp:.3f}" if comp is not None else "—",
+            "Res Mom":       f"{row['RES_MOM']:.3f}" if pd.notna(row.get("RES_MOM")) else "—",
+            "Volatility %":  f"{mean_vol*100:.1f}%" if mean_vol is not None else "—",
+            "Vol-Adj Score": f"{vol_adj:.3f}" if vol_adj is not None else "—",
+            "LTP":           f"Rs {ltp:,.2f}" if ltp > 0 else "—",
         })
 
     top25_df = pd.DataFrame(rows)
 
     def style_top25(row):
         if row["Ticker"] in held_tickers:
-            return ["background-color:#FFFDE7;"] * len(row)   # light yellow — currently held
-        return ["background-color:#FFFFFF;"] * len(row)        # white
+            return ["background-color:#FFFDE7;"] * len(row)
+        return ["background-color:#FFFFFF;"] * len(row)
 
     st.dataframe(
-        top25_df.style.apply(style_top25, axis=1).format(
-            {"Rank":          "{:.0f}",
-             "Composite":     "{:.3f}",
-             "Res Mom":       "{:.3f}",
-             "Volatility %":  "{:.1f}%",
-             "Vol-Adj Score": "{:.3f}",
-             "LTP":           "Rs{:,.2f}"}, na_rep="—"),
+        top25_df.style.apply(style_top25, axis=1),
         use_container_width=True, hide_index=True,
         height=min(950, (DISPLAY_N + 2) * 36))
+
 
     st.caption("🟡 Yellow rows = currently held positions  |  White rows = not yet in portfolio")
 
@@ -1194,7 +1493,123 @@ with tab_calcs:
         f"Disqualified: {(result['PCT_FROM_52H'] < -25).sum()}  |  "
         f"Regime N (green rows): {dynamic_n}")
 
-# ── TAB 5: CONFIGURATION ─────────────────────────────────────────────────────
+# ── TAB 5: EARLY MOVERS ──────────────────────────────────────────────────────
+with tab_early:
+    st.markdown("## \U0001f4c8 Early Movers \u2014 Rising Score Candidates")
+    st.caption(
+        f"Tracks composite score across every price-file refresh. "
+        f"Surfaces **unowned** stocks whose score is consistently rising. "
+        f"Runs recorded: **{n_hist_runs}** / {MAX_HISTORY_RUNS}")
+
+    if _score_history_err:
+        st.error(f"⚠️ Score history error: `{_score_history_err}`")
+        st.stop()
+
+
+
+    if n_hist_runs < 3:
+        st.info(
+            f"\U0001f4c5 **{n_hist_runs} run(s) recorded so far.** "
+            "Score trend analysis requires at least **3 runs** with refreshed price data. "
+            "Come back after your next price-file refresh(es).")
+        st.markdown(
+            "**How it works:**\n"
+            f"- Every time you refresh `{selected_file}` and open this dashboard, "
+            "the composite score for every stock is saved automatically.\n"
+            "- After 3+ runs, this tab surfaces stocks whose score is rising consistently "
+            "\u2014 before they appear in your Top 25.\n"
+            "- Zones: \U0001f534 Near-Term (rank 26\u201350), "
+            "\U0001f7e1 Building (51\u2013100), "
+            "\u26a1 Fast Mover (top velocity, rank \u2264 200)")
+
+    elif rising_df.empty:
+        st.success("No rising unowned candidates at this time. Check back after the next refresh.")
+
+    else:
+        # ── Section A: Rising Candidates Table ────────────────────────────────
+        st.markdown("### \U0001f50d Rising Candidates")
+
+        def _style_early(row):
+            streak = int(row["Streak ↑"])
+            if streak >= 3: return ["background-color:#E8F5E9;"] * len(row)
+            if streak == 2: return ["background-color:#FFF8E1;"] * len(row)
+            return ["background-color:#FFFFFF;"] * len(row)
+
+        # Pre-format numerics as strings so Glide Data Grid left-aligns them
+        display_rising = rising_df.copy()
+        display_rising["Rank"]      = display_rising["Rank"].apply(lambda x: str(int(x)) if pd.notna(x) else "—")
+        display_rising["Score Now"] = display_rising["Score Now"].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
+        display_rising["Score -1"]  = display_rising["Score -1"].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
+        display_rising["Score -2"]  = display_rising["Score -2"].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
+        display_rising["Velocity"]  = display_rising["Velocity"].apply(lambda x: f"{x:+.4f}" if pd.notna(x) else "—")
+        display_rising["Streak ↑"]  = display_rising["Streak ↑"].apply(lambda x: str(int(x)) if pd.notna(x) else "—")
+
+        st.dataframe(
+            display_rising.style.apply(_style_early, axis=1),
+            use_container_width=True, hide_index=True,
+            height=min(800, (len(display_rising) + 2) * 36))
+
+
+        st.caption(
+            "\U0001f7e2 Green = 3+ consecutive rising runs  |  "
+            "\U0001f7e1 Yellow = 2 runs  |  "
+            "White = 1 run  |  "
+            "Velocity = score change per run (slope of last 5 points)")
+
+        st.divider()
+
+        # ── Section B: Score Trend Chart ──────────────────────────────────────
+        st.markdown("### \U0001f4c9 Score Trend Chart")
+
+        all_tracked = sorted({t for entry in score_history for t in entry["scores"]})
+        sel_ticker  = st.selectbox(
+            "Select a stock to view its score history",
+            options=["-- Select --"] + all_tracked,
+            key="early_mover_ticker_select")
+
+        if sel_ticker and sel_ticker != "-- Select --":
+            trend_rows = [
+                {"Run Date": e["run_date"],
+                 "Score":    e["scores"].get(sel_ticker, np.nan)}
+                for e in score_history]
+            trend_df = pd.DataFrame(trend_rows).set_index("Run Date")
+
+            max_show = len(trend_df)
+            if max_show > 3:
+                n_show = st.slider(
+                    "Runs to display", min_value=3, max_value=max_show,
+                    value=min(20, max_show), step=1,
+                    key="early_mover_history_slider")
+            else:
+                n_show = max_show
+                st.caption(f"Showing all {max_show} recorded runs. Slider appears once you have more than 3 runs.")
+            trend_df = trend_df.tail(n_show)
+
+
+            # Entry threshold = 25th percentile score of current Top 25
+            top25_scores    = result.head(25)["COMPOSITE"].dropna()
+            entry_threshold = float(top25_scores.quantile(0.25)) if not top25_scores.empty else None
+            if entry_threshold:
+                trend_df["Entry Threshold (Top 25 floor)"] = entry_threshold
+
+            st.line_chart(trend_df, height=320)
+
+            curr_rank  = result.loc[sel_ticker, "RANK"]      if sel_ticker in result.index else None
+            curr_score = result.loc[sel_ticker, "COMPOSITE"] if sel_ticker in result.index else None
+
+            mc1, mc2, mc3 = st.columns(3)
+            with mc1: st.metric("Current Rank",  f"#{int(curr_rank)}" if curr_rank and pd.notna(curr_rank) else "\u2014")
+            with mc2: st.metric("Current Score", f"{curr_score:.3f}" if curr_score and pd.notna(curr_score) else "\u2014")
+            with mc3: st.metric("Top 25 Floor",  f"{entry_threshold:.3f}" if entry_threshold else "\u2014")
+
+            if entry_threshold and curr_score and pd.notna(curr_score):
+                gap = entry_threshold - float(curr_score)
+                if gap > 0:
+                    st.caption(f"\U0001f4cf Gap to Top 25 entry floor: **{gap:.3f}** score points")
+                else:
+                    st.success(f"\u2705 **{sel_ticker}** is already above the Top 25 entry floor!")
+
+# ── TAB 6: CONFIGURATION ─────────────────────────────────────────────────────
 with tab_config:
     st.markdown("## ⚙️ Configuration")
 
