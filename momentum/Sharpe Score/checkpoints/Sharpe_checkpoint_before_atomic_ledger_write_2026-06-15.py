@@ -59,7 +59,6 @@ import json
 import datetime
 import argparse
 import subprocess
-import shutil
 import numpy as np
 import pandas as pd
 import openpyxl
@@ -201,7 +200,7 @@ def load_ledger(path: str) -> dict:
 
 
 def save_ledger(ledger: dict, path: str):
-    """Persist the updated ledger back to JSON using an atomic replace."""
+    """Persist the updated ledger back to JSON."""
     serialisable = {
         ticker: {
             "entry_date":  rec["entry_date"].isoformat(),
@@ -209,24 +208,9 @@ def save_ledger(ledger: dict, path: str):
         }
         for ticker, rec in ledger.items()
     }
-    p = Path(path)
-    tmp_path = p.with_suffix(".tmp")
-    bak_path = p.with_suffix(".bak")
-
-    try:
-        with open(tmp_path, "w") as f:
-            json.dump(serialisable, f, indent=2)
-        if p.exists():
-            shutil.copy2(p, bak_path)
-        shutil.move(str(tmp_path), str(p))
-    except Exception as e:
-        if tmp_path.exists():
-            tmp_path.unlink()
-        raise e
-
+    with open(path, "w") as f:
+        json.dump(serialisable, f, indent=2)
     print(f"  Ledger saved: {len(ledger)} position(s) -> '{path}'")
-    if bak_path.exists():
-        print(f"  Previous ledger backup -> '{bak_path}'")
 
 
 def days_held(ticker: str, ledger: dict) -> int:

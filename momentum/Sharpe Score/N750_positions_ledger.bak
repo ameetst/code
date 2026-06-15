@@ -54,5 +54,21 @@
   "CPPLUS": {
     "entry_date": "2026-06-01",
     "entry_price": 3094.0
+  },
+  "STLTECH": {
+    "entry_date": "2026-06-15",
+    "entry_price": 583.65
+  },
+  "SYRMA": {
+    "entry_date": "2026-06-15",
+    "entry_price": 1266.7
+  },
+  "APARINDS": {
+    "entry_date": "2026-06-15",
+    "entry_price": 15221.0
+  },
+  "ATHERENERG": {
+    "entry_date": "2026-06-15",
+    "entry_price": 1028.7
   }
 }

@@ -51,7 +51,6 @@ Usage:  python Sharpe.py <UNIVERSE> [path/to/ledger.json]
           UNIVERSE examples: N500, N750, NSEAll
           Derives: <UNIVERSE>_updated.xlsx  ->  <UNIVERSE>_rankings.xlsx
                    <UNIVERSE>_positions_ledger.json (overridden by 2nd arg)
-          Use --dry-run to generate recommendations without saving ledger changes.
 """
 
 import sys
@@ -59,7 +58,6 @@ import json
 import datetime
 import argparse
 import subprocess
-import shutil
 import numpy as np
 import pandas as pd
 import openpyxl
@@ -79,8 +77,6 @@ _parser.add_argument("--update", action="store_true",
                      help="Run update_stock_price.py to refresh data before computing rankings")
 _parser.add_argument("--min-turnover", type=float, default=1.0,
                      help="Minimum median daily turnover in Rs Cr (default: 1.0)")
-_parser.add_argument("--dry-run", action="store_true",
-                     help="Generate rankings/exits without saving changes to the positions ledger")
 _args = _parser.parse_args()
 
 # -- CONFIG --------------------------------------------------------------------
@@ -97,7 +93,6 @@ HOLD_RANK_BUFFER  = 40          # exit rank threshold
 MIN_HOLD_DAYS     = 28          # calendar days before rank-based exit is permitted
 LIQUID_YIELD_PA   = 0.06        # 6% p.a. on idle cash
 MIN_TURNOVER_CR   = _args.min_turnover   # Minimum median daily turnover (₹ Cr)
-DRY_RUN           = _args.dry_run
 
 # -- DYNAMIC REGIME PARAMETERS -------------------------------------------------
 MIN_N               = 5      # minimum holdings at lowest regime score
@@ -201,7 +196,7 @@ def load_ledger(path: str) -> dict:
 
 
 def save_ledger(ledger: dict, path: str):
-    """Persist the updated ledger back to JSON using an atomic replace."""
+    """Persist the updated ledger back to JSON."""
     serialisable = {
         ticker: {
             "entry_date":  rec["entry_date"].isoformat(),
@@ -209,24 +204,9 @@ def save_ledger(ledger: dict, path: str):
         }
         for ticker, rec in ledger.items()
     }
-    p = Path(path)
-    tmp_path = p.with_suffix(".tmp")
-    bak_path = p.with_suffix(".bak")
-
-    try:
-        with open(tmp_path, "w") as f:
-            json.dump(serialisable, f, indent=2)
-        if p.exists():
-            shutil.copy2(p, bak_path)
-        shutil.move(str(tmp_path), str(p))
-    except Exception as e:
-        if tmp_path.exists():
-            tmp_path.unlink()
-        raise e
-
+    with open(path, "w") as f:
+        json.dump(serialisable, f, indent=2)
     print(f"  Ledger saved: {len(ledger)} position(s) -> '{path}'")
-    if bak_path.exists():
-        print(f"  Previous ledger backup -> '{bak_path}'")
 
 
 def days_held(ticker: str, ledger: dict) -> int:
@@ -376,12 +356,8 @@ print(f"  Dynamic N     : {dynamic_n}  "
 # Two exit triggers — evaluated independently for every held position.
 #
 # EXIT_52H  — 52H disqualification.
-#   The stock has PCT_FROM_52H < -25%.
+#   The stock has RANK = NaN because PCT_FROM_52H breached -25%.
 #   This overrides the 28-day hold lock unconditionally.
-#
-# EXIT_FILTER — Non-rank eligibility disqualification.
-#   The stock has no RANK for a non-52H reason, e.g. ADTV failure or missing data.
-#   This is kept separate so liquidity/data issues are not mislabeled as 52H breaches.
 #
 # EXIT_RANK — Rank-based exit.
 #   The stock's rank has fallen beyond HOLD_RANK_BUFFER (40)
@@ -396,21 +372,17 @@ print(f"  EXIT EVALUATION  ({TODAY.strftime('%d-%b-%Y')})")
 print(f"  Held positions   : {len(ledger)}")
 print(f"{'-'*60}")
 
-exit_52h_list    = []   # immediate exits — 52H breach (lock overridden)
-exit_filter_list = []   # non-52H eligibility exits — e.g. ADTV failure / missing rank
-exit_rank_list   = []   # rank exits — rank > 40 AND hold >= 28 days
-hold_list        = []   # retained positions
+exit_52h_list   = []   # immediate exits — 52H breach (lock overridden)
+exit_rank_list  = []   # rank exits — rank > 40 AND hold >= 28 days
+hold_list       = []   # retained positions
 
 for ticker, rec in ledger.items():
     held_days  = days_held(ticker, ledger)
     rank_val   = result.loc[ticker, "RANK"] if ticker in result.index else np.nan
     pct52h_val = result.loc[ticker, "PCT_FROM_52H"] if ticker in result.index else np.nan
-    adtv_val   = result.loc[ticker, "ADTV_ELIGIBLE"] if (
-        ticker in result.index and "ADTV_ELIGIBLE" in result.columns
-    ) else True
 
-    # -- Trigger 1: 52H disqualification (direct 52H test)
-    if pd.notna(pct52h_val) and pct52h_val < -25:
+    # -- Trigger 1: 52H disqualification (NaN rank means failed the 52H gate)
+    if pd.isna(rank_val):
         exit_52h_list.append({
             "ticker":       ticker,
             "held_days":    held_days,
@@ -419,19 +391,6 @@ for ticker, rec in ledger.items():
             "entry_date":   rec["entry_date"].isoformat(),
             "entry_price":  rec["entry_price"],
             "exit_trigger": "52H_BREACH",
-        })
-
-    # -- Trigger 1b: non-52H eligibility failure (e.g. ADTV / missing data)
-    elif pd.isna(rank_val):
-        trigger = "ADTV_FAIL" if not bool(adtv_val) else "NO_RANK"
-        exit_filter_list.append({
-            "ticker":       ticker,
-            "held_days":    held_days,
-            "rank":         None,
-            "pct_52h":      round(pct52h_val, 1) if pd.notna(pct52h_val) else None,
-            "entry_date":   rec["entry_date"].isoformat(),
-            "entry_price":  rec["entry_price"],
-            "exit_trigger": trigger,
         })
 
     # -- Trigger 2: Rank exit (respects 28-day lock)
@@ -467,7 +426,7 @@ for ticker, rec in ledger.items():
         })
 
 # -- PRINT EXIT SUMMARY --------------------------------------------------------
-all_exits = exit_52h_list + exit_filter_list + exit_rank_list
+all_exits = exit_52h_list + exit_rank_list
 
 if exit_52h_list:
     print(f"\n  [EXIT — 52H BREACH]  Sell immediately. Hold lock overridden.")
@@ -476,15 +435,6 @@ if exit_52h_list:
     for e in exit_52h_list:
         print(f"  {e['ticker']:<14} {e['held_days']:>4}d  "
               f"  {'NaN':>6}  {str(e['pct_52h']):>7}  "
-              f"{e['entry_date']:>10}  {e['entry_price']:>10,.2f}")
-
-if exit_filter_list:
-    print(f"\n  [EXIT — ELIGIBILITY]  Failed non-52H eligibility filter.")
-    print(f"  {'TICKER':<14} {'HELD':>5}  {'TRIGGER':>10}  {'52H%':>7}  {'ENTRY':>10}  {'@ PRICE':>10}")
-    print(f"  {'-'*70}")
-    for e in exit_filter_list:
-        print(f"  {e['ticker']:<14} {e['held_days']:>4}d  "
-              f"  {e['exit_trigger']:>10}  {str(e['pct_52h']):>7}  "
               f"{e['entry_date']:>10}  {e['entry_price']:>10,.2f}")
 
 if exit_rank_list:
@@ -508,7 +458,6 @@ if not ledger:
     print("  No open positions in ledger — nothing to evaluate.")
 
 print(f"\n  Summary: {len(exit_52h_list)} 52H exit(s)  |  "
-      f"{len(exit_filter_list)} eligibility exit(s)  |  "
       f"{len(exit_rank_list)} rank exit(s)  |  {len(hold_list)} hold(s)")
 print(f"{'-'*60}")
 
@@ -546,21 +495,18 @@ else:
 # The caller is responsible for confirming execution before saving —
 # in a live system you'd only save after trades are confirmed filled.
 #
-if DRY_RUN:
-    print(f"\n  [DRY RUN] Ledger not updated. Recommendations only -> '{LEDGER_FILE}' unchanged.")
-else:
-    for e in all_exits:
-        ledger.pop(e["ticker"], None)
+for e in all_exits:
+    ledger.pop(e["ticker"], None)
 
-    for ticker in entry_candidates:
-        px = prices_df.loc[ticker].dropna()
-        last_px = float(px.iloc[-1]) if len(px) > 0 else 0.0
-        ledger[ticker] = {
-            "entry_date":  TODAY,
-            "entry_price": last_px,
-        }
+for ticker in entry_candidates:
+    px = prices_df.loc[ticker].dropna()
+    last_px = float(px.iloc[-1]) if len(px) > 0 else 0.0
+    ledger[ticker] = {
+        "entry_date":  TODAY,
+        "entry_price": last_px,
+    }
 
-    save_ledger(ledger, LEDGER_FILE)
+save_ledger(ledger, LEDGER_FILE)
 
 # -- CAPITAL ALLOCATION (VOLATILITY WEIGHTING) ---------------------------------
 print("\nCalculating Dynamic Volatility Weights for Top N Portfolio ...")
@@ -605,13 +551,11 @@ HEAD = (f"{'RNK':>4}  {'TICKER':<12}  {'STATUS':<10}  {'TARGET_WT':>9}  {'ALLOC_
 
 # Determine per-ticker display status
 exit_tickers  = {e["ticker"] for e in exit_52h_list}
-filter_exit_set = {e["ticker"] for e in exit_filter_list}
 rank_exit_set = {e["ticker"] for e in exit_rank_list}
 new_entry_set = set(entry_candidates)
 
 def ticker_status(ticker):
     if ticker in exit_tickers:   return "EXIT-52H"
-    if ticker in filter_exit_set:return "EXIT-FLTR"
     if ticker in rank_exit_set:  return "EXIT-RANK"
     if ticker in new_entry_set:  return "NEW BUY"
     if ticker in currently_held: return "HOLD"
@@ -703,7 +647,6 @@ def set_cell(cell, value, font=None, bg=None, num_fmt=None, align="right"):
 def row_style(ticker):
     """Return (font, bg_fill) based on exit / entry status."""
     if ticker in exit_tickers:   return AMBER_FONT, EXIT52_FILL
-    if ticker in filter_exit_set:return RED_FONT,   EXITRK_FILL
     if ticker in rank_exit_set:  return RED_FONT,   EXITRK_FILL
     if ticker in new_entry_set:  return GREEN_FONT, NEWBY_FILL
     return GOLD_FONT, HOLD_FILL
@@ -798,11 +741,7 @@ for i, e in enumerate(all_exits, 3):
     is_52h = e["exit_trigger"] == "52H_BREACH"
     row_fnt = AMBER_FONT if is_52h else RED_FONT
     row_bg  = EXIT52_FILL if is_52h else EXITRK_FILL
-    note    = (
-        "Lock overridden — 52H breach" if is_52h
-        else f"Rank > {HOLD_RANK_BUFFER}, held >= {MIN_HOLD_DAYS}d" if e["exit_trigger"] == "RANK_EXIT"
-        else "Failed non-52H eligibility filter"
-    )
+    note    = "Lock overridden — 52H breach" if is_52h else f"Rank > {HOLD_RANK_BUFFER}, held >= {MIN_HOLD_DAYS}d"
     vals = [
         (e["ticker"],      row_fnt, row_bg),
         (e["exit_trigger"],row_fnt, row_bg),

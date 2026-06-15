@@ -5,5 +5,19 @@
     "Breadth": 0.611,
     "Momentum": 0.227,
     "Dynamic N": 12
+  },
+  {
+    "date": "2026-06-13",
+    "Composite": 0.3448,
+    "Breadth": 0.584,
+    "Momentum": 0.24,
+    "Dynamic N": 11
+  },
+  {
+    "date": "2026-06-14",
+    "Composite": 0.3448,
+    "Breadth": 0.584,
+    "Momentum": 0.24,
+    "Dynamic N": 11
   }
 ]

@@ -51,7 +51,6 @@ Usage:  python Sharpe.py <UNIVERSE> [path/to/ledger.json]
           UNIVERSE examples: N500, N750, NSEAll
           Derives: <UNIVERSE>_updated.xlsx  ->  <UNIVERSE>_rankings.xlsx
                    <UNIVERSE>_positions_ledger.json (overridden by 2nd arg)
-          Use --dry-run to generate recommendations without saving ledger changes.
 """
 
 import sys
@@ -59,7 +58,6 @@ import json
 import datetime
 import argparse
 import subprocess
-import shutil
 import numpy as np
 import pandas as pd
 import openpyxl
@@ -79,8 +77,6 @@ _parser.add_argument("--update", action="store_true",
                      help="Run update_stock_price.py to refresh data before computing rankings")
 _parser.add_argument("--min-turnover", type=float, default=1.0,
                      help="Minimum median daily turnover in Rs Cr (default: 1.0)")
-_parser.add_argument("--dry-run", action="store_true",
-                     help="Generate rankings/exits without saving changes to the positions ledger")
 _args = _parser.parse_args()
 
 # -- CONFIG --------------------------------------------------------------------
@@ -97,7 +93,6 @@ HOLD_RANK_BUFFER  = 40          # exit rank threshold
 MIN_HOLD_DAYS     = 28          # calendar days before rank-based exit is permitted
 LIQUID_YIELD_PA   = 0.06        # 6% p.a. on idle cash
 MIN_TURNOVER_CR   = _args.min_turnover   # Minimum median daily turnover (₹ Cr)
-DRY_RUN           = _args.dry_run
 
 # -- DYNAMIC REGIME PARAMETERS -------------------------------------------------
 MIN_N               = 5      # minimum holdings at lowest regime score
@@ -201,7 +196,7 @@ def load_ledger(path: str) -> dict:
 
 
 def save_ledger(ledger: dict, path: str):
-    """Persist the updated ledger back to JSON using an atomic replace."""
+    """Persist the updated ledger back to JSON."""
     serialisable = {
         ticker: {
             "entry_date":  rec["entry_date"].isoformat(),
@@ -209,24 +204,9 @@ def save_ledger(ledger: dict, path: str):
         }
         for ticker, rec in ledger.items()
     }
-    p = Path(path)
-    tmp_path = p.with_suffix(".tmp")
-    bak_path = p.with_suffix(".bak")
-
-    try:
-        with open(tmp_path, "w") as f:
-            json.dump(serialisable, f, indent=2)
-        if p.exists():
-            shutil.copy2(p, bak_path)
-        shutil.move(str(tmp_path), str(p))
-    except Exception as e:
-        if tmp_path.exists():
-            tmp_path.unlink()
-        raise e
-
+    with open(path, "w") as f:
+        json.dump(serialisable, f, indent=2)
     print(f"  Ledger saved: {len(ledger)} position(s) -> '{path}'")
-    if bak_path.exists():
-        print(f"  Previous ledger backup -> '{bak_path}'")
 
 
 def days_held(ticker: str, ledger: dict) -> int:
@@ -546,21 +526,18 @@ else:
 # The caller is responsible for confirming execution before saving —
 # in a live system you'd only save after trades are confirmed filled.
 #
-if DRY_RUN:
-    print(f"\n  [DRY RUN] Ledger not updated. Recommendations only -> '{LEDGER_FILE}' unchanged.")
-else:
-    for e in all_exits:
-        ledger.pop(e["ticker"], None)
+for e in all_exits:
+    ledger.pop(e["ticker"], None)
 
-    for ticker in entry_candidates:
-        px = prices_df.loc[ticker].dropna()
-        last_px = float(px.iloc[-1]) if len(px) > 0 else 0.0
-        ledger[ticker] = {
-            "entry_date":  TODAY,
-            "entry_price": last_px,
-        }
+for ticker in entry_candidates:
+    px = prices_df.loc[ticker].dropna()
+    last_px = float(px.iloc[-1]) if len(px) > 0 else 0.0
+    ledger[ticker] = {
+        "entry_date":  TODAY,
+        "entry_price": last_px,
+    }
 
-    save_ledger(ledger, LEDGER_FILE)
+save_ledger(ledger, LEDGER_FILE)
 
 # -- CAPITAL ALLOCATION (VOLATILITY WEIGHTING) ---------------------------------
 print("\nCalculating Dynamic Volatility Weights for Top N Portfolio ...")

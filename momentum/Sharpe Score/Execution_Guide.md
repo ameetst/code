@@ -4,18 +4,39 @@
 
 OVERVIEW
 --------
-Two Python scripts compute momentum scores for NSE stocks and output a ranked
-Excel workbook with exit recommendations and position management.
+Three Python scripts work together to fetch data, compute momentum scores, and
+output a ranked Excel workbook with exit recommendations and position management.
 
-  momentum_lib.py   Library of reusable scoring functions (do not run directly)
-  Sharpe.py         Main script — loads data, evaluates exits, writes output
+  update_stock_price.py   Data fetcher — downloads prices + volume from Yahoo Finance
+  momentum_lib.py         Library of reusable scoring functions (do not run directly)
+  Sharpe.py               Main script — loads data, evaluates exits, writes output
+  sharpe_dashboard.py     Streamlit dashboard — interactive UI for rankings & analysis
 
 
-REQUIRED FILES (all in the same folder)
-----------------------------------------
+FOLDER STRUCTURE
+-----------------
+  yfinance data scripts/
+  ├── update_stock_price.py          (data fetcher)
+  ├── N750.xlsx                      (template — tickers + date headers, DATA + VOLUME sheets)
+  ├── N500.xlsx                      (template)
+  └── NSEAll.xlsx                    (template)
+
+  momentum/Sharpe Score/
+  ├── Sharpe.py                      (main script)
+  ├── momentum_lib.py                (library)
+  ├── sharpe_dashboard.py            (Streamlit dashboard)
+  ├── <UNIVERSE>_updated.xlsx        (generated — prices + volume filled in)
+  ├── <UNIVERSE>_rankings.xlsx       (output — ranked workbook)
+  ├── <UNIVERSE>_positions_ledger.json (auto-created on first run)
+  ├── STOCKDB.csv                    (market cap classification)
+  └── Sector Metadata.csv            (sector info)
+
+
+REQUIRED FILES (in momentum/Sharpe Score/)
+-------------------------------------------
   momentum_lib.py                  (library — must be present)
   Sharpe.py                        (main script)
-  <UNIVERSE>_updated.xlsx          (input price data — see format notes below)
+  <UNIVERSE>_updated.xlsx          (input price + volume data — see format notes below)
   <UNIVERSE>_positions_ledger.json (auto-created on first run if missing)
 
 
@@ -23,24 +44,30 @@ DEPENDENCIES
 ------------
 Install once using pip:
 
-  pip install pandas numpy openpyxl scipy
+  pip install pandas numpy openpyxl scipy yfinance
 
 Python version: 3.9 or higher recommended.
 
 
 INPUT FILE FORMAT  (<UNIVERSE>_updated.xlsx)
 ---------------------------------------------
-Sheet name  : DATA
-Row 1       : Header row
-  - Column 1        : TICKER  (text label e.g. "ASHOKLEY", "NIFTY500")
-  - Column 2        : CLOSE   (latest close price — informational only)
-  - Column 3        : 52WK HIGH
-  - Columns 4+      : Daily close prices, one column per trading date
-                      Column header must be a date value (Excel date format)
+The input file must contain two sheets:
+
+Sheet 1: DATA
+  Row 1       : Header row
+    - Column 1        : TICKER  (text label e.g. "ASHOKLEY", "NIFTY500")
+    - Columns 2+      : Daily close prices, one column per trading date
+                        Column header must be a date value (Excel date format)
+
+Sheet 2: VOLUME
+  Same layout as DATA — tickers in column A, date headers in row 1.
+  Cell values are daily traded volume (number of shares).
+  Used for the ADTV turnover filter.
+  If this sheet is missing, the ADTV filter is skipped (backward compatible).
 
 Special rows:
-  - NIFTY500        : Must be present — used as the market benchmark for
-                      residual momentum. Automatically separated from the
+  - NIFTY500        : Must be present in DATA sheet — used as the market benchmark
+                      for residual momentum. Automatically separated from the
                       stock universe before scoring.
 
 Price data rules:
@@ -50,31 +77,95 @@ Price data rules:
     occurrence is used. Remove duplicates from the file before running.
 
 
+TEMPLATE FILE FORMAT  (<UNIVERSE>.xlsx)
+-----------------------------------------
+The template file lives in the "yfinance data scripts/" folder.
+It must contain two sheets (DATA + VOLUME) with:
+  - Tickers in column A (rows 2+)
+  - Date headers in row 1 (columns 2+, as Excel date values)
+  - All price/volume cells empty — update_stock_price.py fills them in.
+
+
 HOW TO RUN
 ----------
-Step 1.  Place all files in the same folder.
 
-Step 2.  Open a terminal / command prompt and navigate to that folder.
+>>> OPTION 1: ONE-STEP AUTOMATED (recommended) <<<
 
-Step 3.  Run the script — pass the universe name as the first argument:
+  Run Sharpe.py with the --update flag to automatically fetch fresh data
+  and compute rankings in a single command:
 
-           python Sharpe.py N500          # reads N500_updated.xlsx
-           python Sharpe.py N750          # reads N750_updated.xlsx
-           python Sharpe.py NSEAll        # reads NSEAll_updated.xlsx
+    cd "momentum/Sharpe Score"
+    python Sharpe.py N750 --update
 
-         Derived automatically from the UNIVERSE argument:
-           Input   : <UNIVERSE>_updated.xlsx
-           Output  : <UNIVERSE>_rankings.xlsx
-           Ledger  : <UNIVERSE>_positions_ledger.json
+  What happens:
+    1. Sharpe.py calls update_stock_price.py in "yfinance data scripts/"
+    2. update_stock_price.py reads the template N750.xlsx
+    3. Downloads 1 year of daily Close prices + Volume from Yahoo Finance
+    4. Writes prices to DATA sheet, volume to VOLUME sheet
+    5. Saves N750_updated.xlsx locally AND copies it to Sharpe Score folder
+    6. Sharpe.py then loads the updated file and computes rankings
 
-         Optional — override the ledger file path:
-           python Sharpe.py N500 path/to/custom_ledger.json
+  Optional — custom turnover threshold:
+    python Sharpe.py N750 --update --min-turnover 2.0    # Rs 2 Cr minimum
 
-Step 4.  The script prints progress, exit actions, and entry candidates to
-         the console.
+  This is equivalent to running Option 2 manually, but in one command.
 
-Step 5.  Output file is written to the same folder:
-           <UNIVERSE>_rankings.xlsx
+
+>>> OPTION 2: TWO-STEP MANUAL <<<
+
+  Step 1.  Update price + volume data:
+
+    cd "yfinance data scripts"
+    python update_stock_price.py N750 --output-dir "C:\...\momentum\Sharpe Score"
+
+    This fetches data and saves N750_updated.xlsx in BOTH:
+      - yfinance data scripts/ (local copy)
+      - momentum/Sharpe Score/ (working copy)
+
+  Step 2.  Compute rankings:
+
+    cd "momentum/Sharpe Score"
+    python Sharpe.py N750
+
+  This reads the existing N750_updated.xlsx and computes rankings.
+  If the file has a VOLUME sheet, the ADTV filter applies.
+  If no VOLUME sheet (old file), ADTV filter is skipped with a warning.
+
+
+>>> OPTION 3: USE EXISTING DATA (no refresh) <<<
+
+    cd "momentum/Sharpe Score"
+    python Sharpe.py N750
+
+  Uses the <UNIVERSE>_updated.xlsx already in the folder — no data refresh.
+  Useful for quick re-runs, parameter tweaks, or when data is already current.
+
+
+>>> RUNNING THE DASHBOARD <<<
+
+    cd "momentum/Sharpe Score"
+    streamlit run sharpe_dashboard.py
+
+  The dashboard reads from the same <UNIVERSE>_updated.xlsx file.
+  All settings (data source, capital, ADTV threshold) are configurable
+  in the ⚙️ Configuration tab.
+
+
+COMMAND-LINE ARGUMENTS
+-----------------------
+Sharpe.py:
+  python Sharpe.py [UNIVERSE] [LEDGER] [--update] [--min-turnover VALUE]
+
+  UNIVERSE        N500 | N750 | NSEAll              (default: N500)
+  LEDGER          Path to positions ledger JSON      (optional)
+  --update        Fetch fresh data before computing  (optional)
+  --min-turnover  Min median daily turnover in Rs Cr (default: 1.0)
+
+update_stock_price.py:
+  python update_stock_price.py {NSEAll|N750|N500} [--output-dir PATH]
+
+  UNIVERSE        N500 | N750 | NSEAll              (required)
+  --output-dir    Extra directory to copy output to  (optional)
 
 
 WHAT THE SCRIPT COMPUTES (in order)
@@ -105,14 +196,33 @@ WHAT THE SCRIPT COMPUTES (in order)
    Stocks outside this range receive no RANK (NaN); all scores are still computed.
    An existing held stock that fails this filter triggers an EXIT_52H signal.
 
-5. RESIDUAL MOMENTUM  (windows: 3M, 6M, 9M, 12M)
+5. ADTV TURNOVER FILTER (new)
+   Requires a VOLUME sheet in the input file. If absent, filter is skipped.
+
+   Method  : For each stock, compute median daily turnover (price × volume)
+             over the trailing 12M (252d) and 6M (126d) windows.
+             Turnover values are expressed in ₹ Crores (÷ 1e7).
+
+   Eligibility : EITHER 12M median turnover >= threshold
+                 OR     6M median turnover >= threshold
+                 (lenient — supports newly listed stocks with <12M history)
+
+   Default threshold : ₹ 1 Crore (configurable via --min-turnover flag or
+                       dashboard Configuration tab)
+
+   Stocks failing BOTH windows receive no RANK (NaN) and are excluded from
+   the portfolio — same treatment as the 52H filter.
+
+   Combined eligibility : PCT_FROM_52H >= -25  AND  ADTV_ELIGIBLE
+
+6. RESIDUAL MOMENTUM  (windows: 3M, 6M, 9M, 12M)
    Method  : For each window, regress stock log-returns on NIFTY500 log-returns
              using OLS. Compute Sharpe ratio on the residuals.
              High score = strong return not explained by market movement.
    Z-scored cross-sectionally per window → RES_MOM composite
    RES_MOM is displayed only — not used in ranking or exit logic.
 
-6. MARKET REGIME — DYNAMIC REGIME SCORE
+7. MARKET REGIME — DYNAMIC REGIME SCORE
 
    Uses a continuous Regime Strength Score (0.0 to 1.0) built from 4 signals.
    The score drives Dynamic Top-N selection so the portfolio size shrinks in
@@ -165,12 +275,12 @@ WHAT THE SCRIPT COMPUTES (in order)
      Dynamic Score (v2): CAGR 41.8%  /  MDD -17.2%  / Avg Holdings 16.5 / Avg Cash 24.2%
      Net change        : +3.5% CAGR  /  -0.9% MDD — significantly better risk-adjusted return
 
-7. RANKING
+8. RANKING
    Ranked by SHARPE_ALL (COMPOSITE) descending, eligible stocks only
-   (PCT_FROM_52H >= -25). Ineligible stocks receive RANK = NaN.
+   (PCT_FROM_52H >= -25 AND ADTV_ELIGIBLE). Ineligible stocks receive RANK = NaN.
    Ties broken by "first" method (order of appearance in data).
 
-8. CAPITAL ALLOCATION  (volatility-weighted, capped at 5% per stock)
+9. CAPITAL ALLOCATION  (volatility-weighted, capped at 5% per stock)
    For each Top-N stock, raw weight = composite_score / mean_annualised_vol
    Weights are normalised across Top N and capped at 5.0% per position.
    Remaining weight goes to Cash (earning LIQUID_YIELD_PA = 6% p.a.).
@@ -199,6 +309,10 @@ EXIT_RANK respects it.
        New buys are only permitted when regime_score >= NEW_ENTRY_THRESHOLD (0.40).
        Existing positions are always evaluated for exit normally.
        Portfolio size scales with regime_score; unallocated weight -> Liquid Fund.
+
+  Note: A held stock that fails the ADTV filter will also have RANK = NaN,
+  triggering EXIT_52H logic (immediate sell). In practice this is unlikely —
+  a stock's trading volume doesn't typically collapse overnight.
 
 
 POSITION LEDGER
@@ -247,7 +361,7 @@ Sheet 2: EXITS
   Empty if no exits this rebalance.
 
 Sheet 3: CALCS
-  All stocks, 25 columns:
+  All stocks, 25+ columns:
   RANK, TICKER,
   S_12M, S_9M, S_6M, S_3M,              (raw Sharpe per window)
   Z_12M, Z_9M, Z_6M, Z_3M,              (Sharpe Z-scores per window)
@@ -255,7 +369,9 @@ Sheet 3: CALCS
   RS_12M, RS_9M, RS_6M, RS_3M,          (residual Sharpe per window)
   RZ_12M, RZ_9M, RZ_6M, RZ_3M, RES_MOM,(residual Z-scores + composite)
   1M%, 3M%, 12M%,                        (price returns)
-  52H%                                   (% from 52-week high; green if >= -25)
+  52H%,                                  (% from 52-week high; green if >= -25)
+  TURNOVER_12M, TURNOVER_6M,            (median daily turnover in Rs Cr)
+  ADTV_ELIGIBLE                          (True/False)
 
 
 CONFIG PARAMETERS (top of Sharpe.py)
@@ -268,6 +384,7 @@ CONFIG PARAMETERS (top of Sharpe.py)
   MIN_HOLD_DAYS     28                     Calendar days before rank-based exit is permitted
   LIQUID_YIELD_PA   0.06                   6% p.a. on idle cash
   PORTFOLIO_CAPITAL 1,000,000              INR baseline for allocation display
+  MIN_TURNOVER_CR   1.0                    Min median daily turnover in Rs Cr (--min-turnover flag)
   WINDOWS           12M/9M/6M/3M           Windows for Residual Momentum
   SHARPE_WINDOWS    12M/9M/6M/3M           Windows for Sharpe (same as WINDOWS)
   OUTPUT_FILE       <UNIVERSE>_rankings.xlsx   Auto-derived from UNIVERSE arg
@@ -306,11 +423,20 @@ The library functions can be imported and called independently:
   pct_52h   = ml.compute_pct_from_52h(prices_df, tickers)
   regime    = ml.compute_market_regime(nifty_series)
 
+  # --- Volume / Turnover (new) ---
+  volume_df = ml.load_volume("N500_updated.xlsx")   # returns None if no VOLUME sheet
+  if volume_df is not None:
+      turnover_df = ml.compute_turnover(prices_df, volume_df, tickers)
+      # turnover_df has columns: TURNOVER_12M, TURNOVER_6M (in Rs Cr)
+
 
 TYPICAL RUNTIME
 ---------------
-  ~30-60 seconds on a standard laptop for 500+ stocks
-  Residual Momentum (OLS per stock per window) is the most compute-intensive step
+  update_stock_price.py : ~5-10 minutes for 750 tickers (network-bound)
+  Sharpe.py             : ~30-60 seconds (compute-bound)
+  Combined (--update)   : ~6-11 minutes total
+
+  Residual Momentum (OLS per stock per window) is the most compute-intensive step.
 
 
 TROUBLESHOOTING
@@ -325,5 +451,13 @@ TROUBLESHOOTING
                                          input file before running
   Ledger not found                     → Script will create a new empty ledger
                                          automatically on first run
+  "No VOLUME sheet found"              → ADTV filter is skipped (not an error).
+                                         Run update_stock_price.py to generate
+                                         the VOLUME sheet, or add one to the
+                                         template manually.
+  update_stock_price.py not found      → When using --update flag, the script
+                                         looks for update_stock_price.py at:
+                                         ../yfinance data scripts/
+                                         Ensure the folder structure is correct.
 
 ===============================================================================

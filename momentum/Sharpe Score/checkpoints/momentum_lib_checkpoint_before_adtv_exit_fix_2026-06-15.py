@@ -244,8 +244,9 @@ def load_volume(filepath: str):
         if not candidate:
             return None
         date_indices = sorted(candidate)
-        # Mirror DATA fallback so price and volume columns align by date.
-        dates = _infer_dates_for_columns(date_indices)
+        # We can't infer actual dates here reliably, but the columns align
+        # with the DATA sheet's date columns positionally.
+        dates = list(range(len(date_indices)))  # placeholder indices
     else:
         dates = [h.date() if isinstance(h, datetime.datetime) else h
                  for h in (header[i] for i in date_indices)]

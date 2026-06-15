@@ -445,8 +445,6 @@ if "cfg_capital" not in st.session_state:
     st.session_state.cfg_capital = 1_500_000
 if "cfg_max_wt_pct" not in st.session_state:
     st.session_state.cfg_max_wt_pct = 5
-if "cfg_min_turnover" not in st.session_state:
-    st.session_state.cfg_min_turnover = 1.0
 
 # Derive runtime values from session state
 selected_file = st.session_state.cfg_file
@@ -461,7 +459,6 @@ LEDGER_FILE = next((str(p) for p in ledger_candidates if p.exists()),
 capital    = st.session_state.cfg_capital
 max_wt_pct = st.session_state.cfg_max_wt_pct
 max_wt     = max_wt_pct / 100.0
-min_turnover_cr = st.session_state.cfg_min_turnover
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 RFR_ANNUAL   = 0.07
@@ -475,12 +472,8 @@ TODAY        = datetime.date.today()
 def load_data(filepath):
     return ml.load_prices(filepath)
 
-@st.cache_data(show_spinner="Loading volume data...")
-def load_volume_data(filepath):
-    return ml.load_volume(filepath)
-
 @st.cache_data(show_spinner="Computing Sharpe rankings...")
-def compute_all(_prices_df, _nifty_series, _stock_tickers, _volume_df, _min_turnover_cr):
+def compute_all(_prices_df, _nifty_series, _stock_tickers):
     sharpe_df, z_df = ml.compute_sharpe(
         _prices_df, _stock_tickers, WINDOWS, rfr_daily, TRADING_DAYS)
     ret_df           = ml.compute_returns(_prices_df, _stock_tickers)
@@ -494,19 +487,7 @@ def compute_all(_prices_df, _nifty_series, _stock_tickers, _volume_df, _min_turn
     result["SHARPE_ALL"] = result["COMPOSITE"]
     result["PCT_FROM_52H"] = pct_52h
 
-    # ADTV turnover filter
-    if _volume_df is not None:
-        turnover_df = ml.compute_turnover(_prices_df, _volume_df, _stock_tickers)
-        result = result.join(turnover_df)
-        adtv_12m_ok = result["TURNOVER_12M"] >= _min_turnover_cr
-        adtv_6m_ok  = result["TURNOVER_6M"]  >= _min_turnover_cr
-        adtv_ok     = (adtv_12m_ok | adtv_6m_ok).fillna(False)
-        result["ADTV_ELIGIBLE"] = adtv_ok
-    else:
-        adtv_ok = pd.Series(True, index=result.index)
-        result["ADTV_ELIGIBLE"] = True
-
-    eligible = (result["PCT_FROM_52H"] >= -25) & adtv_ok
+    eligible = result["PCT_FROM_52H"] >= -25
     result["RANK"] = np.nan
     result.loc[eligible, "RANK"] = (
         result.loc[eligible, "COMPOSITE"]
@@ -710,18 +691,10 @@ try:
 except Exception as e:
     st.error(f"Error loading data: {e}"); st.stop()
 
-# Load volume data (optional — returns None if VOLUME sheet absent)
 try:
-    volume_df = load_volume_data(input_path)
-except Exception:
-    volume_df = None
-
-try:
-    result, regime_score, regime_detail = compute_all(
-        prices_df, nifty_series, stock_tickers, volume_df, min_turnover_cr)
+    result, regime_score, regime_detail = compute_all(prices_df, nifty_series, stock_tickers)
 except Exception as e:
     st.error(f"Error computing rankings: {e}"); st.stop()
-
 
 # Record today's regime score and load full history for trend chart
 regime_history = append_regime_history(universe, regime_score, regime_detail)
@@ -1653,36 +1626,17 @@ with tab_config:
               step=1, format="%d%%", key="cfg_max_wt_pct")
 
     st.divider()
-    st.markdown("#### 📊 ADTV Liquidity Filter")
-    st.number_input("Min Median Daily Turnover (₹ Cr)",
-                    min_value=0.0, max_value=10.0, step=0.25, format="%.2f",
-                    key="cfg_min_turnover",
-                    help="Stocks must have median daily turnover (price × volume) "
-                         "above this threshold in EITHER the 12M or 6M window to be eligible. "
-                         "Set to 0 to disable.")
-    if volume_df is not None:
-        _n_pass_12m = int((result.get("TURNOVER_12M", pd.Series(dtype=float)) >= min_turnover_cr).sum())
-        _n_pass_6m  = int((result.get("TURNOVER_6M",  pd.Series(dtype=float)) >= min_turnover_cr).sum())
-        _n_total    = len(result)
-        st.caption(f"✅ Volume data available | 12M pass: {_n_pass_12m}/{_n_total} | "
-                   f"6M pass: {_n_pass_6m}/{_n_total}")
-    else:
-        st.caption("⚠️ No VOLUME sheet in data file — ADTV filter inactive. "
-                   "Run `update_stock_price.py` with latest version to add volume data.")
-
-    st.divider()
     st.markdown("#### 📋 Strategy Parameters (Read-only)")
     params = {
-        "RFR":              "7.0%",
-        "Windows":          "12M / 9M / 6M / 3M",
-        "Top N":            f"Dynamic ({MIN_N}–{MAX_N})",
-        "Entry Gate":       f"Regime score >= {NEW_ENTRY_THRESHOLD}",
-        "Hold Lock":        "28 days",
-        "52H Filter":       ">= -25%",
-        "ADTV Filter":      f">= {min_turnover_cr} Cr (12M or 6M median)",
-        "Rank Buffer":      "40",
-        "Cash Yield":       "6% p.a.",
-        "Ledger File":      Path(LEDGER_FILE).name,
+        "RFR":          "7.0%",
+        "Windows":      "12M / 9M / 6M / 3M",
+        "Top N":        f"Dynamic ({MIN_N}–{MAX_N})",
+        "Entry Gate":   f"Regime score >= {NEW_ENTRY_THRESHOLD}",
+        "Hold Lock":    "28 days",
+        "52H Filter":   ">= -25%",
+        "Rank Buffer":  "40",
+        "Cash Yield":   "6% p.a.",
+        "Ledger File":  Path(LEDGER_FILE).name,
     }
     for k, v in params.items():
         st.markdown(f"**{k}:** `{v}`")
