@@ -41,7 +41,7 @@
     "timestamp": "2026-05-25T14:27:49.042893",
     "ticker": "MCX",
     "action": "BUY",
-    "quantity": 14,
+    "quantity": 15,
     "price": 3337.9
   },
   {
@@ -159,7 +159,7 @@
     "ticker": "CUPID",
     "action": "BUY",
     "quantity": 170,
-    "price": 130.09
+    "price": 130.05
   },
   {
     "id": "0096ad34-af21-4f79-bb1e-c4598e08924a",
@@ -232,5 +232,14 @@
     "action": "BUY",
     "quantity": 22,
     "price": 1238.6
+  },
+  {
+    "id": "976200ca-5b90-491e-b182-0f862adce457",
+    "date": "2026-06-15",
+    "timestamp": "2026-06-15T16:08:57.575127",
+    "ticker": "CUPID",
+    "action": "SELL",
+    "quantity": 572,
+    "price": 164.56
   }
 ]

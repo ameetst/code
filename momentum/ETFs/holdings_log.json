@@ -1,38 +1,38 @@
 {
   "2026-06": {
-    "run_date": "2026-06-01 14:33",
-    "regime": "PARTIAL",
-    "active_slots": 3,
+    "run_date": "2026-06-15 12:38",
+    "regime": "BEAR",
+    "active_slots": 0,
     "allocation": [
       {
         "slot": 1,
-        "ticker": "GROWWPOWER",
-        "etf_name": "Groww BSE Power ETF",
-        "sector": "ENERGY",
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
         "weight": 0.2,
-        "inv_rank": "1",
-        "entry_price": 12.65,
-        "peak": 12.65
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
       },
       {
         "slot": 2,
-        "ticker": "GROWWCAPM",
-        "etf_name": "Groww Nifty Capital Mrkts ETF",
-        "sector": "FIN_SERVICES",
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
         "weight": 0.2,
-        "inv_rank": "4",
-        "entry_price": 11.55,
-        "peak": 11.55
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
       },
       {
         "slot": 3,
-        "ticker": "METAL",
-        "etf_name": "Mirae Asset Nifty Metal ETF",
-        "sector": "METAL",
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
         "weight": 0.2,
-        "inv_rank": "5",
-        "entry_price": 13.55,
-        "peak": 13.55
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
       },
       {
         "slot": 4,

@@ -159,7 +159,7 @@
     "ticker": "CUPID",
     "action": "BUY",
     "quantity": 170,
-    "price": 130.09
+    "price": 130.05
   },
   {
     "id": "0096ad34-af21-4f79-bb1e-c4598e08924a",
@@ -232,5 +232,23 @@
     "action": "BUY",
     "quantity": 22,
     "price": 1238.6
+  },
+  {
+    "id": "976200ca-5b90-491e-b182-0f862adce457",
+    "date": "2026-06-15",
+    "timestamp": "2026-06-15T16:08:57.575127",
+    "ticker": "CUPID",
+    "action": "SELL",
+    "quantity": 572,
+    "price": 164.56
+  },
+  {
+    "id": "3df21adf-926e-4377-ada6-4306f5d7824b",
+    "date": "2026-06-16",
+    "timestamp": "2026-06-16T15:30:55.937157",
+    "ticker": "CUPID",
+    "action": "BUY",
+    "quantity": 450,
+    "price": 154.29
   }
 ]
