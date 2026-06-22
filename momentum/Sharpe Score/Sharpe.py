@@ -103,13 +103,11 @@ DRY_RUN           = _args.dry_run
 MIN_N               = 5      # minimum holdings at lowest regime score
 MAX_N               = 25     # maximum holdings at highest regime score
 NEW_ENTRY_THRESHOLD = 0.40   # regime score below this — no new buys
-EMA50_BAND          = 0.10   # ±10% normalisation band around EMA50
-EMA_TREND_BAND      = 0.05   # ±5% normalisation band for EMA50 vs EMA200
 SIGNAL_WEIGHTS      = {      # must sum to 1.0
-    "ema50":     0.35,
-    "ema_trend": 0.25,
-    "breadth":   0.25,
-    "momentum":  0.15,
+    "ema50_breadth":     0.35,   # % stocks > own EMA50
+    "ema_trend_breadth": 0.25,   # % stocks with EMA50 > EMA200
+    "breadth":           0.25,
+    "momentum":          0.15,
 }
 
 WINDOWS        = {"12M": 252, "9M": 189, "6M": 126, "3M": 63}
@@ -124,11 +122,12 @@ TODAY = datetime.date.today()
 
 def compute_regime_score(nifty_s: pd.Series,
                          eligible_mask: pd.Series,
-                         composite_series: pd.Series) -> tuple:
+                         composite_series: pd.Series,
+                         prices_df: pd.DataFrame = None) -> tuple:
     """
     Compute a continuous Regime Strength Score (0.0 to 1.0) from 4 signals:
-      Signal 1 (35%): EMA50 distance    — how far NIFTY500 is above/below EMA50
-      Signal 2 (25%): EMA trend         — EMA50 vs EMA200 alignment
+      Signal 1 (35%): EMA50 breadth     — % of universe stocks trading above their own EMA50
+      Signal 2 (25%): EMA trend breadth — % of universe stocks with their EMA50 > their EMA200
       Signal 3 (25%): 52H breadth       — % stocks within -25% of 52-week high
       Signal 4 (15%): Momentum breadth  — % eligible stocks with COMPOSITE > 1.5
 
@@ -138,32 +137,50 @@ def compute_regime_score(nifty_s: pd.Series,
     if len(px) < 200:
         return 0.5, {"regime_score": 0.5, "dynamic_n": 15, "note": "insufficient data"}
 
-    price  = px.iloc[-1]
-    ema50  = px.ewm(span=50,  adjust=False).mean().iloc[-1]
-    ema200 = px.ewm(span=200, adjust=False).mean().iloc[-1]
+    # -- Signal 1 & 2: Universe EMA breadth --
+    if prices_df is not None and len(prices_df.columns) >= 200:
+        ema50_all  = prices_df.ewm(span=50,  adjust=False, axis=1).mean()
+        ema200_all = prices_df.ewm(span=200, adjust=False, axis=1).mean()
+        last_px    = prices_df.iloc[:, -1]
+        last_ema50 = ema50_all.iloc[:, -1]
+        last_ema200 = ema200_all.iloc[:, -1]
+        valid      = last_px.notna() & last_ema200.notna()
+        n_valid    = int(valid.sum())
+        if n_valid > 0:
+            ema50_breadth_score = float((last_px[valid] > last_ema50[valid]).sum()) / n_valid
+            ema_trend_breadth_score = float((last_ema50[valid] > last_ema200[valid]).sum()) / n_valid
+        else:
+            ema50_breadth_score = 0.5
+            ema_trend_breadth_score = 0.5
+    else:
+        # Fallback: use NIFTY500 index if prices_df not available
+        price  = px.iloc[-1]
+        ema50  = px.ewm(span=50,  adjust=False).mean().iloc[-1]
+        ema200 = px.ewm(span=200, adjust=False).mean().iloc[-1]
+        ema50_breadth_score     = 1.0 if price > ema50 else 0.0
+        ema_trend_breadth_score = 1.0 if ema50 > ema200 else 0.0
 
-    ema50_score     = float(np.clip((price / ema50  - 1.0) / EMA50_BAND      + 0.5, 0.0, 1.0))
-    ema_trend_score = float(np.clip((ema50  / ema200 - 1.0) / EMA_TREND_BAND  + 0.5, 0.0, 1.0))
-
+    # -- Signal 3: 52H breadth --
     total_stocks  = len(eligible_mask)
     elig_count    = int(eligible_mask.sum())
     breadth_score = elig_count / total_stocks if total_stocks > 0 else 0.5
 
+    # -- Signal 4: Momentum breadth --
     elig_comp     = composite_series[eligible_mask]
     pos_mom       = int((elig_comp > 1.5).sum())
     momentum_score = pos_mom / max(1, elig_count)
 
     regime_score = (
-        ema50_score     * SIGNAL_WEIGHTS["ema50"]     +
-        ema_trend_score * SIGNAL_WEIGHTS["ema_trend"] +
-        breadth_score   * SIGNAL_WEIGHTS["breadth"]   +
-        momentum_score  * SIGNAL_WEIGHTS["momentum"]
+        ema50_breadth_score     * SIGNAL_WEIGHTS["ema50_breadth"]     +
+        ema_trend_breadth_score * SIGNAL_WEIGHTS["ema_trend_breadth"] +
+        breadth_score           * SIGNAL_WEIGHTS["breadth"]           +
+        momentum_score          * SIGNAL_WEIGHTS["momentum"]
     )
     dynamic_n = int(MIN_N + regime_score * (MAX_N - MIN_N))
 
     detail = {
-        "ema50_score":     round(ema50_score, 3),
-        "ema_trend_score": round(ema_trend_score, 3),
+        "ema50_score":     round(ema50_breadth_score, 3),
+        "ema_trend_score": round(ema_trend_breadth_score, 3),
         "breadth_score":   round(breadth_score, 3),
         "momentum_score":  round(momentum_score, 3),
         "regime_score":    round(regime_score, 3),
@@ -359,13 +376,13 @@ result = result.join(rs_z_df)
 print("\nComputing Dynamic Regime Score ...")
 eligible = result["PCT_FROM_52H"] >= -25
 regime_score, regime_detail = compute_regime_score(
-    nifty_series, eligible, result["COMPOSITE"])
+    nifty_series, eligible, result["COMPOSITE"], prices_df=prices_df)
 dynamic_n  = regime_detail["dynamic_n"]
 allow_new  = regime_detail["allow_new"]
 
 print(f"  Regime Score  : {regime_score:.2f}  "
-      f"(EMA50={regime_detail['ema50_score']:.2f}  "
-      f"Trend={regime_detail['ema_trend_score']:.2f}  "
+      f"(EMA50Brdth={regime_detail['ema50_score']:.2f}  "
+      f"TrendBrdth={regime_detail['ema_trend_score']:.2f}  "
       f"Breadth={regime_detail['breadth_score']:.2f}  "
       f"Mom={regime_detail['momentum_score']:.2f})")
 print(f"  Dynamic N     : {dynamic_n}  "
@@ -620,8 +637,8 @@ def ticker_status(ticker):
 print(f"\n{'':=<100}")
 print(f"  {UNIVERSE} MOMENTUM - TOP {dynamic_n} (Dynamic N)  .  Sharpe Z + Sharpe 3W + Residual")
 print(f"  REGIME SCORE   : {regime_score:.2f}  "
-      f"(EMA50={regime_detail['ema50_score']:.2f}  "
-      f"Trend={regime_detail['ema_trend_score']:.2f}  "
+      f"(EMA50Brdth={regime_detail['ema50_score']:.2f}  "
+      f"TrendBrdth={regime_detail['ema_trend_score']:.2f}  "
       f"Breadth={regime_detail['breadth_score']:.2f}  "
       f"Mom={regime_detail['momentum_score']:.2f})  "
       f"{'| NEW BUYS ALLOWED' if allow_new else '| NEW BUYS BLOCKED'}")

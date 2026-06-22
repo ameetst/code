@@ -1,0 +1,135 @@
+        # --- 2. ADD / CLOSE TRADES ---
+        action_col1, action_col2 = st.columns(2)
+        
+        with action_col1:
+            with st.expander("➕ Open New Trade", expanded=False):
+                with st.form("add_trade_form", clear_on_submit=True):
+                    # Load tickers for autocomplete
+                    all_t = get_tickers_from_csv("tickers.csv")
+                    all_tickers_clean = sorted([t.replace('.NS', '') for t in all_t]) if all_t else []
+                    
+                    new_ticker = st.selectbox("Ticker Symbol", options=[""] + all_tickers_clean, help="Start typing to search available tickers")
+                    new_price = st.number_input("Entry Price (INR)", min_value=0.0, format="%.2f")
+                    new_qty = st.number_input("Quantity", min_value=1, step=1)
+                    new_date = st.date_input("Buy Date")
+                    
+                    if st.form_submit_button("Add to Journal"):
+                        if not new_ticker or str(new_ticker).strip() == "":
+                            st.error("Please select a Ticker Symbol.")
+                        elif new_price <= 0:
+                            st.error("Please enter a valid Entry Price greater than 0.")
+                        elif new_qty <= 0:
+                            st.error("Please enter a valid Quantity greater than 0.")
+                        elif not new_date:
+                            st.error("Please select a Buy Date.")
+                        else:
+                            t_str = str(new_ticker).upper().strip()
+                            if not t_str.endswith(".NS"): t_str += ".NS"
+                            new_trade = pd.DataFrame({
+                                "Ticker": [t_str], "Entry Price": [new_price], "Quantity": [new_qty],
+                                "Buy Date": [new_date.strftime("%Y-%m-%d")], "Status": ["Open"],
+                                "Exit Price": [0.0], "Exit Date": [""]
+                            })
+                            trade_log = pd.concat([trade_log, new_trade], ignore_index=True)
+                            save_trade_log(trade_log)
+                            st.success(f"Added {t_str}!")
+                            st.rerun()
+                            
+        with action_col2:
+            with st.expander("➖ Close Open Trade", expanded=False):
+                if not open_trades.empty:
+                    with st.form("close_trade_form", clear_on_submit=True):
+                        options = open_trades.index.tolist()
+                        def format_trade(idx):
+                            row = open_trades.loc[idx]
+                            return f"{row['Ticker']} (Qty: {row['Quantity']} @ {row['Entry Price']})"
+                            
+                        selected_option = st.selectbox("Select Trade to Close", options, format_func=format_trade)
+                        exit_price = st.number_input("Exit Price (INR)", min_value=0.0, format="%.2f")
+                        exit_date = st.date_input("Exit Date")
+                        
+                        if st.form_submit_button("Close Trade"):
+                            if selected_option is not None and exit_price > 0:
+                                idx_to_close = selected_option
+                                trade_log.at[idx_to_close, 'Status'] = 'Closed'
+                                trade_log.at[idx_to_close, 'Exit Price'] = float(exit_price)
+                                trade_log.at[idx_to_close, 'Exit Date'] = exit_date.strftime("%Y-%m-%d")
+                                save_trade_log(trade_log)
+                                st.success("Trade closed successfully!")
+                                st.rerun()
+                else:
+                    st.info("No open trades available to close.")
+        
+        # --- 3. OPEN POSITIONS ---
+        st.markdown("### Open Positions (Live Monitor)")
+        if not open_trades.empty:
+            if st.button("🔄 Refresh Live Market Data & Check Exit Signals"):
+                with st.spinner("Fetching latest data..."):
+                    tickers_to_fetch = open_trades["Ticker"].unique().tolist()
+                    live_data = get_live_data(tickers_to_fetch)
+                    
+                    status_list = []
+                    for idx, row in open_trades.iterrows():
+                        t = row["Ticker"]
+                        try:
+                            if len(tickers_to_fetch) == 1:
+                                df = live_data.copy()
+                            else:
+                                df = live_data[t].copy()
+                            df.dropna(subset=['Close'], inplace=True)
+                            if df.empty:
+                                status_list.append({"Current Price": 0, "P&L (%)": 0, "50 EMA": 0, "200 EMA": 0, "Status": "No Data"})
+                                continue
+                                
+                            df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
+                            df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
+                            latest = df.iloc[-1]
+                            curr_price = latest['Close']
+                            
+                            pnl_pct = ((curr_price - row['Entry Price']) / row['Entry Price']) * 100
+                            
+                            status = "🟢 HOLD"
+                            if latest['EMA_50'] < latest['EMA_200']:
+                                status = "🔴 SELL (Trend Broken)"
+                                
+                            status_list.append({
+                                "Current Price": round(curr_price, 2), "P&L (%)": round(pnl_pct, 2),
+                                "50 EMA": round(latest['EMA_50'], 2), "200 EMA": round(latest['EMA_200'], 2),
+                                "Status": status
+                            })
+                        except Exception:
+                            status_list.append({"Current Price": 0, "P&L (%)": 0, "50 EMA": 0, "200 EMA": 0, "Status": "Error"})
+                            
+                    display_df = open_trades[['Ticker', 'Buy Date', 'Quantity', 'Entry Price']].copy()
+                    status_df = pd.DataFrame(status_list, index=display_df.index)
+                    for col in status_df.columns:
+                        display_df[col] = status_df[col]
+                    
+                    st.dataframe(display_df.astype(str), use_container_width=True, hide_index=True)
+            else:
+                display_df = open_trades[['Ticker', 'Buy Date', 'Quantity', 'Entry Price']].copy()
+                display_df['Current Price'] = "-"
+                display_df['P&L (%)'] = "-"
+                display_df['50 EMA'] = "-"
+                display_df['200 EMA'] = "-"
+                display_df['Status'] = "Pending Refresh"
+                st.dataframe(display_df.astype(str), use_container_width=True, hide_index=True)
+                
+            with st.expander("❌ Delete an Open Trade", expanded=False):
+                with st.form("delete_trade_form", clear_on_submit=True):
+                    options = open_trades.index.tolist()
+                    def format_trade(idx):
+                        row = open_trades.loc[idx]
+                        return f"{row['Ticker']} (Qty: {row['Quantity']} @ {row['Entry Price']})"
+                        
+                    selected_del_option = st.selectbox("Select Open Trade to Delete (This permanently removes it from the journal)", options, format_func=format_trade)
+                    if st.form_submit_button("Delete Trade"):
+                        if selected_del_option is not None:
+                            idx_to_delete = selected_del_option
+                            trade_log = trade_log.drop(index=idx_to_delete).reset_index(drop=True)
+                            save_trade_log(trade_log)
+                            st.success("Trade deleted successfully!")
+                            st.rerun()
+        else:
+            st.info("No open positions.")
+            

@@ -250,5 +250,23 @@
     "action": "BUY",
     "quantity": 450,
     "price": 154.29
+  },
+  {
+    "id": "5704cbb6-07e9-473c-86cc-516b5067eec6",
+    "date": "2026-06-22",
+    "timestamp": "2026-06-22T13:54:49.307108",
+    "ticker": "HFCL",
+    "action": "SELL",
+    "quantity": 217,
+    "price": 216.0
+  },
+  {
+    "id": "bdfa1192-7cd8-4a2b-b00d-4e2d15cdcff4",
+    "date": "2026-06-22",
+    "timestamp": "2026-06-22T13:55:40.424751",
+    "ticker": "CPPLUS",
+    "action": "SELL",
+    "quantity": 24,
+    "price": 3607.0
   }
 ]

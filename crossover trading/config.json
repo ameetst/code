@@ -1,0 +1,15 @@
+{
+    "crossover_enable_p52h": true,
+    "crossover_threshold": 0.75,
+    "crossover_enable_lookback": true,
+    "crossover_max_lookback": 5,
+    "crossover_enable_liquidity": true,
+    "breakout_enable_p52h": true,
+    "breakout_p52h_thresh": 0.95,
+    "breakout_enable_p6mh": true,
+    "breakout_p6mh_thresh": 0.95,
+    "breakout_enable_sharpe": true,
+    "breakout_rfr": 6.0,
+    "breakout_sharpe_percentile": 50,
+    "breakout_enable_liquidity": true
+}

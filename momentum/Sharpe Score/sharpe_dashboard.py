@@ -72,6 +72,17 @@ def get_live_vix():
         pass
     return None
 
+def compute_ad_ratio(prices_df):
+    """Calculate 1-Day Advance/Decline ratio."""
+    if len(prices_df.columns) < 2:
+        return 0, 0, None
+    last_two = prices_df.iloc[:, -2:]
+    rets = last_two.iloc[:, 1] - last_two.iloc[:, 0]
+    adv = (rets > 0).sum()
+    dec = (rets < 0).sum()
+    ratio = adv / dec if dec > 0 else float('inf')
+    return int(adv), int(dec), ratio
+
 @st.cache_data(ttl=86400)
 def compute_cap_tier_momentum(prices_df, stock_tickers):
     """Calculate the % of stocks with positive 63-day momentum per cap tier. Cached 24h.
@@ -397,29 +408,43 @@ def sync_to_positions_ledger(ledger_path, active_holdings):
 MIN_N               = 5
 MAX_N               = 25
 NEW_ENTRY_THRESHOLD = 0.40
-EMA50_BAND          = 0.10
-EMA_TREND_BAND      = 0.05
-SIGNAL_WEIGHTS      = {"ema50": 0.35, "ema_trend": 0.25,
+SIGNAL_WEIGHTS      = {"ema50_breadth": 0.35, "ema_trend_breadth": 0.25,
                        "breadth": 0.25, "momentum": 0.15}
 
-def compute_regime_score(nifty_s, eligible_mask, composite_series):
+def compute_regime_score(nifty_s, eligible_mask, composite_series, prices_df=None):
     px = nifty_s.dropna()
     if len(px) < 200:
         return 0.5, {"regime_score": 0.5, "dynamic_n": 15, "allow_new": True,
                      "ema50_score": 0.5, "ema_trend_score": 0.5,
                      "breadth_score": 0.5, "momentum_score": 0.5}
-    price  = px.iloc[-1]
-    ema50  = px.ewm(span=50,  adjust=False).mean().iloc[-1]
-    ema200 = px.ewm(span=200, adjust=False).mean().iloc[-1]
-    ema50_score     = float(np.clip((price / ema50  - 1.0) / EMA50_BAND     + 0.5, 0.0, 1.0))
-    ema_trend_score = float(np.clip((ema50  / ema200 - 1.0) / EMA_TREND_BAND + 0.5, 0.0, 1.0))
+    # Signal 1 & 2: Universe EMA breadth
+    if prices_df is not None and len(prices_df.columns) >= 200:
+        ema50_all  = prices_df.ewm(span=50,  adjust=False, axis=1).mean()
+        ema200_all = prices_df.ewm(span=200, adjust=False, axis=1).mean()
+        last_px    = prices_df.iloc[:, -1]
+        last_ema50 = ema50_all.iloc[:, -1]
+        last_ema200 = ema200_all.iloc[:, -1]
+        valid      = last_px.notna() & last_ema200.notna()
+        n_valid    = int(valid.sum())
+        if n_valid > 0:
+            ema50_score = float((last_px[valid] > last_ema50[valid]).sum()) / n_valid
+            ema_trend_score = float((last_ema50[valid] > last_ema200[valid]).sum()) / n_valid
+        else:
+            ema50_score = 0.5
+            ema_trend_score = 0.5
+    else:
+        price  = px.iloc[-1]
+        ema50  = px.ewm(span=50,  adjust=False).mean().iloc[-1]
+        ema200 = px.ewm(span=200, adjust=False).mean().iloc[-1]
+        ema50_score     = 1.0 if price > ema50 else 0.0
+        ema_trend_score = 1.0 if ema50 > ema200 else 0.0
     total          = len(eligible_mask)
     elig           = int(eligible_mask.sum())
     breadth_score  = elig / total if total > 0 else 0.5
     pos_mom        = int((composite_series[eligible_mask] > 1.5).sum())
     momentum_score = pos_mom / max(1, elig)
-    score = (ema50_score     * SIGNAL_WEIGHTS["ema50"]     +
-             ema_trend_score * SIGNAL_WEIGHTS["ema_trend"] +
+    score = (ema50_score     * SIGNAL_WEIGHTS["ema50_breadth"]     +
+             ema_trend_score * SIGNAL_WEIGHTS["ema_trend_breadth"] +
              breadth_score   * SIGNAL_WEIGHTS["breadth"]   +
              momentum_score  * SIGNAL_WEIGHTS["momentum"])
     dyn_n = int(MIN_N + score * (MAX_N - MIN_N))
@@ -516,7 +541,7 @@ def compute_all(_prices_df, _nifty_series, _stock_tickers, _volume_df, _min_turn
 
     # Dynamic Regime Score
     score, detail = compute_regime_score(
-        _nifty_series, eligible, result["COMPOSITE"])
+        _nifty_series, eligible, result["COMPOSITE"], prices_df=prices_df)
     return result, score, detail
 
 def compute_weights(result, dynamic_n, capital_val, max_weight):
@@ -816,12 +841,16 @@ with st.expander("📡 Regime Score Breakdown", expanded=False):
     live_vix = get_live_vix()
     vix_str = f"{live_vix:.2f}" if live_vix else "N/A"
     
-    sc1, sc2, sc3, sc4, sc5 = st.columns(5)
-    with sc1: st.metric("EMA50 Distance (35%)",    f"{regime_detail['ema50_score']:.3f}")
-    with sc2: st.metric("EMA Trend 50v200 (25%)",  f"{regime_detail['ema_trend_score']:.3f}")
+    adv, dec, ad_ratio = compute_ad_ratio(prices_df)
+    ad_str = f"{ad_ratio:.2f}" if ad_ratio is not None else "N/A"
+    
+    sc1, sc2, sc3, sc4, sc5, sc6 = st.columns(6)
+    with sc1: st.metric("EMA50 Breadth (35%)",      f"{regime_detail['ema50_score']:.3f}", help="% of stocks > own EMA50")
+    with sc2: st.metric("EMA Trend Breadth (25%)",   f"{regime_detail['ema_trend_score']:.3f}", help="% of stocks with EMA50 > EMA200")
     with sc3: st.metric("52H Breadth (25%)",       f"{regime_detail['breadth_score']:.3f}")
     with sc4: st.metric("Momentum Breadth (15%)",  f"{regime_detail['momentum_score']:.3f}")
     with sc5: st.metric("Live India VIX",          vix_str)
+    with sc6: st.metric("1D A/D Ratio",            ad_str, help=f"{adv} Advancers / {dec} Decliners")
     st.progress(regime_score, text=f"Composite Regime Score: {regime_score:.3f}")
 
     st.markdown("---")
