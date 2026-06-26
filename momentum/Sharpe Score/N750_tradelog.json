@@ -268,5 +268,59 @@
     "action": "SELL",
     "quantity": 24,
     "price": 3607.0
+  },
+  {
+    "id": "fe19d2b0-0668-455e-bc88-d3d8c7b2e8c7",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T09:49:18.061819",
+    "ticker": "HFCL",
+    "action": "BUY",
+    "quantity": 221,
+    "price": 207.84
+  },
+  {
+    "id": "4bd97024-6dd7-489c-a061-3827dec765d2",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T09:49:58.579001",
+    "ticker": "CPPLUS",
+    "action": "BUY",
+    "quantity": 20,
+    "price": 3616.01
+  },
+  {
+    "id": "69318238-86d9-4849-9248-324139f155aa",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T09:50:28.471026",
+    "ticker": "STLTECH",
+    "action": "BUY",
+    "quantity": 123,
+    "price": 609.0
+  },
+  {
+    "id": "cf398e2d-9727-4d3a-94d7-0b4c162c6a32",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T09:50:45.372282",
+    "ticker": "SYRMA",
+    "action": "BUY",
+    "quantity": 56,
+    "price": 1377.0
+  },
+  {
+    "id": "d79983cc-aad5-4235-9b19-5332de209160",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T11:44:06.554180",
+    "ticker": "NATIONALUM",
+    "action": "SELL",
+    "quantity": 173,
+    "price": 359.5
+  },
+  {
+    "id": "4ffa533d-0112-4c31-a89e-19f27b773b81",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T11:44:33.068367",
+    "ticker": "MCX",
+    "action": "SELL",
+    "quantity": 26,
+    "price": 2827.0
   }
 ]

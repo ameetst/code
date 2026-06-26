@@ -7,7 +7,7 @@ st.markdown("### Welcome to your unified Quantitative Trading System!")
 
 st.write("---")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     st.info("### 🔄 EMA Crossover System")
@@ -28,6 +28,16 @@ with col2:
     st.write("")
     if st.button("Launch Breakout Strategy ➡️", use_container_width=True):
         st.switch_page("pages/2_Breakout_Strategy.py")
+
+with col3:
+    st.warning("### ⚡ VCP Breakout Strategy")
+    st.write("A highly selective setup that captures explosive moves when extreme volatility contraction meets massive institutional volume.")
+    st.markdown("- **Consolidation:** 10-day tightness (< 5% range)")
+    st.markdown("- **RSI Condition:** Rested RSI (40 to 60)")
+    st.markdown("- **Trigger:** 3x Volume expansion breakout")
+    st.write("")
+    if st.button("Launch VCP Strategy ➡️", use_container_width=True):
+        st.switch_page("pages/3_VCP_Strategy.py")
 
 st.write("---")
 st.caption("👈 **You can also use the sidebar on the left to navigate seamlessly between strategies.**")

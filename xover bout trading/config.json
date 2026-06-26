@@ -1,8 +1,8 @@
 {
     "crossover_enable_p52h": true,
-    "crossover_threshold": 0.75,
+    "crossover_threshold": 0.8,
     "crossover_enable_lookback": true,
-    "crossover_max_lookback": 5,
+    "crossover_max_lookback": 1,
     "crossover_enable_liquidity": true,
     "breakout_enable_p52h": true,
     "breakout_p52h_thresh": 0.95,
@@ -11,5 +11,11 @@
     "breakout_enable_sharpe": true,
     "breakout_rfr": 6.0,
     "breakout_sharpe_percentile": 50,
-    "breakout_enable_liquidity": true
+    "breakout_enable_liquidity": true,
+    "vcp_range_threshold": 5.0,
+    "vcp_volume_multiplier": 3.0,
+    "vcp_rsi_min": 40,
+    "vcp_rsi_max": 60,
+    "vcp_enable_dryup": true,
+    "vcp_dryup_pct": 70
 }

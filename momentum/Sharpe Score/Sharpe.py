@@ -312,6 +312,114 @@ else:
 print(f"Loading position ledger ...")
 ledger = load_ledger(LEDGER_FILE)
 
+# -- EQUITY CURVE TRACKING -----------------------------------------------------
+EQUITY_FILE = f"{UNIVERSE}_equity_history.json"
+
+def _load_equity_history(path: str) -> list:
+    p = Path(path)
+    if not p.exists():
+        return []
+    with open(p, "r") as f:
+        return json.load(f)
+
+def _save_equity_history(data: list, path: str):
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+
+print(f"Updating equity curve ...")
+eq_history = _load_equity_history(EQUITY_FILE)
+today_str = TODAY.isoformat()
+
+# Only record once per day
+if not any(e["date"] == today_str for e in eq_history):
+    held_tickers = list(ledger.keys())
+    n_held = len(held_tickers)
+
+    # Determine the reference date: last recorded equity date, or second-to-last price column
+    last_eq_date = None
+    if eq_history:
+        last_eq_date = datetime.date.fromisoformat(eq_history[-1]["date"])
+
+    # Find the price column index for the reference date (gap-aware)
+    date_cols = prices_df.columns  # these are datetime/date objects
+    ref_col_idx = -2  # default: previous day's column
+    if last_eq_date is not None:
+        # Find the column on or just before the last equity date
+        for i, d in enumerate(date_cols):
+            col_date = d.date() if hasattr(d, 'date') else d
+            if col_date <= last_eq_date:
+                ref_col_idx = i
+        # If ref_col_idx is still the last column, fall back to second-to-last
+        if ref_col_idx == len(date_cols) - 1:
+            ref_col_idx = -2
+
+    # Calculate gap days for cash return proration
+    ref_col_date = date_cols[ref_col_idx]
+    ref_date = ref_col_date.date() if hasattr(ref_col_date, 'date') else ref_col_date
+    latest_date = date_cols[-1].date() if hasattr(date_cols[-1], 'date') else date_cols[-1]
+    gap_calendar_days = max((latest_date - ref_date).days, 1)
+
+    # Portfolio multi-day return (weighted equally across held positions)
+    if n_held > 0 and len(prices_df.columns) >= 2:
+        port_rets = []
+        for t in held_tickers:
+            if t in prices_df.index:
+                px_now = prices_df.loc[t].iloc[-1]
+                px_ref = prices_df.loc[t].iloc[ref_col_idx]
+                if pd.notna(px_now) and pd.notna(px_ref) and px_ref > 0:
+                    port_rets.append(px_now / px_ref - 1.0)
+        avg_stock_ret = float(np.mean(port_rets)) if port_rets else 0.0
+    else:
+        avg_stock_ret = 0.0
+
+    # Cash drag: prorate by calendar days in gap
+    invested_frac = min(n_held / MAX_N, 1.0)
+    cash_frac = 1.0 - invested_frac
+    cash_ret_for_gap = cash_frac * (LIQUID_YIELD_PA / 365.0) * gap_calendar_days
+    portfolio_ret = invested_frac * avg_stock_ret + cash_ret_for_gap
+
+    # Benchmark multi-day return (NIFTY 500)
+    nifty_px = nifty_series.dropna()
+    if len(nifty_px) >= 2:
+        # Use same reference logic for benchmark
+        nifty_dates = nifty_px.index
+        nifty_ref_idx = -2
+        if last_eq_date is not None:
+            for i, d in enumerate(nifty_dates):
+                nd = d.date() if hasattr(d, 'date') else d
+                if nd <= last_eq_date:
+                    nifty_ref_idx = i
+            if nifty_ref_idx == len(nifty_dates) - 1:
+                nifty_ref_idx = -2
+        bench_ret = float(nifty_px.iloc[-1] / nifty_px.iloc[nifty_ref_idx] - 1.0)
+    else:
+        bench_ret = 0.0
+
+    # Compound NAV
+    if eq_history:
+        prev = eq_history[-1]
+        port_nav  = prev["portfolio_nav"] * (1.0 + portfolio_ret)
+        bench_nav = prev["benchmark_nav"] * (1.0 + bench_ret)
+    else:
+        port_nav  = 100.0 * (1.0 + portfolio_ret)
+        bench_nav = 100.0 * (1.0 + bench_ret)
+
+    eq_history.append({
+        "date":          today_str,
+        "portfolio_nav": round(port_nav, 4),
+        "benchmark_nav": round(bench_nav, 4),
+        "portfolio_ret": round(portfolio_ret, 6),
+        "benchmark_ret": round(bench_ret, 6),
+        "n_held":        n_held,
+        "invested_frac": round(invested_frac, 3),
+    })
+    _save_equity_history(eq_history, EQUITY_FILE)
+    _gap_str = f"  (gap: {gap_calendar_days}d)" if gap_calendar_days > 1 else ""
+    print(f"  Portfolio NAV: {port_nav:.2f}  |  Benchmark NAV: {bench_nav:.2f}  "
+          f"|  Held: {n_held}/{MAX_N}  |  Invested: {invested_frac:.0%}{_gap_str}")
+else:
+    print(f"  Already recorded for {today_str} — skipping.")
+
 # -- COMPUTE SCORES ------------------------------------------------------------
 # ACTIVE: Raw Sharpe (production baseline: CAGR 38.3% / MDD -16.3%)
 # DORMANT: Adjusted Sharpe (Skew + Kurtosis penalty: CAGR 42.2% / MDD -20.2%)

@@ -9,15 +9,11 @@
   },
   "HFCL": {
     "entry_date": "2026-05-25",
-    "entry_price": 167.2765206812652
+    "entry_price": 188.87779521003722
   },
   "BBOX": {
     "entry_date": "2026-05-25",
     "entry_price": 998.35
-  },
-  "MCX": {
-    "entry_date": "2026-05-25",
-    "entry_price": 3150.9423076923076
   },
   "TDPOWERSYS": {
     "entry_date": "2026-05-25",
@@ -43,12 +39,20 @@
     "entry_date": "2026-05-25",
     "entry_price": 232.55263803680984
   },
-  "NATIONALUM": {
-    "entry_date": "2026-05-25",
-    "entry_price": 412.3517341040463
-  },
   "WELCORP": {
     "entry_date": "2026-06-01",
     "entry_price": 1372.03
+  },
+  "CPPLUS": {
+    "entry_date": "2026-06-23",
+    "entry_price": 3616.0100000000007
+  },
+  "STLTECH": {
+    "entry_date": "2026-06-23",
+    "entry_price": 609.0
+  },
+  "SYRMA": {
+    "entry_date": "2026-06-23",
+    "entry_price": 1377.0
   }
 }

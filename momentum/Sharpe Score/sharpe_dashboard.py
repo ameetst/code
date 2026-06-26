@@ -1016,13 +1016,14 @@ with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
 st.divider()
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
-tab_top, tab_exits, tab_tradelog, tab_calcs, tab_early, tab_config = st.tabs([
+tab_top, tab_exits, tab_tradelog, tab_calcs, tab_early, tab_config, tab_perf = st.tabs([
     "📊 Top 25 Rankings",
     "🚨 Exit Monitor",
     "📝 Tradelog & MTM",
     "📋 Full Rankings",
     "📈 Early Movers",
-    "⚙️ Configuration"])
+    "⚙️ Configuration",
+    "📈 Performance Tracker"])
 
 # ── TAB 1: TOP 25 RANKINGS ────────────────────────────────────────────────────
 with tab_top:
@@ -1719,6 +1720,117 @@ with tab_config:
     st.divider()
     st.caption("Sharpe Momentum Strategy v3.0 — Dynamic Regime")
     st.info("Changes to Data Source, Capital, or Max Weight take effect immediately on the next rerun.")
+
+# ── TAB 7: PERFORMANCE TRACKER ────────────────────────────────────────────────
+with tab_perf:
+    st.markdown("## 📈 Performance Tracker")
+    _eq_file = SCRIPT_DIR / f"{universe}_equity_history.json"
+    if _eq_file.exists():
+        with open(_eq_file, "r") as _f:
+            _eq_data = json.load(_f)
+    else:
+        _eq_data = []
+
+    if len(_eq_data) >= 2:
+        _eq_df = pd.DataFrame(_eq_data)
+        _eq_df["date"] = pd.to_datetime(_eq_df["date"])
+        _eq_df = _eq_df.sort_values("date").reset_index(drop=True)
+
+        # Summary metrics
+        _port_nav = _eq_df["portfolio_nav"].iloc[-1]
+        _bench_nav = _eq_df["benchmark_nav"].iloc[-1]
+        _port_ret_total = (_port_nav / 100.0 - 1.0) * 100
+        _bench_ret_total = (_bench_nav / 100.0 - 1.0) * 100
+        _alpha = _port_ret_total - _bench_ret_total
+        _n_days = len(_eq_df)
+
+        # Max Drawdown
+        _eq_df["port_peak"] = _eq_df["portfolio_nav"].cummax()
+        _eq_df["port_dd"] = (_eq_df["portfolio_nav"] / _eq_df["port_peak"] - 1.0) * 100
+        _max_dd = _eq_df["port_dd"].min()
+
+        _eq_df["bench_peak"] = _eq_df["benchmark_nav"].cummax()
+        _eq_df["bench_dd"] = (_eq_df["benchmark_nav"] / _eq_df["bench_peak"] - 1.0) * 100
+        _bench_max_dd = _eq_df["bench_dd"].min()
+
+        # Tracking days
+        _start_date = _eq_df["date"].iloc[0].strftime("%d-%b-%Y")
+        _end_date = _eq_df["date"].iloc[-1].strftime("%d-%b-%Y")
+
+        # Metric cards
+        pm1, pm2, pm3, pm4 = st.columns(4)
+        with pm1:
+            _port_color = "#2E7D32" if _port_ret_total >= 0 else "#C62828"
+            st.markdown(
+                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
+                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Portfolio NAV</p>"
+                f"<p style='font-size:24px; font-weight:700; margin:0; color:{_port_color};'>"
+                f"{_port_nav:.2f} <span style='font-size:14px;'>({_port_ret_total:+.2f}%)</span></p>"
+                f"</div>", unsafe_allow_html=True)
+        with pm2:
+            _bench_color = "#2E7D32" if _bench_ret_total >= 0 else "#C62828"
+            st.markdown(
+                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
+                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Benchmark NAV</p>"
+                f"<p style='font-size:24px; font-weight:700; margin:0; color:{_bench_color};'>"
+                f"{_bench_nav:.2f} <span style='font-size:14px;'>({_bench_ret_total:+.2f}%)</span></p>"
+                f"</div>", unsafe_allow_html=True)
+        with pm3:
+            _alpha_color = "#2E7D32" if _alpha >= 0 else "#C62828"
+            st.markdown(
+                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
+                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Alpha</p>"
+                f"<p style='font-size:24px; font-weight:700; margin:0; color:{_alpha_color};'>"
+                f"{_alpha:+.2f}%</p>"
+                f"</div>", unsafe_allow_html=True)
+        with pm4:
+            st.markdown(
+                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
+                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Max Drawdown</p>"
+                f"<p style='font-size:24px; font-weight:700; margin:0; color:#C62828;'>"
+                f"Port: {_max_dd:.2f}% | Bench: {_bench_max_dd:.2f}%</p>"
+                f"</div>", unsafe_allow_html=True)
+
+        st.markdown("")
+
+        # Equity Curve Chart
+        _chart_df = _eq_df[["date", "portfolio_nav", "benchmark_nav"]].copy()
+        _chart_df = _chart_df.rename(columns={
+            "portfolio_nav": "Portfolio",
+            "benchmark_nav": "Benchmark (NIFTY 500)"
+        })
+        _chart_df = _chart_df.set_index("date")
+        st.line_chart(_chart_df, height=400, use_container_width=True)
+
+        st.caption(
+            f"📊 Tracking since {_start_date}  |  {_n_days} day(s) recorded  |  "
+            f"Latest: {_end_date}  |  "
+            f"Portfolio includes cash drag (uninvested portion earns 6% p.a.)")
+
+        # Daily Details Table (collapsible)
+        with st.expander("📋 Daily NAV Details", expanded=False):
+            _detail_df = _eq_df[["date", "portfolio_nav", "benchmark_nav",
+                                 "portfolio_ret", "benchmark_ret",
+                                 "n_held", "invested_frac"]].copy()
+            _detail_df["date"] = _detail_df["date"].dt.strftime("%d-%b-%Y")
+            _detail_df["portfolio_ret"] = (_detail_df["portfolio_ret"] * 100).round(3)
+            _detail_df["benchmark_ret"] = (_detail_df["benchmark_ret"] * 100).round(3)
+            _detail_df["invested_frac"] = (_detail_df["invested_frac"] * 100).round(1)
+            _detail_df.columns = ["Date", "Port NAV", "Bench NAV",
+                                  "Port Ret %", "Bench Ret %",
+                                  "# Held", "Invested %"]
+            st.dataframe(_detail_df, use_container_width=True, hide_index=True)
+
+    elif len(_eq_data) == 1:
+        st.info(
+            f"📅 Tracking started on {_eq_data[0]['date']}. "
+            f"The equity curve chart will appear after 2+ days of data. "
+            f"Run `Sharpe.py` again tomorrow!")
+    else:
+        st.warning(
+            "⚠️ No equity history found. Run `Sharpe.py` once to initialise "
+            "the performance tracker. The system will start recording daily NAVs "
+            "from that point forward.")
 
 # ── ACTIONS ───────────────────────────────────────────────────────────────────
 st.divider()

@@ -59,15 +59,19 @@ def fetch_data(tickers, start_date, end_date):
     return yf.download(tickers, start=start_date, end=end_date, group_by='ticker', threads=True, progress=False)
 
 @st.cache_data(ttl=600, show_spinner=False)
-def get_live_data(tickers):
-    if not tickers:
-        return pd.DataFrame()
-    end_date = datetime.date.today()
-    start_date = end_date - datetime.timedelta(days=1095)
+def fetch_portfolio_data(tickers, start_date, end_date):
     return yf.download(tickers, start=start_date, end=end_date, group_by='ticker', threads=True, progress=False)
 
+def get_portfolio_data(tickers):
+    """Get latest portfolio ticker data without rerunning the full screener cache."""
+    if not tickers:
+        return pd.DataFrame()
+    end_date = datetime.date.today() + datetime.timedelta(days=1)
+    start_date = end_date - datetime.timedelta(days=1095)
+    return fetch_portfolio_data(tickers, start_date, end_date)
+
 @st.cache_data(ttl=3600, show_spinner=False)
-def check_daily_signals(tickers, threshold, max_lookback, enable_p52h=True, enable_lookback=True, enable_liquidity=True):
+def check_daily_signals_v2(tickers, threshold, max_lookback, enable_p52h=True, enable_lookback=True, enable_liquidity=True):
     if not tickers:
         return []
 
@@ -78,6 +82,7 @@ def check_daily_signals(tickers, threshold, max_lookback, enable_p52h=True, enab
         data = fetch_data(tickers, start_date, end_date)
     
     actionable_signals = []
+    eval_date_str = ""
     progress_text = "Processing signals & calculating 52-week highs..."
     my_bar = st.progress(0, text=progress_text)
     
@@ -97,6 +102,9 @@ def check_daily_signals(tickers, threshold, max_lookback, enable_p52h=True, enab
             
             if df.empty or len(df) < 200:
                 continue
+                
+            if not eval_date_str:
+                eval_date_str = df.index[-1].strftime('%d-%b-%Y')
 
             df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
             df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
@@ -105,9 +113,7 @@ def check_daily_signals(tickers, threshold, max_lookback, enable_p52h=True, enab
             df['Traded_Value'] = df['Close'] * df['Volume']
             df['Median_TV_21'] = df['Traded_Value'].rolling(window=21).median()
             
-            high_52w = df['High'].max()
-            high_52w_in_last_63d = (high_52w == df['High'].tail(63).max())
-            df['Momentum_63'] = df['Close'] / df['Close'].shift(63) - 1
+            high_52w = df['High'].tail(252).max()
 
             df['Signal'] = 0
             df.loc[df['EMA_50'] > df['EMA_200'], 'Signal'] = 1
@@ -116,13 +122,18 @@ def check_daily_signals(tickers, threshold, max_lookback, enable_p52h=True, enab
             latest_data = df.iloc[-1]
             latest_close = latest_data['Close']
             latest_ema_200 = latest_data['EMA_200']
-            latest_momentum_63 = latest_data['Momentum_63']
             
             pos_1_indices = np.where(df['Position'] == 1)[0]
             if len(pos_1_indices) == 0:
                 continue
                 
             last_cross_iloc = pos_1_indices[-1]
+            
+            # Check if a death cross happened after the last golden cross
+            death_cross_indices = np.where(df['Position'] == -1)[0]
+            if len(death_cross_indices) > 0 and death_cross_indices[-1] > last_cross_iloc:
+                continue  # Golden cross has been invalidated
+            
             days_since_crossover = (len(df) - 1) - last_cross_iloc
             close_at_crossover = df.iloc[last_cross_iloc]['Close']
             
@@ -155,42 +166,43 @@ def check_daily_signals(tickers, threshold, max_lookback, enable_p52h=True, enab
             continue
             
     my_bar.empty()
-    return actionable_signals
+    return actionable_signals, eval_date_str
+
 
 def main():
     try:
         st.set_page_config(page_title="Daily Market Screener & Portfolio", layout="wide")
     except Exception:
         pass
-        
+
     config = config_manager.load_config()
-    
+
     col1, col2 = st.columns([4, 1])
     with col1:
-        st.title("🚀 EMA Crossover System")
-        st.markdown("This screener finds stocks with a **50/200 EMA Crossover** today, filtered by their proximity to the **52-week high**.")
+        st.title("EMA Crossover System")
+        st.markdown("This screener finds stocks with a **50/200 EMA Crossover**, filtered by proximity to the **52-week high**.")
     with col2:
         st.write("")
         st.write("")
         if st.button("Run Screener", type="primary", use_container_width=True):
             st.session_state['crossover_has_run'] = True
-    
+
     tab1, tab2, tab3 = st.tabs(["Actionable Signals (Screener)", "Trade Journal & Portfolio", "Configuration"])
-    
+
     with tab3:
         st.header("Screener Configuration")
-        
+
         enable_p52h = st.checkbox("Enable Min P/52W High Filter", value=config["crossover_enable_p52h"])
         threshold = st.slider(
-            "Min P/52W High Ratio", 
-            min_value=0.50, 
-            max_value=0.99, 
-            value=float(config["crossover_threshold"]), 
+            "Min P/52W High Ratio",
+            min_value=0.50,
+            max_value=0.99,
+            value=float(config["crossover_threshold"]),
             step=0.01,
             help="For example, 0.75 means the stock's current price is at least 75% of its 52-week high.",
-            disabled=not enable_p52h
+            disabled=not enable_p52h,
         )
-        
+
         enable_lookback = st.checkbox("Enable Lookback Window Filter", value=config["crossover_enable_lookback"])
         max_lookback = st.slider(
             "Lookback Window (Days Since Crossover)",
@@ -199,303 +211,297 @@ def main():
             value=int(config["crossover_max_lookback"]),
             step=1,
             help="Find stocks that crossed over within this many trading days. Set to 0 to only find exact crossovers from yesterday.",
-            disabled=not enable_lookback
+            disabled=not enable_lookback,
         )
-        
+
         enable_liquidity = st.checkbox("Enable Liquidity Filter (> 1 Cr Daily Traded Value)", value=config["crossover_enable_liquidity"])
-        
-        st.write("")
+
         if st.button("Save as Default Configuration"):
             config_manager.save_config({
                 "crossover_enable_p52h": enable_p52h,
                 "crossover_threshold": threshold,
                 "crossover_enable_lookback": enable_lookback,
                 "crossover_max_lookback": max_lookback,
-                "crossover_enable_liquidity": enable_liquidity
+                "crossover_enable_liquidity": enable_liquidity,
             })
             st.success("Configuration saved! These settings will load automatically next time.")
-        
+
         if enable_lookback:
             past_date = get_past_trading_date(max_lookback)
             if max_lookback == 0:
-                st.caption(f"💡 Searching for exact crossovers based on **{past_date}**.")
+                st.caption(f"Searching for exact crossovers based on **{past_date}**.")
             else:
-                st.caption(f"💡 Searching for crossovers from today all the way back to **{past_date}**.")
+                st.caption(f"Searching for crossovers from today all the way back to **{past_date}**.")
         else:
-            st.caption("💡 Searching for ANY active crossover (50 > 200 EMA) regardless of when it happened.")
-            
+            st.caption("Searching for any active crossover (50 > 200 EMA), regardless of when it happened.")
+
         with st.expander("Update Universe File"):
             with st.form("universe_upload"):
                 uploaded_file = st.file_uploader("Upload CSV", type=['csv'])
                 if st.form_submit_button("Save"):
                     try:
-                        with open("tickers.csv", "wb") as f:
-                            f.write(uploaded_file.getbuffer())
-                        st.success("Successfully updated `tickers.csv`! You can now run the screener with the new universe.")
+                        if uploaded_file is None:
+                            st.error("Please choose a CSV file first.")
+                        else:
+                            with open("tickers.csv", "wb") as f:
+                                f.write(uploaded_file.getbuffer())
+                            st.success("Successfully updated `tickers.csv`! You can now run the screener with the new universe.")
                     except Exception as e:
                         st.error(f"Error saving file: {e}")
-    
+
     with tab1:
         if st.session_state.get('crossover_has_run', False):
             tickers_list = get_tickers_from_csv(file_path="tickers.csv")
             if tickers_list:
-                signals = check_daily_signals(tickers_list, threshold, max_lookback, enable_p52h, enable_lookback, enable_liquidity)
+                signals, eval_date_str = check_daily_signals_v2(
+                    tickers_list,
+                    threshold,
+                    max_lookback,
+                    enable_p52h,
+                    enable_lookback,
+                    enable_liquidity,
+                )
                 st.session_state['latest_crossover_signals'] = signals
-                
+
                 if signals:
-                    st.success(f"Found {len(signals)} actionable signals today!")
-                    
-                    # Sort signals by Days Since Cross then by P/52H (%)
+                    st.success(f"Found {len(signals)} actionable signals today! (Data as of {eval_date_str})")
                     signals = sorted(signals, key=lambda x: (x['Days Since Cross'], -x['P/52H (%)']))
-                    
                     df_signals = pd.DataFrame(signals)
-                    
+
                     trade_log = load_trade_log()
                     open_tickers = [t.replace('.NS', '') for t in trade_log[trade_log['Status'] == 'Open']['Ticker'].tolist()] if not trade_log.empty else []
-                    
+
                     def highlight_owned(row):
                         if row['Ticker'] in open_tickers:
-                            # Light yellow background for light/dark mode compatibility
                             return ['background-color: rgba(255, 255, 153, 0.4);'] * len(row)
-                        else:
-                            return [''] * len(row)
-                            
+                        return [''] * len(row)
+
                     styled_df = df_signals.style.apply(highlight_owned, axis=1).format({
                         'Close Price': '{:.2f}',
                         'ADTV (Cr)': '{:.2f}',
                         '52W High': '{:.2f}',
                         'P/52H (%)': '{:.1f}%',
-                        'Returns Since Xover (%)': '{:.1f}%'
+                        'Returns Since Xover (%)': '{:.1f}%',
                     })
-                    
-                    st.dataframe(
-                        styled_df,
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                else:  
-                    st.info("No new BUY signals generated today that meet the filter criteria.")
+                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info(f"No new BUY signals generated today that meet the filter criteria. (Data as of {eval_date_str})")
         else:
             st.info("Click 'Run Screener' at the top to generate today's signals.")
-                    
+
     with tab2:
         st.header("Trade Journal & Portfolio")
         trade_log = load_trade_log()
         open_trades = trade_log[trade_log['Status'] == 'Open'].copy()
         closed_trades = trade_log[trade_log['Status'] == 'Closed'].copy()
-        
-        # --- 1. PORTFOLIO STATS ---
+
         st.markdown("### Portfolio Statistics")
-        stat_col1, stat_col2, stat_col3, stat_col4, stat_col5 = st.columns(5)
-        
+        stat_col1, stat_col2, stat_col3, stat_col4, stat_col5, stat_col6, stat_col7 = st.columns(7)
+
         active_trades_count = len(open_trades)
         total_invested = 0.0
+        total_unrealized_pnl = 0.0
+
         if not open_trades.empty:
             total_invested = (pd.to_numeric(open_trades['Entry Price']) * pd.to_numeric(open_trades['Quantity'])).sum()
-        
+            tickers_to_fetch = open_trades["Ticker"].unique().tolist()
+            live_data = get_portfolio_data(tickers_to_fetch)
+            for _, row in open_trades.iterrows():
+                ticker = row["Ticker"]
+                try:
+                    df = live_data[ticker].copy() if isinstance(live_data.columns, pd.MultiIndex) else live_data.copy()
+                    df.dropna(subset=['Close'], inplace=True)
+                    if not df.empty:
+                        current_price = df.iloc[-1]['Close']
+                        total_unrealized_pnl += (current_price - row['Entry Price']) * row['Quantity']
+                except Exception:
+                    pass
+
         total_realized_pnl = 0.0
         win_rate = 0.0
         avg_win = 0.0
-        max_drawdown = 0.0
-        
+        avg_loss = 0.0
+
         if not closed_trades.empty:
             closed_trades['Realized INR'] = (pd.to_numeric(closed_trades['Exit Price']) - pd.to_numeric(closed_trades['Entry Price'])) * pd.to_numeric(closed_trades['Quantity'])
             closed_trades['Realized %'] = ((pd.to_numeric(closed_trades['Exit Price']) - pd.to_numeric(closed_trades['Entry Price'])) / pd.to_numeric(closed_trades['Entry Price'])) * 100
-            
             total_realized_pnl = closed_trades['Realized INR'].sum()
             winning_trades = closed_trades[closed_trades['Realized INR'] > 0]
-            if len(closed_trades) > 0:
-                win_rate = (len(winning_trades) / len(closed_trades)) * 100
-            if len(winning_trades) > 0:
-                avg_win = winning_trades['Realized %'].mean()
-                
-            # Calculate Max Drawdown from Cumulative Realized PnL Peak
-            closed_trades_sorted = closed_trades.sort_values(by="Exit Date")
-            cumulative_pnl = closed_trades_sorted['Realized INR'].cumsum()
-            peak = cumulative_pnl.cummax()
-            drawdown = peak - cumulative_pnl
-            if len(drawdown) > 0:
-                max_drawdown = drawdown.max()
-                
+            losing_trades = closed_trades[closed_trades['Realized INR'] <= 0]
+            win_rate = len(winning_trades) / len(closed_trades) * 100 if len(closed_trades) else 0
+            avg_win = winning_trades['Realized %'].mean() if len(winning_trades) else 0
+            avg_loss = losing_trades['Realized %'].mean() if len(losing_trades) else 0
+
         stat_col1.metric("Active Trades", f"{active_trades_count}")
-        stat_col2.metric("Capital Deployed", f"₹{total_invested:,.2f}")
-        stat_col3.metric("Realized P&L", f"₹{total_realized_pnl:,.2f}")
-        stat_col4.metric("Win Rate", f"{win_rate:.1f}%")
-        stat_col5.metric("Avg Win", f"{avg_win:.1f}%")
-        
+        stat_col2.metric("Capital Deployed", f"Rs {total_invested:,.2f}")
+        stat_col3.metric("Realized P&L", f"Rs {total_realized_pnl:,.2f}")
+        stat_col4.metric("Unrealized P&L", f"Rs {total_unrealized_pnl:,.2f}")
+        stat_col5.metric("Win Rate", f"{win_rate:.1f}%")
+        stat_col6.metric("Avg Win", f"{avg_win:.1f}%")
+        stat_col7.metric("Avg Loss", f"{avg_loss:.1f}%")
+
         st.divider()
-        
-        # --- 2. OPEN POSITIONS ---
         st.markdown("### Open Positions (Live Monitor)")
+
+        col_refresh, _ = st.columns([1, 4])
+        with col_refresh:
+            if st.button("Refresh Prices", use_container_width=True):
+                fetch_portfolio_data.clear()
+                st.rerun()
+
         if not open_trades.empty:
-            if st.button("🔄 Refresh Live Market Data & Check Exit Signals"):
-                with st.spinner("Fetching latest data..."):
-                    tickers_to_fetch = open_trades["Ticker"].unique().tolist()
-                    live_data = get_live_data(tickers_to_fetch)
-                    
-                    status_list = []
-                    for idx, row in open_trades.iterrows():
-                        t = row["Ticker"]
-                        try:
-                            if len(tickers_to_fetch) == 1:
-                                df = live_data.copy()
-                            else:
-                                df = live_data[t].copy()
-                            df.dropna(subset=['Close'], inplace=True)
-                            if df.empty:
-                                status_list.append({"Current Price": 0, "P&L (%)": 0, "50 EMA": 0, "200 EMA": 0, "Status": "No Data"})
-                                continue
-                                
-                            df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
-                            df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
-                            latest = df.iloc[-1]
-                            curr_price = latest['Close']
-                            
-                            pnl_pct = ((curr_price - row['Entry Price']) / row['Entry Price']) * 100
-                            
-                            status = "🟢 HOLD"
-                            if latest['EMA_50'] < latest['EMA_200']:
-                                status = "🔴 SELL (Trend Broken)"
-                                
-                            status_list.append({
-                                "Current Price": round(curr_price, 2), "P&L (%)": round(pnl_pct, 2),
-                                "50 EMA": round(latest['EMA_50'], 2), "200 EMA": round(latest['EMA_200'], 2),
-                                "Status": status
-                            })
-                        except Exception:
-                            status_list.append({"Current Price": 0, "P&L (%)": 0, "50 EMA": 0, "200 EMA": 0, "Status": "Error"})
-                            
-                    display_df = open_trades[['Ticker', 'Buy Date', 'Quantity', 'Entry Price']].copy()
-                    status_df = pd.DataFrame(status_list, index=display_df.index)
-                    for col in status_df.columns:
-                        display_df[col] = status_df[col]
-                    
-                    st.dataframe(display_df.astype(str), use_container_width=True, hide_index=True)
-            else:
+            with st.spinner("Fetching latest portfolio data..."):
+                tickers_to_fetch = open_trades["Ticker"].unique().tolist()
+                live_data = get_portfolio_data(tickers_to_fetch)
+                status_list = []
+
+                for _, row in open_trades.iterrows():
+                    ticker = row["Ticker"]
+                    try:
+                        df = live_data[ticker].copy() if isinstance(live_data.columns, pd.MultiIndex) else live_data.copy()
+                        df.dropna(subset=['Close'], inplace=True)
+                        if df.empty:
+                            status_list.append({"Current Price": 0, "P&L (%)": 0, "50 EMA": 0, "200 EMA": 0, "Status": "No Data"})
+                            continue
+
+                        df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
+                        df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
+                        latest = df.iloc[-1]
+                        current_price = latest['Close']
+                        pnl_pct = ((current_price - row['Entry Price']) / row['Entry Price']) * 100
+                        status = "HOLD"
+                        if latest['EMA_50'] < latest['EMA_200']:
+                            status = "SELL (Trend Broken)"
+
+                        status_list.append({
+                            "Current Price": round(current_price, 2),
+                            "P&L (%)": round(pnl_pct, 2),
+                            "50 EMA": round(latest['EMA_50'], 2),
+                            "200 EMA": round(latest['EMA_200'], 2),
+                            "Status": status,
+                        })
+                    except Exception:
+                        status_list.append({"Current Price": 0, "P&L (%)": 0, "50 EMA": 0, "200 EMA": 0, "Status": "Error"})
+
                 display_df = open_trades[['Ticker', 'Buy Date', 'Quantity', 'Entry Price']].copy()
-                display_df['Current Price'] = "-"
-                display_df['P&L (%)'] = "-"
-                display_df['50 EMA'] = "-"
-                display_df['200 EMA'] = "-"
-                display_df['Status'] = "Pending Refresh"
-                st.dataframe(display_df.astype(str), use_container_width=True, hide_index=True)
-                
+                status_df = pd.DataFrame(status_list, index=display_df.index)
+                for col in status_df.columns:
+                    display_df[col] = status_df[col]
+                display_df = display_df.sort_values(by="P&L (%)", ascending=False)
+                styled_df = display_df.style.format({
+                    'Entry Price': 'Rs {:.2f}',
+                    'Current Price': 'Rs {:.2f}',
+                    'P&L (%)': '{:.2f}%',
+                    '50 EMA': '{:.2f}',
+                    '200 EMA': '{:.2f}',
+                })
+                st.dataframe(styled_df, use_container_width=True, hide_index=True)
         else:
             st.info("No open positions.")
-            
-        st.divider()
 
-        # --- 3. ADD / CLOSE TRADES ---
+        st.divider()
         action_col1, action_col2 = st.columns(2)
-        
+
         with action_col1:
-            with st.expander("➕ Open New Trade", expanded=False):
-                # Load tickers for autocomplete
+            with st.expander("Open New Trade", expanded=False):
                 all_t = get_tickers_from_csv("tickers.csv")
                 all_tickers_clean = sorted([t.replace('.NS', '') for t in all_t]) if all_t else []
-                
                 new_ticker = st.selectbox("Ticker Symbol", options=[""] + all_tickers_clean, help="Start typing to search available tickers", key="new_trade_ticker")
-                
+
                 default_price = 0.0
                 if new_ticker:
                     signals = st.session_state.get('latest_crossover_signals', [])
-                    for s in signals:
-                        if s['Ticker'] == new_ticker:
-                            default_price = float(s['Close Price'])
+                    for signal in signals:
+                        if signal['Ticker'] == new_ticker:
+                            default_price = float(signal['Close Price'])
                             break
-                            
+
                 new_price = st.number_input("Entry Price (INR)", min_value=0.0, value=default_price, format="%.2f", key="new_trade_price")
                 new_qty = st.number_input("Quantity", min_value=1, step=1, key="new_trade_qty")
                 new_date = st.date_input("Buy Date", key="new_trade_date")
-                
+
                 if st.button("Add to Journal", type="primary"):
-                        if not new_ticker or str(new_ticker).strip() == "":
-                            st.error("Please select a Ticker Symbol.")
-                        elif new_price <= 0:
-                            st.error("Please enter a valid Entry Price greater than 0.")
-                        elif new_qty <= 0:
-                            st.error("Please enter a valid Quantity greater than 0.")
-                        elif not new_date:
-                            st.error("Please select a Buy Date.")
-                        else:
-                            t_str = str(new_ticker).upper().strip()
-                            if not t_str.endswith(".NS"): t_str += ".NS"
-                            new_trade = pd.DataFrame({
-                                "Ticker": [t_str], "Entry Price": [new_price], "Quantity": [new_qty],
-                                "Buy Date": [new_date.strftime("%Y-%m-%d")], "Status": ["Open"],
-                                "Exit Price": [0.0], "Exit Date": [""]
-                            })
-                            trade_log = pd.concat([trade_log, new_trade], ignore_index=True)
-                            save_trade_log(trade_log)
-                            st.success(f"Added {t_str}!")
-                            
-                            # Clear form fields
-                            for k in ["new_trade_ticker", "new_trade_price", "new_trade_qty", "new_trade_date"]:
-                                if k in st.session_state:
-                                    del st.session_state[k]
-                                    
-                            st.rerun()
-                            
+                    if not new_ticker or str(new_ticker).strip() == "":
+                        st.error("Please select a Ticker Symbol.")
+                    elif new_price <= 0:
+                        st.error("Please enter a valid Entry Price greater than 0.")
+                    elif new_qty <= 0:
+                        st.error("Please enter a valid Quantity greater than 0.")
+                    elif not new_date:
+                        st.error("Please select a Buy Date.")
+                    else:
+                        ticker = str(new_ticker).upper().strip()
+                        if not ticker.endswith(".NS"):
+                            ticker += ".NS"
+                        new_trade = pd.DataFrame({
+                            "Ticker": [ticker],
+                            "Entry Price": [new_price],
+                            "Quantity": [new_qty],
+                            "Buy Date": [new_date.strftime("%Y-%m-%d")],
+                            "Status": ["Open"],
+                            "Exit Price": [0.0],
+                            "Exit Date": [""],
+                        })
+                        trade_log = pd.concat([trade_log, new_trade], ignore_index=True)
+                        save_trade_log(trade_log)
+                        st.success(f"Added {ticker}!")
+                        for key in ["new_trade_ticker", "new_trade_price", "new_trade_qty", "new_trade_date"]:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.rerun()
+
         with action_col2:
-            with st.expander("➖ Close Open Trade", expanded=False):
+            with st.expander("Close Open Trade", expanded=False):
                 if not open_trades.empty:
                     with st.form("close_trade_form", clear_on_submit=True):
                         options = open_trades.index.tolist()
+
                         def format_trade(idx):
                             row = open_trades.loc[idx]
                             return f"{row['Ticker']} (Qty: {row['Quantity']} @ {row['Entry Price']})"
-                            
+
                         selected_option = st.selectbox("Select Trade to Close", options, format_func=format_trade)
                         exit_price = st.number_input("Exit Price (INR)", min_value=0.0, format="%.2f")
                         exit_date = st.date_input("Exit Date")
-                        
+
                         if st.form_submit_button("Close Trade"):
                             if selected_option is not None and exit_price > 0:
-                                idx_to_close = selected_option
-                                trade_log.at[idx_to_close, 'Status'] = 'Closed'
-                                trade_log.at[idx_to_close, 'Exit Price'] = float(exit_price)
-                                trade_log.at[idx_to_close, 'Exit Date'] = exit_date.strftime("%Y-%m-%d")
+                                trade_log.at[selected_option, 'Status'] = 'Closed'
+                                trade_log.at[selected_option, 'Exit Price'] = float(exit_price)
+                                trade_log.at[selected_option, 'Exit Date'] = exit_date.strftime("%Y-%m-%d")
                                 save_trade_log(trade_log)
                                 st.success("Trade closed successfully!")
                                 st.rerun()
                 else:
                     st.info("No open trades available to close.")
-            
-        st.write("")
+
         if not open_trades.empty:
-            with st.expander("❌ Delete an Open Trade", expanded=False):
+            with st.expander("Delete an Open Trade", expanded=False):
                 with st.form("delete_trade_form", clear_on_submit=True):
                     options = open_trades.index.tolist()
-                    def format_trade(idx):
+
+                    def format_delete_trade(idx):
                         row = open_trades.loc[idx]
                         return f"{row['Ticker']} (Qty: {row['Quantity']} @ {row['Entry Price']})"
-                        
-                    selected_del_option = st.selectbox("Select Open Trade to Delete (This permanently removes it from the journal)", options, format_func=format_trade)
-                    if st.form_submit_button("Delete Trade"):
-                        if selected_del_option is not None:
-                            idx_to_delete = selected_del_option
-                            trade_log = trade_log.drop(index=idx_to_delete).reset_index(drop=True)
-                            save_trade_log(trade_log)
-                            st.success("Trade deleted successfully!")
-                            st.rerun()
+
+                    selected_del_option = st.selectbox("Select Open Trade to Delete", options, format_func=format_delete_trade)
+                    if st.form_submit_button("Delete Trade") and selected_del_option is not None:
+                        trade_log = trade_log.drop(index=selected_del_option).reset_index(drop=True)
+                        save_trade_log(trade_log)
+                        st.success("Trade deleted successfully!")
+                        st.rerun()
 
         st.divider()
-        
-        # --- 4. CLOSED TRADES HISTORY ---
         st.markdown("### Closed Trades History")
         if not closed_trades.empty:
             display_closed = closed_trades[['Ticker', 'Buy Date', 'Entry Price', 'Quantity', 'Exit Date', 'Exit Price', 'Realized %', 'Realized INR']].copy()
-            # Format nicely
-            display_closed['Entry Price'] = display_closed['Entry Price'].apply(lambda x: f"₹{x:,.2f}")
-            display_closed['Exit Price'] = display_closed['Exit Price'].apply(lambda x: f"₹{x:,.2f}")
+            display_closed['Entry Price'] = display_closed['Entry Price'].apply(lambda x: f"Rs {x:,.2f}")
+            display_closed['Exit Price'] = display_closed['Exit Price'].apply(lambda x: f"Rs {x:,.2f}")
             display_closed['Realized %'] = display_closed['Realized %'].apply(lambda x: f"{x:.2f}%")
-            display_closed['Realized INR'] = display_closed['Realized INR'].apply(lambda x: f"₹{x:,.2f}")
-            
+            display_closed['Realized INR'] = display_closed['Realized INR'].apply(lambda x: f"Rs {x:,.2f}")
             st.dataframe(display_closed.astype(str), use_container_width=True, hide_index=True)
-            
-            # Simple row deletion/editing for mistakes in history
-            with st.expander("🛠️ Advanced: Edit Raw Journal Data"):
-                st.markdown("*(To manually edit mistakes or delete rows, use the raw data editor below. Check the box on the far left of a row and press Delete to remove it completely!)*")
+
+            with st.expander("Advanced: Edit Raw Journal Data"):
                 edited_df = st.data_editor(trade_log.astype(str), num_rows="dynamic", use_container_width=True)
                 if not edited_df.equals(trade_log.astype(str)):
                     try:
@@ -510,7 +516,8 @@ def main():
                     except Exception:
                         st.error("Error saving edits.")
         else:
-            st.info("No closed trades yet. Check back when you secure some profits!")
+            st.info("No closed trades yet.")
+
 
 if __name__ == "__main__":
     main()
