@@ -313,5 +313,23 @@
     "action": "SELL",
     "quantity": 173,
     "price": 359.5
+  },
+  {
+    "id": "4ffa533d-0112-4c31-a89e-19f27b773b81",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T11:44:33.068367",
+    "ticker": "MCX",
+    "action": "SELL",
+    "quantity": 26,
+    "price": 2827.0
+  },
+  {
+    "id": "9fb53387-3882-41dc-95fa-2ec0dbc47780",
+    "date": "2026-06-29",
+    "timestamp": "2026-06-29T09:52:41.925536",
+    "ticker": "KIRLOSENG",
+    "action": "BUY",
+    "quantity": 30,
+    "price": 2482.6
   }
 ]

@@ -1,0 +1,25 @@
+{
+  "INPUT_FILE": "ETF.xlsx",
+  "OUTPUT_FILE": "etf_rankings.xlsx",
+  "WINDOW_6M": 126,
+  "WINDOW_3M": 63,
+  "ANNUALIZE": 252,
+  "TOP_N": 5,
+  "TOP_N_PARTIAL": 3,
+  "MAX_DRAWDOWN_FROM_HIGH": 0.25,
+  "SHARPE_W6M": 0.5,
+  "SHARPE_W3M": 0.5,
+  "R2_W6M": 0.5,
+  "R2_W3M": 0.5,
+  "REGIME_TICKER": "MONIFTY500",
+  "REGIME_FALLBACKS": [
+    "BSE500IETF",
+    "HDFCBSE500",
+    "NIFTYBEES"
+  ],
+  "TREND_FAST_EMA_WINDOW": 50,
+  "TREND_EMA_WINDOW": 100,
+  "SECTOR_CAP": 1,
+  "DAILY_RF_ANNUAL": 0.07,
+  "TSL_THRESHOLD": 0.1
+}

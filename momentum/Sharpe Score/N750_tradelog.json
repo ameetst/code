@@ -322,5 +322,23 @@
     "action": "SELL",
     "quantity": 26,
     "price": 2827.0
+  },
+  {
+    "id": "9fb53387-3882-41dc-95fa-2ec0dbc47780",
+    "date": "2026-06-29",
+    "timestamp": "2026-06-29T09:52:41.925536",
+    "ticker": "KIRLOSENG",
+    "action": "BUY",
+    "quantity": 30,
+    "price": 2482.6
+  },
+  {
+    "id": "637660de-5c8b-48b3-8e36-312620a70f13",
+    "date": "2026-06-29",
+    "timestamp": "2026-06-29T09:53:12.735131",
+    "ticker": "RRKABEL",
+    "action": "BUY",
+    "quantity": 30,
+    "price": 2481.7
   }
 ]

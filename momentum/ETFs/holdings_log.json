@@ -55,5 +55,62 @@
         "peak": null
       }
     ]
+  },
+  "2026-07": {
+    "run_date": "2026-07-01 12:40",
+    "regime": "BULL",
+    "active_slots": 5,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "HEALTHCARE",
+        "etf_name": "Mirae Asset Nifty 500 Hthc ETF",
+        "sector": "HEALTHCARE",
+        "weight": 0.2,
+        "inv_rank": "1",
+        "entry_price": 20.96,
+        "peak": 20.96
+      },
+      {
+        "slot": 2,
+        "ticker": "GROWWHOSPI",
+        "etf_name": "Groww BSE Hospitals ETF",
+        "sector": "OTHER",
+        "weight": 0.2,
+        "inv_rank": "2",
+        "entry_price": 53.74,
+        "peak": 53.86000061035156
+      },
+      {
+        "slot": 3,
+        "ticker": "DEFENCE",
+        "etf_name": "Mirae Asset BSE IN Defence ETF",
+        "sector": "DEFENCE",
+        "weight": 0.2,
+        "inv_rank": "3",
+        "entry_price": 79.11,
+        "peak": 79.5999984741211
+      },
+      {
+        "slot": 4,
+        "ticker": "INFRA",
+        "etf_name": "Mirae Asset Nifty IN If&Lg ETF",
+        "sector": "INFRA",
+        "weight": 0.2,
+        "inv_rank": "4",
+        "entry_price": 12.31,
+        "peak": 12.430000305175781
+      },
+      {
+        "slot": 5,
+        "ticker": "GROWWPOWER",
+        "etf_name": "Groww BSE Power ETF",
+        "sector": "ENERGY",
+        "weight": 0.2,
+        "inv_rank": "5",
+        "entry_price": 12.19,
+        "peak": 12.199999809265137
+      }
+    ]
   }
 }

@@ -23,7 +23,6 @@ All parameters in CONFIG below.
 
 from __future__ import annotations
 import sys
-import json
 import numpy as np
 from scipy import stats
 import pandas as pd
@@ -34,84 +33,8 @@ from openpyxl.utils import get_column_letter
 
 
 # =========================================================
-# CONFIG  <- loaded from strategy_config.json if available,
-#            otherwise uses hardcoded defaults below.
+# CONFIG  <- edit these freely
 # =========================================================
-_SCRIPT_DIR = Path(__file__).resolve().parent
-_CONFIG_FILE = "strategy_config.json"
-
-
-def _config_path(script_dir: Path | None = None) -> Path:
-    return (script_dir or _SCRIPT_DIR) / _CONFIG_FILE
-
-
-def load_config_from_json(script_dir: Path | None = None) -> dict:
-    """Load strategy_config.json. Returns empty dict if file missing."""
-    p = _config_path(script_dir)
-    if p.exists():
-        try:
-            with open(p) as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-
-def save_config_to_json(config_dict: dict, script_dir: Path | None = None):
-    """Write config values to strategy_config.json."""
-    p = _config_path(script_dir)
-    with open(p, "w") as f:
-        json.dump(config_dict, f, indent=2, default=str)
-
-
-def _apply_json_config(cls, cfg: dict):
-    """Override CONFIG class attributes from a JSON dict."""
-    _KEYS = [
-        "INPUT_FILE", "OUTPUT_FILE",
-        "WINDOW_6M", "WINDOW_3M", "ANNUALIZE",
-        "TOP_N", "TOP_N_PARTIAL",
-        "MAX_DRAWDOWN_FROM_HIGH",
-        "SHARPE_W6M", "SHARPE_W3M",
-        "R2_W6M", "R2_W3M",
-        "REGIME_TICKER", "REGIME_FALLBACKS",
-        "TREND_FAST_EMA_WINDOW", "TREND_EMA_WINDOW",
-        "SECTOR_CAP",
-        "TSL_THRESHOLD",
-    ]
-    for key in _KEYS:
-        if key in cfg:
-            setattr(cls, key, cfg[key])
-    # DAILY_RF is derived from the annual rate
-    if "DAILY_RF_ANNUAL" in cfg:
-        cls.DAILY_RF = cfg["DAILY_RF_ANNUAL"] / cls.ANNUALIZE
-    return cls
-
-
-def get_config_as_dict() -> dict:
-    """Return current CONFIG values as a JSON-serialisable dict."""
-    return {
-        "INPUT_FILE": CONFIG.INPUT_FILE,
-        "OUTPUT_FILE": CONFIG.OUTPUT_FILE,
-        "WINDOW_6M": CONFIG.WINDOW_6M,
-        "WINDOW_3M": CONFIG.WINDOW_3M,
-        "ANNUALIZE": CONFIG.ANNUALIZE,
-        "TOP_N": CONFIG.TOP_N,
-        "TOP_N_PARTIAL": CONFIG.TOP_N_PARTIAL,
-        "MAX_DRAWDOWN_FROM_HIGH": CONFIG.MAX_DRAWDOWN_FROM_HIGH,
-        "SHARPE_W6M": CONFIG.SHARPE_W6M,
-        "SHARPE_W3M": CONFIG.SHARPE_W3M,
-        "R2_W6M": CONFIG.R2_W6M,
-        "R2_W3M": CONFIG.R2_W3M,
-        "REGIME_TICKER": CONFIG.REGIME_TICKER,
-        "REGIME_FALLBACKS": CONFIG.REGIME_FALLBACKS,
-        "TREND_FAST_EMA_WINDOW": CONFIG.TREND_FAST_EMA_WINDOW,
-        "TREND_EMA_WINDOW": CONFIG.TREND_EMA_WINDOW,
-        "SECTOR_CAP": CONFIG.SECTOR_CAP,
-        "DAILY_RF_ANNUAL": CONFIG.DAILY_RF * CONFIG.ANNUALIZE,
-        "TSL_THRESHOLD": CONFIG.TSL_THRESHOLD,
-    }
-
-
 class CONFIG:
     INPUT_FILE  = "ETF.xlsx"
     OUTPUT_FILE = "etf_rankings.xlsx"
@@ -158,10 +81,6 @@ class CONFIG:
 
     # Trailing Stop Loss — daily monitoring via --tsl flag
     TSL_THRESHOLD = 0.10   # 10% drawdown from peak triggers alert
-
-
-# ── Apply JSON overrides on module load ──────────────────────
-_apply_json_config(CONFIG, load_config_from_json())
 
 
 
@@ -901,18 +820,12 @@ def update_log(script_dir: Path, allocation: pd.DataFrame,
 # =========================================================
 # 7c. DAILY TSL CHECK (via --tsl flag)
 # =========================================================
-def check_tsl(script_dir: Path) -> dict | None:
+def check_tsl(script_dir: Path):
     """
     Daily Trailing Stop Loss check.
     Fetches live NAVs via yfinance for held ETFs (max 5),
     compares against stored peaks, and flags any TSL breaches.
     Advisory only — does NOT auto-sell positions.
-
-    Returns a dict with:
-      - "rows": list of dicts (one per slot) with Slot, Ticker, Entry, Peak, etc.
-      - "breaches": list of dicts for slots exceeding TSL threshold
-      - "message": status message string
-    Returns None if no allocation found or fetch failed.
     """
     import yfinance as yf
 
@@ -920,10 +833,9 @@ def check_tsl(script_dir: Path) -> dict | None:
     month_key = datetime.today().strftime("%Y-%m")
 
     if month_key not in log:
-        msg = "[tsl] No allocation found for current month."
-        print(msg)
+        print("[tsl] No allocation found for current month.")
         print("      Run the monthly rebalance first: python etf_momentum_ranking.py")
-        return {"rows": [], "breaches": [], "message": msg}
+        return
 
     entry = log[month_key]
     allocation = entry.get("allocation", [])
@@ -931,9 +843,8 @@ def check_tsl(script_dir: Path) -> dict | None:
     # Get held tickers (non-CASH)
     held = [s for s in allocation if s["ticker"] != "CASH"]
     if not held:
-        msg = "[tsl] No active positions (all cash). Nothing to check."
-        print(msg)
-        return {"rows": [], "breaches": [], "message": msg}
+        print("[tsl] No active positions (all cash). Nothing to check.")
+        return
 
     # Fetch live prices via yfinance (NSE tickers need .NS suffix)
     tickers_nse = [s["ticker"] + ".NS" for s in held]
@@ -952,9 +863,8 @@ def check_tsl(script_dir: Path) -> dict | None:
                 if len(vals) > 0:
                     live_prices[s["ticker"]] = float(vals.iloc[-1])
     except Exception as e:
-        msg = f"[tsl] ERROR fetching prices: {e}"
-        print(msg)
-        return {"rows": [], "breaches": [], "message": msg}
+        print(f"[tsl] ERROR fetching prices: {e}")
+        return
 
     # ── TSL Dashboard ────────────────────────────────────────────
     threshold = CONFIG.TSL_THRESHOLD
@@ -967,7 +877,6 @@ def check_tsl(script_dir: Path) -> dict | None:
           f" {'TSL NAV':>8} {'NAV':>8} {'DD%':>7}  Status")
     print("  " + "-" * (W - 4))
 
-    result_rows = []
     breaches = []
     for s in allocation:
         t        = s["ticker"]
@@ -976,12 +885,6 @@ def check_tsl(script_dir: Path) -> dict | None:
         if t == "CASH":
             print(f"  {slot_num:>4}  {'CASH':<14}"
                   f" {'--':>8} {'--':>8} {'--':>8} {'--':>8} {'--':>7}  --")
-            result_rows.append({
-                "Slot": slot_num, "Ticker": "CASH",
-                "ETF Name": "Cash / Money Market",
-                "Entry": None, "Peak": None, "TSL NAV": None,
-                "Current NAV": None, "DD%": None, "Status": "—",
-            })
             continue
 
         entry_price = s.get("entry_price")
@@ -993,12 +896,6 @@ def check_tsl(script_dir: Path) -> dict | None:
             pk_str = f"{peak:.2f}"        if peak        else "--"
             print(f"  {slot_num:>4}  {t:<14}"
                   f" {ep_str:>8} {pk_str:>8} {'--':>8} {'ERR':>8} {'--':>7}  FETCH FAILED")
-            result_rows.append({
-                "Slot": slot_num, "Ticker": t,
-                "ETF Name": s.get("etf_name", ""),
-                "Entry": entry_price, "Peak": peak, "TSL NAV": None,
-                "Current NAV": None, "DD%": None, "Status": "FETCH FAILED",
-            })
             continue
 
         # Update peak if current NAV is a new high
@@ -1012,50 +909,30 @@ def check_tsl(script_dir: Path) -> dict | None:
         # Compute drawdown
         dd = (peak - nav) / peak if peak > 0 else 0.0
 
-        status_cli = "!! TSL BREACH !!" if dd >= threshold else "OK"
-        status_ui  = "⚠️ BREACH" if dd >= threshold else "✅ OK"
+        status = "!! TSL BREACH !!" if dd >= threshold else "OK"
         if dd >= threshold:
-            breaches.append({
-                "Ticker": t, "ETF Name": s.get("etf_name", ""),
-                "DD%": round(dd * 100, 1),
-                "TSL NAV": round(tsl_nav, 2),
-            })
+            breaches.append((t, s.get("etf_name", ""), dd, tsl_nav))
 
         ep_str = f"{entry_price:.2f}" if entry_price else "--"
         print(f"  {slot_num:>4}  {t:<14}"
-              f" {ep_str:>8} {peak:>8.2f} {tsl_nav:>8.2f} {nav:>8.2f} {dd*100:>6.1f}%  {status_cli}")
-
-        result_rows.append({
-            "Slot": slot_num, "Ticker": t,
-            "ETF Name": s.get("etf_name", ""),
-            "Entry": round(entry_price, 2) if entry_price else None,
-            "Peak": round(peak, 2),
-            "TSL NAV": round(tsl_nav, 2),
-            "Current NAV": round(nav, 2),
-            "DD%": round(dd * 100, 1),
-            "Status": status_ui,
-        })
+              f" {ep_str:>8} {peak:>8.2f} {tsl_nav:>8.2f} {nav:>8.2f} {dd*100:>6.1f}%  {status}")
 
     print("=" * W)
 
     if breaches:
         print("\n  !! ACTION REQUIRED !!")
-        for b in breaches:
-            print(f"  -> SELL {b['Ticker']} ({b['ETF Name']})"
-                  f" -- drawdown {b['DD%']:.1f}% exceeds {threshold*100:.0f}% TSL"
-                  f" (trigger: {b['TSL NAV']:.2f})")
+        for ticker, name, dd, tsl_price in breaches:
+            print(f"  -> SELL {ticker} ({name})"
+                  f" -- drawdown {dd*100:.1f}% exceeds {threshold*100:.0f}% TSL"
+                  f" (trigger: {tsl_price:.2f})")
         print(f"  -> Move proceeds to cash until next monthly rebalance.\n")
-        msg = f"{len(breaches)} TSL BREACH(ES) DETECTED"
     else:
         print(f"\n  All positions within TSL threshold. No action needed.\n")
-        msg = "All positions within TSL threshold. No action needed."
 
     # Save updated peaks back to log
     log[month_key] = entry
     save_holdings_log(script_dir, log)
     print(f"[tsl] Updated peaks saved to {HOLDINGS_LOG_FILE}")
-
-    return {"rows": result_rows, "breaches": breaches, "message": msg}
 
 
 def run_tsl_check():

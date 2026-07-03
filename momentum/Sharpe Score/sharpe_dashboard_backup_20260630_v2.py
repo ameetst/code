@@ -1084,13 +1084,13 @@ with tab_top:
         vol_adj = round(comp / mean_vol, 3) if (comp is not None and mean_vol and mean_vol > 0) else None
 
         rows.append({
-            "Rank":          int(row["RANK"]) if pd.notna(row["RANK"]) else None,
+            "Rank":          str(int(row["RANK"])) if pd.notna(row["RANK"]) else "—",
             "Ticker":        ticker,
-            "Composite":     comp,
-            "Res Mom":       float(row["RES_MOM"]) if pd.notna(row.get("RES_MOM")) else None,
-            "Volatility %":  round(mean_vol * 100, 1) if mean_vol is not None else None,
-            "Vol-Adj Score": vol_adj,
-            "LTP":           ltp if ltp > 0 else None,
+            "Composite":     f"{comp:.3f}" if comp is not None else "—",
+            "Res Mom":       f"{row['RES_MOM']:.3f}" if pd.notna(row.get("RES_MOM")) else "—",
+            "Volatility %":  f"{mean_vol*100:.1f}%" if mean_vol is not None else "—",
+            "Vol-Adj Score": f"{vol_adj:.3f}" if vol_adj is not None else "—",
+            "LTP":           f"Rs {ltp:,.2f}" if ltp > 0 else "—",
         })
 
     top25_df = pd.DataFrame(rows)
@@ -1101,13 +1101,7 @@ with tab_top:
         return ["background-color:#FFFFFF;"] * len(row)
 
     st.dataframe(
-        top25_df.style.apply(style_top25, axis=1).format(
-            {"Rank":          "{:.0f}",
-             "Composite":     "{:.3f}",
-             "Res Mom":       "{:.3f}",
-             "Volatility %":  "{:.1f}%",
-             "Vol-Adj Score": "{:.3f}",
-             "LTP":           "Rs {:,.2f}"}, na_rep="\u2014"),
+        top25_df.style.apply(style_top25, axis=1),
         use_container_width=True, hide_index=True,
         height=min(950, (DISPLAY_N + 2) * 36))
 
@@ -1621,66 +1615,27 @@ with tab_early:
         # ── Section A: Rising Candidates Table ────────────────────────────────
         st.markdown("### \U0001f50d Rising Candidates")
 
-        # ── Filters ───────────────────────────────────────────────────────────
-        available_zones = sorted(rising_df["Zone"].dropna().unique().tolist())
-        fc1, fc2, fc3, fc4, fc5 = st.columns(5)
-        with fc1:
-            sel_zones = st.multiselect("Zone", options=available_zones,
-                                       default=[],
-                                       placeholder="All Zones",
-                                       key="early_filter_zone")
-        with fc2:
-            min_streak = st.number_input("Min Streak ↑", min_value=0, max_value=20,
-                                         value=0, step=1, key="early_filter_streak")
-        with fc3:
-            min_velocity = st.number_input("Min Velocity", min_value=0.0, max_value=1.0,
-                                           value=0.0, step=0.005, format="%.4f",
-                                           key="early_filter_velocity")
-        with fc4:
-            min_z3m_streak = st.number_input("Min Z3M Streak", min_value=0, max_value=20,
-                                             value=0, step=1, key="early_filter_z3m_streak")
-        with fc5:
-            min_z3m_vel = st.number_input("Min Z3M Vel", min_value=0.0, max_value=1.0,
-                                          value=0.0, step=0.005, format="%.4f",
-                                          key="early_filter_z3m_vel")
-
-        # Apply filters on raw numeric data before formatting
-        filtered_df = rising_df.copy()
-        if sel_zones:
-            filtered_df = filtered_df[filtered_df["Zone"].isin(sel_zones)]
-        if min_streak > 0:
-            filtered_df = filtered_df[filtered_df["Streak \u2191"] >= min_streak]
-        if min_velocity > 0:
-            filtered_df = filtered_df[filtered_df["Velocity"] >= min_velocity]
-        if min_z3m_streak > 0:
-            filtered_df = filtered_df[filtered_df["Z3M Streak"].fillna(0) >= min_z3m_streak]
-        if min_z3m_vel > 0:
-            filtered_df = filtered_df[filtered_df["Z3M Vel"].fillna(0) >= min_z3m_vel]
-
         def _style_early(row):
-            streak = int(row["Streak \u2191"])
+            streak = int(row["Streak ↑"])
             if streak >= 3: return ["background-color:#E8F5E9;"] * len(row)
             if streak == 2: return ["background-color:#FFF8E1;"] * len(row)
             return ["background-color:#FFFFFF;"] * len(row)
 
-        if filtered_df.empty:
-            st.info("No candidates match the current filters. Try relaxing the thresholds.")
-        else:
-            # Pre-format numerics as strings so Glide Data Grid left-aligns them
-            display_rising = filtered_df.copy()
-            display_rising["Rank"]      = display_rising["Rank"].apply(lambda x: str(int(x)) if pd.notna(x) else "\u2014")
-            display_rising["Score Now"] = display_rising["Score Now"].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "\u2014")
-            display_rising["Score -1"]  = display_rising["Score -1"].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "\u2014")
-            display_rising["Score -2"]  = display_rising["Score -2"].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "\u2014")
-            display_rising["Velocity"]  = display_rising["Velocity"].apply(lambda x: f"{x:+.4f}" if pd.notna(x) else "\u2014")
-            display_rising["Streak \u2191"]  = display_rising["Streak \u2191"].apply(lambda x: str(int(x)) if pd.notna(x) else "\u2014")
-            display_rising["Z3M Vel"]   = display_rising["Z3M Vel"].apply(lambda x: f"{x:+.4f}" if pd.notna(x) else "\u2014")
-            display_rising["Z3M Streak"] = display_rising["Z3M Streak"].apply(lambda x: str(int(x)) if pd.notna(x) else "\u2014")
+        # Pre-format numerics as strings so Glide Data Grid left-aligns them
+        display_rising = rising_df.copy()
+        display_rising["Rank"]      = display_rising["Rank"].apply(lambda x: str(int(x)) if pd.notna(x) else "—")
+        display_rising["Score Now"] = display_rising["Score Now"].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
+        display_rising["Score -1"]  = display_rising["Score -1"].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
+        display_rising["Score -2"]  = display_rising["Score -2"].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
+        display_rising["Velocity"]  = display_rising["Velocity"].apply(lambda x: f"{x:+.4f}" if pd.notna(x) else "—")
+        display_rising["Streak ↑"]  = display_rising["Streak ↑"].apply(lambda x: str(int(x)) if pd.notna(x) else "—")
+        display_rising["Z3M Vel"]   = display_rising["Z3M Vel"].apply(lambda x: f"{x:+.4f}" if pd.notna(x) else "—")
+        display_rising["Z3M Streak"] = display_rising["Z3M Streak"].apply(lambda x: str(int(x)) if pd.notna(x) else "—")
 
-            st.dataframe(
-                display_rising.style.apply(_style_early, axis=1),
-                use_container_width=True, hide_index=True,
-                height=min(800, (len(display_rising) + 2) * 36))
+        st.dataframe(
+            display_rising.style.apply(_style_early, axis=1),
+            use_container_width=True, hide_index=True,
+            height=min(800, (len(display_rising) + 2) * 36))
 
 
         st.caption(
