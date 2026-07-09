@@ -340,5 +340,59 @@
     "action": "BUY",
     "quantity": 30,
     "price": 2481.7
+  },
+  {
+    "id": "5415d794-bc7e-4485-a78b-6a17479177be",
+    "date": "2026-07-06",
+    "timestamp": "2026-07-06T12:51:04.273182",
+    "ticker": "WELCORP",
+    "action": "SELL",
+    "quantity": 54,
+    "price": 1560.0
+  },
+  {
+    "id": "71f1cb5a-6c48-4619-884c-d4676dee9d8c",
+    "date": "2026-07-06",
+    "timestamp": "2026-07-07T12:51:42.471715",
+    "ticker": "ACUTAAS",
+    "action": "SELL",
+    "quantity": 24,
+    "price": 3487.8
+  },
+  {
+    "id": "8871ba0c-a903-4eb4-b8be-b4e41a4c05a4",
+    "date": "2026-07-06",
+    "timestamp": "2026-07-07T12:52:03.309096",
+    "ticker": "CUPID",
+    "action": "SELL",
+    "quantity": 450,
+    "price": 212.93
+  },
+  {
+    "id": "0f0873a6-75bb-4dd4-be74-935b5b605aab",
+    "date": "2026-07-07",
+    "timestamp": "2026-07-07T12:55:59.543210",
+    "ticker": "CUPID",
+    "action": "BUY",
+    "quantity": 350,
+    "price": 208.99
+  },
+  {
+    "id": "49fd0e61-5737-460c-be20-504749aaeb87",
+    "date": "2026-07-07",
+    "timestamp": "2026-07-07T12:56:20.015985",
+    "ticker": "ACUTAAS",
+    "action": "BUY",
+    "quantity": 21,
+    "price": 3516.0
+  },
+  {
+    "id": "32cc4e52-8def-4a66-9f77-32c77fec48ff",
+    "date": "2026-07-07",
+    "timestamp": "2026-07-07T12:56:39.897905",
+    "ticker": "WELCORP",
+    "action": "BUY",
+    "quantity": 48,
+    "price": 1532.8
   }
 ]

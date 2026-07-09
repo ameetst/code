@@ -411,6 +411,7 @@ NEW_ENTRY_THRESHOLD = 0.40
 SIGNAL_WEIGHTS      = {"ema50_breadth": 0.35, "ema_trend_breadth": 0.25,
                        "breadth": 0.25, "momentum": 0.15}
 
+
 def compute_regime_score(nifty_s, eligible_mask, composite_series, prices_df=None):
     px = nifty_s.dropna()
     if len(px) < 200:
@@ -494,6 +495,19 @@ TRADING_DAYS = 252
 WINDOWS      = {"12M": 252, "9M": 189, "6M": 126, "3M": 63}
 rfr_daily    = RFR_ANNUAL / TRADING_DAYS
 TODAY        = datetime.date.today()
+
+params = {
+        "RFR":              "7.0%",
+        "Windows":          "12M / 9M / 6M / 3M",
+        "Top N":            f"Dynamic ({MIN_N}–{MAX_N})",
+        "Entry Gate":       f"Regime score >= {NEW_ENTRY_THRESHOLD}",
+        "Hold Lock":        "28 days",
+        "52H Filter":       ">= -25%",
+        "ADTV Filter":      f">= {min_turnover_cr} Cr (12M or 6M median)",
+        "Rank Buffer":      "50",
+        "Cash Yield":       "6% p.a.",
+        "Ledger File":      Path(LEDGER_FILE).name,
+    }
 
 # ── CACHED LOAD & COMPUTE ─────────────────────────────────────────────────────
 @st.cache_data(show_spinner="Loading price data...")
@@ -1150,9 +1164,9 @@ with tab_exits:
 
             if pd.isna(rank_val) or (pd.notna(pct52) and pct52 < -25):
                 trigger = "52H_BREACH";  action = "⚠️ SELL IMMEDIATELY"
-            elif pd.notna(rank_val) and rank_val > 40 and held >= 28:
+            elif pd.notna(rank_val) and rank_val > int(params["Rank Buffer"]) and held >= 28:
                 trigger = "RANK_EXIT";   action = "🔻 SELL (rank dropped)"
-            elif pd.notna(rank_val) and rank_val > 40 and held < 28:
+            elif pd.notna(rank_val) and rank_val > int(params["Rank Buffer"]) and held < 28:
                 trigger = "HOLD_LOCK";   action = f"🔒 Locked ({held}/28d)"
             else:
                 trigger = "HEALTHY";     action = "✅ HOLD"
@@ -1765,6 +1779,7 @@ with tab_config:
                     help="Stocks must have median daily turnover (price × volume) "
                          "above this threshold in EITHER the 12M or 6M window to be eligible. "
                          "Set to 0 to disable.")
+
     if volume_df is not None:
         _n_pass_12m = int((result.get("TURNOVER_12M", pd.Series(dtype=float)) >= min_turnover_cr).sum())
         _n_pass_6m  = int((result.get("TURNOVER_6M",  pd.Series(dtype=float)) >= min_turnover_cr).sum())
@@ -1777,18 +1792,7 @@ with tab_config:
 
     st.divider()
     st.markdown("#### 📋 Strategy Parameters (Read-only)")
-    params = {
-        "RFR":              "7.0%",
-        "Windows":          "12M / 9M / 6M / 3M",
-        "Top N":            f"Dynamic ({MIN_N}–{MAX_N})",
-        "Entry Gate":       f"Regime score >= {NEW_ENTRY_THRESHOLD}",
-        "Hold Lock":        "28 days",
-        "52H Filter":       ">= -25%",
-        "ADTV Filter":      f">= {min_turnover_cr} Cr (12M or 6M median)",
-        "Rank Buffer":      "40",
-        "Cash Yield":       "6% p.a.",
-        "Ledger File":      Path(LEDGER_FILE).name,
-    }
+
     for k, v in params.items():
         st.markdown(f"**{k}:** `{v}`")
 
