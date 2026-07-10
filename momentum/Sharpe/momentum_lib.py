@@ -1,0 +1,822 @@
+"""
+momentum_lib.py
+===============
+Reusable computation library for momentum scoring of NSE stocks.
+
+Functions
+---------
+load_prices(filepath)
+    Load price data from the DATA sheet of an n500-format xlsx file.
+    Returns (prices_df, nifty_series, stock_tickers, dates)
+
+compute_sharpe(prices_df, stock_tickers, windows, rfr_daily, trading_days)
+    Compute per-window Sharpe ratios and cross-sectional Z-scores.
+    Returns (sharpe_df, z_df)
+    z_df contains Z_<label> columns plus COMPOSITE, SHARPE_ALL, SHARPE_3.
+
+compute_adjusted_sharpe(prices_df, stock_tickers, windows, rfr_daily, trading_days)
+    [DORMANT — not used in live ranking. Activate by swapping into Sharpe.py]
+    Compute Pezier-White Adjusted Sharpe per window and cross-sectional Z-scores.
+    Rewards positive skewness; penalises excess kurtosis (fat-tail risk).
+    Formula: Adj_S = S * [1 + (Skew/6)*S - (ExcessKurt/24)*S^2]
+    Returns (adj_sharpe_df, z_df) — same shape as compute_sharpe output.
+    Backtest result: CAGR ~42.2% / MDD ~-20.2% vs baseline 38.3% / -16.3%.
+
+compute_clenow(prices_df, stock_tickers, windows, trading_days)
+    Compute per-window Clenow scores (AnnSlope × R²) and Z-scores.
+    Returns (slope_df, r2_df, raw_df, cz_df)
+    cz_df contains CZ_<label> columns plus CLENOW_Z.
+
+compute_residual_momentum(prices_df, stock_tickers, nifty_series, windows, trading_days)
+    Compute per-window residual Sharpe (OLS vs NIFTY500) and Z-scores.
+    Returns (resmom_df, rs_z_df)
+    rs_z_df contains RZ_<label> columns plus RES_MOM.
+
+compute_returns(prices_df, stock_tickers)
+    Compute 1M / 3M / 12M price returns for each stock.
+    Returns ret_df with columns 1M%, 3M%, 12M%.
+
+compute_pct_from_52h(prices_df, stock_tickers)
+    Compute % distance from 52-week high for each stock.
+    Returns a Series (negative = below high).
+
+compute_market_regime(nifty_series)
+    EMA-based market regime check on NIFTY500.
+    Returns label: str.
+    Two states:
+      BUY     — price > EMA50
+      NOT BUY — price <= EMA50
+
+normalise_composite(v)
+    Non-linear normalisation: v>1 → v+1, v<0 → 1/(1-v), else unchanged.
+
+load_volume(filepath)
+    Load the VOLUME sheet from the xlsx file (same format as DATA).
+    Returns volume_df (index=ticker, columns=dates) or None if sheet absent.
+
+compute_turnover(prices_df, volume_df, stock_tickers, windows)
+    Compute median daily turnover (price × volume) per stock per window.
+    Returns turnover_df with TURNOVER_12M, TURNOVER_6M columns (in ₹ Cr).
+"""
+
+import datetime
+import warnings
+
+import numpy as np
+import pandas as pd
+import openpyxl
+from scipy import stats
+
+warnings.filterwarnings("ignore")
+
+
+# ── DATA LOADING ──────────────────────────────────────────────────────────────
+
+def _infer_dates_for_columns(date_indices: list[int]) -> list:
+    """
+    Reconstruct trading dates when openpyxl cannot read cached header values.
+
+    Replicates the sheet formula:
+      SEQUENCE(365,1, WORKDAY(TODAY()-365)) filtered to Mon-Fri weekdays
+
+    The array formula always starts at col B (0-based index 1).
+    date_indices are the 0-based column indices where price data was found,
+    so date_indices[k] - 1 gives the offset into the formula's date sequence.
+    """
+    today = datetime.date.today()
+    start = today - datetime.timedelta(days=365)
+    while start.weekday() >= 5:        # advance to first weekday (WORKDAY)
+        start += datetime.timedelta(days=1)
+
+    # Build the full 365-date sequence the formula produces
+    formula_dates: list[datetime.date] = []
+    d = start
+    while len(formula_dates) < 365:
+        if d.weekday() < 5:
+            formula_dates.append(d)
+        d += datetime.timedelta(days=1)
+
+    # Map each price column index to its formula date
+    # formula is at col index 1 (col B), so col index i -> formula_dates[i - 1]
+    result = []
+    for i in date_indices:
+        offset = i - 1   # col B = index 1 = formula_dates[0]
+        if 0 <= offset < len(formula_dates):
+            result.append(formula_dates[offset])
+        else:
+            # Column is beyond formula range — extend forward
+            extra = offset - len(formula_dates) + 1
+            last = formula_dates[-1]
+            ext = []
+            while len(ext) < extra:
+                last += datetime.timedelta(days=1)
+                if last.weekday() < 5:
+                    ext.append(last)
+            formula_dates.extend(ext)
+            result.append(formula_dates[offset])
+    return result
+
+
+def load_prices(filepath: str):
+    """
+    Load the DATA sheet from an n500-format xlsx file.
+
+    The date header row is driven by a dynamic Excel array formula whose
+    cached values are wiped whenever openpyxl saves the file.  This function
+    first tries to read dates from the header; if none are found it infers
+    them by replicating the formula logic anchored to today's date.
+
+    Returns
+    -------
+    prices_df     : DataFrame  (index=ticker, columns=dates) — stocks only
+    nifty_series  : Series     — NIFTY500 daily closes
+    stock_tickers : list[str]  — all tickers except NIFTY500
+    dates         : list       — date objects for each price column
+    """
+    wb       = openpyxl.load_workbook(filepath, data_only=True, read_only=True)
+    ws       = wb["DATA"]
+    all_rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+
+    header = all_rows[0]
+
+    # ── Try to read dates directly from the header row ────────────────────────
+    date_indices = [i for i, h in enumerate(header)
+                    if isinstance(h, (datetime.datetime, datetime.date))]
+
+    if date_indices:
+        dates = [h.date() if isinstance(h, datetime.datetime) else h
+                 for h in (header[i] for i in date_indices)]
+    else:
+        # ── Fallback: infer from where numeric price data sits ────────────────
+        print("  Note: date headers not cached in file — inferring dates from "
+              "price column positions and today's date.")
+        candidate: set[int] = set()
+        for row in all_rows[1: min(11, len(all_rows))]:
+            for i, v in enumerate(row):
+                if i == 0:
+                    continue
+                try:
+                    if v is not None and float(v) > 0:
+                        candidate.add(i)
+                except (TypeError, ValueError):
+                    pass
+        if not candidate:
+            raise ValueError(
+                "load_prices: no date columns found in header and no numeric "
+                "price data detected. Ensure the file was populated by "
+                "update_stock_price.py before running Sharpe.py."
+            )
+        date_indices = sorted(candidate)
+        dates        = _infer_dates_for_columns(date_indices)
+        print(f"  Inferred {len(dates)} trading dates: "
+              f"{dates[0].strftime('%d-%b-%Y')} -> {dates[-1].strftime('%d-%b-%Y')}")
+
+    tickers, price_matrix = [], []
+    for row in all_rows[1:]:
+        if row[0] is None:
+            continue
+        px = []
+        for i in date_indices:
+            v = row[i] if i < len(row) else None
+            try:
+                px.append(float(v) if v and float(v) > 0 else np.nan)
+            except Exception:
+                px.append(np.nan)
+        ticker_name = str(row[0]).strip()
+        if ticker_name.upper() == "NIFTY 500":
+            ticker_name = "NIFTY500"
+        tickers.append(ticker_name)
+        price_matrix.append(px)
+
+    prices_df = pd.DataFrame(price_matrix, index=tickers, columns=dates)
+    n_dupes   = prices_df.index.duplicated(keep="first").sum()
+    if n_dupes:
+        print(f"  Warning: {n_dupes} duplicate ticker row(s) found — keeping first occurrence only.")
+    prices_df     = prices_df[~prices_df.index.duplicated(keep="first")]
+    nifty_series  = prices_df.loc["NIFTY500"].copy()
+    stock_tickers = [t for t in prices_df.index if t != "NIFTY500"]
+    prices_df     = prices_df.loc[stock_tickers]
+
+    return prices_df, nifty_series, stock_tickers, dates
+
+
+# ── VOLUME LOADING ────────────────────────────────────────────────────────────
+
+def load_volume(filepath: str):
+    """
+    Load the VOLUME sheet from the xlsx file.
+
+    Same layout as DATA: tickers in col A, daily traded volume across date
+    columns.  Returns a DataFrame (index=ticker, columns=dates) or None if
+    the VOLUME sheet does not exist (backward-compatible with older files).
+    """
+    wb = openpyxl.load_workbook(filepath, data_only=True, read_only=True)
+    if "VOLUME" not in wb.sheetnames:
+        wb.close()
+        return None
+
+    ws = wb["VOLUME"]
+    all_rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+
+    if not all_rows:
+        return None
+
+    header = all_rows[0]
+
+    # Identify date columns from the header
+    date_indices = [i for i, h in enumerate(header)
+                    if isinstance(h, (datetime.datetime, datetime.date))]
+
+    if not date_indices:
+        # Fallback: use same column positions as DATA sheet would
+        candidate: set[int] = set()
+        for row in all_rows[1: min(11, len(all_rows))]:
+            for i, v in enumerate(row):
+                if i == 0:
+                    continue
+                try:
+                    if v is not None and float(v) > 0:
+                        candidate.add(i)
+                except (TypeError, ValueError):
+                    pass
+        if not candidate:
+            return None
+        date_indices = sorted(candidate)
+        # Mirror DATA fallback so price and volume columns align by date.
+        dates = _infer_dates_for_columns(date_indices)
+    else:
+        dates = [h.date() if isinstance(h, datetime.datetime) else h
+                 for h in (header[i] for i in date_indices)]
+
+    tickers, vol_matrix = [], []
+    for row in all_rows[1:]:
+        if row[0] is None:
+            continue
+        vols = []
+        for i in date_indices:
+            v = row[i] if i < len(row) else None
+            try:
+                vols.append(float(v) if v is not None and float(v) >= 0 else np.nan)
+            except Exception:
+                vols.append(np.nan)
+        ticker_name = str(row[0]).strip()
+        if ticker_name.upper() == "NIFTY 500":
+            ticker_name = "NIFTY500"
+        tickers.append(ticker_name)
+        vol_matrix.append(vols)
+
+    volume_df = pd.DataFrame(vol_matrix, index=tickers, columns=dates)
+    volume_df = volume_df[~volume_df.index.duplicated(keep="first")]
+    # Exclude NIFTY500 — no meaningful volume for the index
+    volume_df = volume_df.loc[[t for t in volume_df.index if t != "NIFTY500"]]
+
+    return volume_df
+
+
+# ── TURNOVER ──────────────────────────────────────────────────────────────────
+
+def compute_turnover(prices_df, volume_df, stock_tickers,
+                     windows={"12M": 252, "6M": 126}):
+    """
+    Compute median daily turnover (LTP × volume) per stock per window.
+
+    Parameters
+    ----------
+    prices_df    : DataFrame  (index=ticker, columns=dates)
+    volume_df    : DataFrame  (index=ticker, columns=dates)
+    stock_tickers: list[str]
+    windows      : dict  e.g. {"12M": 252, "6M": 126}
+
+    Returns
+    -------
+    turnover_df : DataFrame with columns TURNOVER_12M, TURNOVER_6M
+                  Values are median daily turnover in ₹ Crores (÷ 1e7)
+    """
+    results = {}
+    for ticker in stock_tickers:
+        if ticker not in prices_df.index or ticker not in volume_df.index:
+            results[ticker] = {f"TURNOVER_{k}": np.nan for k in windows}
+            continue
+
+        px  = prices_df.loc[ticker].dropna()
+        vol = volume_df.loc[ticker].dropna()
+
+        # Align on common date columns
+        common = px.index.intersection(vol.index)
+        if len(common) < 20:
+            results[ticker] = {f"TURNOVER_{k}": np.nan for k in windows}
+            continue
+
+        daily_turnover = px[common] * vol[common]  # ₹ value traded per day
+
+        row = {}
+        for label, w in windows.items():
+            tail = daily_turnover.iloc[-w:] if len(daily_turnover) >= w else daily_turnover
+            if len(tail) >= 10:
+                row[f"TURNOVER_{label}"] = float(tail.median()) / 1e7  # ₹ Cr
+            else:
+                row[f"TURNOVER_{label}"] = np.nan
+        results[ticker] = row
+
+    return pd.DataFrame(results).T
+
+
+# ── SHARPE ────────────────────────────────────────────────────────────────────
+
+def _sharpe_ratio(series: pd.Series, window: int,
+                  rfr_daily: float, trading_days: int) -> float:
+    """Annualised Sharpe for a single stock over `window` trading days."""
+    px = series.dropna()
+    if len(px) < window * 0.90:
+        return np.nan
+    px_w     = px if len(px) < window + 1 else px.iloc[-(window + 1):]
+    log_rets = np.diff(np.log(px_w.values))
+    excess   = log_rets - rfr_daily
+    sd       = excess.std(ddof=1)
+    if sd < 1e-12:
+        return np.nan
+    return (excess.mean() / sd) * np.sqrt(trading_days)
+
+
+def _cross_section_z(series: pd.Series) -> pd.Series:
+    """Z-score a series cross-sectionally (mean=0, std=1)."""
+    mu, sd = series.mean(), series.std(ddof=1)
+    return (series - mu) / sd if sd > 0 else series * 0.0
+
+
+def _adjusted_sharpe_ratio(series: pd.Series, window: int,
+                           rfr_daily: float, trading_days: int) -> float:
+    """
+    Pezier-White Adjusted Sharpe Ratio (DORMANT — not used in live ranking).
+
+    Extends the raw annualised Sharpe with two higher-order moment corrections:
+      • Positive skewness  → upside asymmetry bonus  (boosts score)
+      • Excess kurtosis    → fat-tail penalty         (reduces score)
+
+    Formula
+    -------
+    Adj_S = S * [1 + (Skew / 6) * S  -  (ExcessKurt / 24) * S^2]
+
+    where S          = raw annualised Sharpe ratio
+          Skew       = Fisher skewness of excess daily log-returns
+          ExcessKurt = Fisher kurtosis (already kurt - 3) of excess returns
+
+    Backtest evidence (Apr 2020 – Apr 2026, 500 stocks)
+    ----------------------------------------------------
+    Raw Sharpe baseline  →  CAGR 38.3%  /  MDD -16.3%
+    Adjusted Sharpe      →  CAGR 42.2%  /  MDD -20.2%
+    Trade-off: +3.9 pp CAGR gained, -3.9 pp extra drawdown risk.
+    """
+    px = series.dropna()
+    if len(px) < window * 0.90:
+        return np.nan
+    px_w     = px if len(px) < window + 1 else px.iloc[-(window + 1):]
+    log_rets = np.diff(np.log(px_w.values))
+    excess   = log_rets - rfr_daily
+    sd       = excess.std(ddof=1)
+    if sd < 1e-12:
+        return np.nan
+
+    raw_sharpe   = (excess.mean() / sd) * np.sqrt(trading_days)
+    skewness     = stats.skew(excess)
+    excess_kurt  = stats.kurtosis(excess, fisher=True)  # excess kurtosis (kurt - 3)
+
+    adjustment   = (
+        1
+        + (skewness / 6) * raw_sharpe
+        - (excess_kurt / 24) * raw_sharpe ** 2
+    )
+    return raw_sharpe * adjustment
+
+
+def compute_sharpe(prices_df: pd.DataFrame,
+                   stock_tickers: list,
+                   windows: dict,
+                   rfr_daily: float,
+                   trading_days: int = 252):
+    """
+    Compute Sharpe ratios and cross-sectional Z-scores for all windows.
+
+    Parameters
+    ----------
+    windows : dict  e.g. {"12M":252, "9M":189, "6M":126, "3M":63, "1M":21}
+              The COMPOSITE (SHARPE_ALL) uses all windows except "1M" if present.
+              Short-term for MOM_ACCEL = mean(Z_1M, Z_3M, Z_6M) if 1M present,
+              else mean(Z_3M, Z_6M).
+              Long-term = mean(Z_9M, Z_12M).
+
+    Returns
+    -------
+    sharpe_df : DataFrame  raw Sharpe per window, cols = window labels
+    z_df      : DataFrame  Z_<label> per window + COMPOSITE / SHARPE_ALL /
+                           SHARPE_ST / SHARPE_LT / SHARPE_3 / MOM_ACCEL
+    """
+    print("Computing Sharpe ratios ...")
+    sharpe_data = {}
+    for label, window in windows.items():
+        col = [_sharpe_ratio(prices_df.loc[t], window, rfr_daily, trading_days)
+               for t in stock_tickers]
+        valid = sum(1 for v in col if not np.isnan(v))
+        sharpe_data[label] = col
+        print(f"  {label} ({window}d): {valid}/{len(stock_tickers)} valid")
+
+    sharpe_df = pd.DataFrame(sharpe_data, index=stock_tickers)
+
+    print("\nZ-scoring Sharpe cross-sectionally ...")
+    z_df = pd.DataFrame(index=stock_tickers)
+    for label in windows:
+        z_df[f"Z_{label}"] = _cross_section_z(sharpe_df[label])
+
+    # Stocks with insufficient data for a window get Z = 0 (universe average)
+    # so they can still receive a composite score rather than being dropped.
+    z_label_cols = [f"Z_{l}" for l in windows]
+    missing_mask = z_df[z_label_cols].isna()
+    n_affected   = missing_mask.any(axis=1).sum()
+    if n_affected > 0:
+        affected = (missing_mask.sum(axis=1)[missing_mask.any(axis=1)]
+                    .rename("missing_windows"))
+        print(f"  Note: {n_affected} stock(s) have partial window coverage; "
+              f"missing Z-scores set to 0 (universe mean):")
+        for ticker, count in affected.items():
+            missing_lbls = [l for l in windows
+                            if pd.isna(z_df.loc[ticker, f"Z_{l}"])]
+            print(f"    {ticker:<16}  missing: {', '.join(missing_lbls)}")
+    z_df[z_label_cols] = z_df[z_label_cols].fillna(0.0)
+
+    # COMPOSITE / SHARPE_ALL: 4 core windows (exclude 1M if present)
+    core_labels = [l for l in windows if l != "1M"]
+    z_cols             = [f"Z_{l}" for l in core_labels]
+    z_df["COMPOSITE"]  = z_df[z_cols].mean(axis=1)
+
+    z_df["SHARPE_3"]  = z_df[["Z_12M", "Z_6M", "Z_3M"]].mean(axis=1)
+
+    return sharpe_df, z_df
+
+
+def compute_adjusted_sharpe(prices_df: pd.DataFrame,
+                             stock_tickers: list,
+                             windows: dict,
+                             rfr_daily: float,
+                             trading_days: int = 252):
+    """
+    [DORMANT — not wired into live ranking]
+
+    Compute Pezier-White Adjusted Sharpe ratios and cross-sectional Z-scores.
+
+    Identical call signature and return shape to compute_sharpe(), making it
+    a drop-in replacement.  To activate in Sharpe.py, replace:
+
+        sharpe_df, z_df = ml.compute_sharpe(...)
+
+    with:
+
+        sharpe_df, z_df = ml.compute_adjusted_sharpe(...)
+
+    Parameters
+    ----------
+    Same as compute_sharpe().
+
+    Returns
+    -------
+    adj_sharpe_df : DataFrame  raw Adjusted Sharpe per window (cols = window labels)
+    z_df          : DataFrame  Z_<label> per window + COMPOSITE / SHARPE_3
+
+    Backtest evidence (Apr 2020 – Apr 2026, N500 universe)
+    -------------------------------------------------------
+    Raw Sharpe baseline  →  CAGR 38.3%  /  MDD -16.3%
+    Adjusted Sharpe      →  CAGR 42.2%  /  MDD -20.2%
+    Trade-off: +3.9 pp CAGR at the cost of -3.9 pp extra max drawdown.
+    """
+    print("Computing Adjusted Sharpe ratios (Skew + Kurtosis) ...")
+    adj_data = {}
+    for label, window in windows.items():
+        col = [_adjusted_sharpe_ratio(prices_df.loc[t], window, rfr_daily, trading_days)
+               for t in stock_tickers]
+        valid = sum(1 for v in col if not np.isnan(v))
+        adj_data[label] = col
+        print(f"  {label} ({window}d): {valid}/{len(stock_tickers)} valid")
+
+    adj_sharpe_df = pd.DataFrame(adj_data, index=stock_tickers)
+
+    print("\nZ-scoring Adjusted Sharpe cross-sectionally ...")
+    z_df = pd.DataFrame(index=stock_tickers)
+    for label in windows:
+        z_df[f"Z_{label}"] = _cross_section_z(adj_sharpe_df[label])
+
+    z_label_cols = [f"Z_{l}" for l in windows]
+    z_df[z_label_cols] = z_df[z_label_cols].fillna(0.0)
+
+    core_labels        = [l for l in windows if l != "1M"]
+    z_cols             = [f"Z_{l}" for l in core_labels]
+    z_df["COMPOSITE"]  = z_df[z_cols].mean(axis=1)
+
+    if all(k in windows for k in ["12M", "6M", "3M"]):
+        z_df["SHARPE_3"] = z_df[["Z_12M", "Z_6M", "Z_3M"]].mean(axis=1)
+
+    return adj_sharpe_df, z_df
+
+
+# ── CLENOW ────────────────────────────────────────────────────────────────────
+
+def _clenow_window(series: pd.Series, window: int,
+                   trading_days: int) -> tuple:
+    """Fit log(price) = a + b*t for last `window` days. Returns (slope, r2, slope*r2)."""
+    px = series.dropna()
+    if len(px) < window * 0.90:
+        return np.nan, np.nan, np.nan
+    n         = min(len(px), window)
+    px_w      = px.iloc[-n:].values
+    x         = np.arange(n)
+    y         = np.log(px_w)
+    slope, _, r, _, _ = stats.linregress(x, y)
+    r2        = r ** 2
+    ann_slope = slope * trading_days
+    return ann_slope, r2, ann_slope * r2
+
+
+def compute_clenow(prices_df: pd.DataFrame,
+                   stock_tickers: list,
+                   windows: dict,
+                   trading_days: int = 252):
+    """
+    Compute multi-window Clenow scores and cross-sectional Z-scores.
+
+    Returns
+    -------
+    slope_df : DataFrame  CL_<label>  annualised slope per window
+    r2_df    : DataFrame  CR_<label>  R² per window
+    raw_df   : DataFrame  CS_<label>  raw Clenow (slope × R²) per window
+    cz_df    : DataFrame  CZ_<label>  Z-scored Clenow + CLENOW_Z composite
+    """
+    print("\nComputing multi-window Clenow scores ...")
+    slope_data, r2_data, raw_data = {}, {}, {}
+
+    for label, window in windows.items():
+        slopes, r2s, raws = [], [], []
+        for t in stock_tickers:
+            sl, r2, raw = _clenow_window(prices_df.loc[t], window, trading_days)
+            slopes.append(sl); r2s.append(r2); raws.append(raw)
+        slope_data[f"CL_{label}"] = slopes
+        r2_data[f"CR_{label}"]    = r2s
+        raw_data[f"CS_{label}"]   = raws
+        valid = sum(1 for v in raws if not np.isnan(v))
+        print(f"  {label} ({window}d): {valid}/{len(stock_tickers)} valid")
+
+    slope_df = pd.DataFrame(slope_data, index=stock_tickers)
+    r2_df    = pd.DataFrame(r2_data,    index=stock_tickers)
+    raw_df   = pd.DataFrame(raw_data,   index=stock_tickers)
+
+    cz_df = pd.DataFrame(index=stock_tickers)
+    for label in windows:
+        cz_df[f"CZ_{label}"] = _cross_section_z(raw_df[f"CS_{label}"])
+
+    cz_cols           = [f"CZ_{l}" for l in windows]
+    cz_df["CLENOW_Z"] = cz_df[cz_cols].mean(axis=1)
+
+    return slope_df, r2_df, raw_df, cz_df
+
+
+# ── RESIDUAL MOMENTUM ─────────────────────────────────────────────────────────
+
+def _residual_sharpe(stock_series: pd.Series, mkt_rets: np.ndarray,
+                     window: int, trading_days: int) -> float:
+    """OLS-regress stock returns on market returns; return Sharpe of residuals."""
+    px = stock_series.dropna()
+    if len(px) < window * 0.90:
+        return np.nan
+    n      = min(len(px) - 1, window)
+    s_rets = np.diff(np.log(px.iloc[-n-1:].values))
+    m_rets = mkt_rets[-n:]
+    if len(s_rets) != len(m_rets) or len(s_rets) < 10:
+        return np.nan
+    X = np.column_stack([np.ones(len(m_rets)), m_rets])
+    try:
+        coeffs, _, _, _ = np.linalg.lstsq(X, s_rets, rcond=None)
+    except np.linalg.LinAlgError:
+        return np.nan
+    residuals = s_rets - X @ coeffs
+    sd = residuals.std(ddof=1)
+    if sd < 1e-12:
+        return np.nan
+    return (residuals.mean() / sd) * np.sqrt(trading_days)
+
+
+def compute_residual_momentum(prices_df: pd.DataFrame,
+                               stock_tickers: list,
+                               nifty_series: pd.Series,
+                               windows: dict,
+                               trading_days: int = 252):
+    """
+    Compute residual Sharpe after regressing each stock against NIFTY500.
+
+    Returns
+    -------
+    resmom_df : DataFrame  RS_<label>  residual Sharpe per window
+    rs_z_df   : DataFrame  RZ_<label>  Z-scored + RES_MOM composite
+    """
+    print("\nComputing residual momentum scores ...")
+    nifty_log_rets = np.diff(np.log(nifty_series.dropna().values))
+
+    resmom_data = {}
+    for label, window in windows.items():
+        col = [_residual_sharpe(prices_df.loc[t], nifty_log_rets,
+                                window, trading_days)
+               for t in stock_tickers]
+        valid = sum(1 for v in col if not np.isnan(v))
+        resmom_data[f"RS_{label}"] = col
+        print(f"  {label} ({window}d): {valid}/{len(stock_tickers)} valid")
+
+    resmom_df = pd.DataFrame(resmom_data, index=stock_tickers)
+
+    rs_z_df = pd.DataFrame(index=stock_tickers)
+    for label in windows:
+        rs_z_df[f"RZ_{label}"] = _cross_section_z(resmom_df[f"RS_{label}"])
+
+    rz_cols            = [f"RZ_{l}" for l in windows]
+    rs_z_df["RES_MOM"] = rs_z_df[rz_cols].mean(axis=1)
+
+    return resmom_df, rs_z_df
+
+
+# ── ALPHA & VOLATILITY ────────────────────────────────────────────────────────
+
+def compute_alpha_vol(prices_df: pd.DataFrame,
+                             stock_tickers: list,
+                             nifty_series: pd.Series,
+                             window: int = 252,
+                             rfr_daily: float = 0.07/252,
+                             trading_days: int = 252):
+    """
+    Compute annualized Jensen's Alpha and Volatility over a specified window.
+
+    Returns
+    -------
+    alpha_vol_df : DataFrame  ALPHA, VOL
+    z_df         : DataFrame  Z_ALPHA, Z_VOL, COMPOSITE
+    """
+    print(f"\nComputing {window}d Alpha and Volatility ...")
+    nifty_px = nifty_series.dropna()
+    if len(nifty_px) < window * 0.90:
+        print("Not enough NIFTY data.")
+        return pd.DataFrame(), pd.DataFrame()
+
+    nifty_px_w = nifty_px.iloc[-(window+1):] if len(nifty_px) > window else nifty_px
+    mkt_rets = np.diff(np.log(nifty_px_w.values))
+    mkt_excess = mkt_rets - rfr_daily
+
+    alpha_data = []
+    vol_data = []
+
+    for t in stock_tickers:
+        px = prices_df.loc[t].dropna()
+        if len(px) < window * 0.90:
+            alpha_data.append(np.nan)
+            vol_data.append(np.nan)
+            continue
+            
+        n = min(len(px) - 1, window)
+        s_rets = np.diff(np.log(px.iloc[-n-1:].values))
+        s_excess = s_rets - rfr_daily
+        
+        # Align with market
+        m_exc = mkt_excess[-n:]
+        s_exc = s_excess[-n:]
+        
+        if len(s_exc) != len(m_exc) or len(s_exc) < 10:
+            alpha_data.append(np.nan)
+            vol_data.append(np.nan)
+            continue
+            
+        # Volatility: std of daily log returns * sqrt(252)
+        vol = np.std(s_rets, ddof=1) * np.sqrt(trading_days)
+        inv_vol = 1.0 / vol if vol > 1e-6 else np.nan
+        
+        # Alpha: regress stock excess return on market excess return
+        X = np.column_stack([np.ones(len(m_exc)), m_exc])
+        try:
+            coeffs, _, _, _ = np.linalg.lstsq(X, s_exc, rcond=None)
+            intercept = coeffs[0]
+            # Annualize alpha
+            annual_alpha = intercept * trading_days
+        except np.linalg.LinAlgError:
+            annual_alpha = np.nan
+            
+        alpha_data.append(annual_alpha)
+        vol_data.append(inv_vol)
+
+    df = pd.DataFrame({"ALPHA": alpha_data, "INV_VOL": vol_data}, index=stock_tickers)
+    valid_alpha = df["ALPHA"].notna().sum()
+    print(f"  {window}d window: {valid_alpha}/{len(stock_tickers)} valid")
+    
+    z_df = pd.DataFrame(index=stock_tickers)
+    z_df["Z_ALPHA"]   = _cross_section_z(df["ALPHA"])
+    z_df["Z_INV_VOL"] = _cross_section_z(df["INV_VOL"])
+    
+    # Missing handling
+    missing_mask = df.isna().any(axis=1)
+    n_affected = missing_mask.sum()
+    if n_affected > 0:
+        print(f"  Note: {n_affected} stock(s) missing Alpha/Vol; Z-scores set to 0")
+        df = df.fillna(0.0)
+        z_df = z_df.fillna(0.0)
+
+    # Composite: equal weighted Z-scores
+    z_df["COMPOSITE"] = 0.5 * (z_df["Z_ALPHA"] + z_df["Z_INV_VOL"])
+    
+    return df, z_df
+
+
+
+# ── RETURN CONTEXT ────────────────────────────────────────────────────────────
+
+def compute_returns(prices_df: pd.DataFrame,
+                    stock_tickers: list) -> pd.DataFrame:
+    """
+    Compute 1M (22d), 3M (63d), 12M (245d) price returns for each stock.
+
+    Returns DataFrame with columns 1M%, 3M%, 12M%.
+    """
+    def safe_ret(series, n):
+        px = series.dropna()
+        return (px.iloc[-1] / px.iloc[-n] - 1) * 100 if len(px) > n else np.nan
+
+    ret_data = {t: {
+        "1M%":  safe_ret(prices_df.loc[t], 22),
+        "3M%":  safe_ret(prices_df.loc[t], 63),
+        "12M%": safe_ret(prices_df.loc[t], 245),
+    } for t in stock_tickers}
+
+    return pd.DataFrame(ret_data).T
+
+
+# ── 52-WEEK HIGH ──────────────────────────────────────────────────────────────
+
+def compute_pct_from_52h(prices_df: pd.DataFrame,
+                          stock_tickers: list,
+                          window: int = 252) -> pd.Series:
+    """
+    Compute % distance from 52-week high for each stock.
+    Negative = price is below its 52W high.
+    """
+    def _pct(series):
+        px = series.dropna()
+        if len(px) < 2:
+            return np.nan
+        px_w     = px.iloc[-window:] if len(px) >= window else px
+        high_52w = px_w.max()
+        last_px  = px.iloc[-1]
+        if high_52w <= 0:
+            return np.nan
+        return (last_px / high_52w - 1) * 100
+
+    return pd.Series(
+        {t: _pct(prices_df.loc[t]) for t in stock_tickers},
+        name="PCT_FROM_52H"
+    )
+
+
+# ── MARKET REGIME ─────────────────────────────────────────────────────────────
+
+def compute_market_regime(nifty_series: pd.Series) -> str:
+    """
+    EMA-based regime check on NIFTY500. Two states:
+
+    BUY     — price > EMA(50)
+    NOT BUY — price <= EMA(50)
+
+    Returns
+    -------
+    label : str
+        Human-readable regime string with EMA value embedded.
+    """
+    px = nifty_series.dropna()
+    if len(px) < 50:
+        return "UNKNOWN (insufficient data for EMA50)"
+
+    ema50 = px.ewm(span=50, adjust=False).mean().iloc[-1]
+    last  = px.iloc[-1]
+
+    if last > ema50:
+        return f"BUY  |  price ({last:.0f}) > EMA50 ({ema50:.0f})"
+
+    return f"NOT BUY  |  price ({last:.0f}) <= EMA50 ({ema50:.0f})"
+
+
+# ── NORMALISATION ─────────────────────────────────────────────────────────────
+
+def normalise_composite(v: float) -> float:
+    """
+    Non-linear rescale so all composite values are positive and spread out:
+      v > 1  →  v + 1
+      v < 0  →  1 / (1 - v)   maps to (0, 1]
+      0 ≤ v ≤ 1  →  unchanged
+    """
+    if pd.isna(v):
+        return np.nan
+    if v > 1:
+        return v + 1.0
+    if v < 0:
+        return 1.0 / (1.0 - v)
+    return v

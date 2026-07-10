@@ -1,0 +1,30 @@
+[
+  {
+    "date": "2026-06-10",
+    "Composite": 0.3515,
+    "Breadth": 0.611,
+    "Momentum": 0.227,
+    "Dynamic N": 12
+  },
+  {
+    "date": "2026-06-13",
+    "Composite": 0.3448,
+    "Breadth": 0.584,
+    "Momentum": 0.24,
+    "Dynamic N": 11
+  },
+  {
+    "date": "2026-06-14",
+    "Composite": 0.3448,
+    "Breadth": 0.584,
+    "Momentum": 0.24,
+    "Dynamic N": 11
+  },
+  {
+    "date": "2026-07-06",
+    "Composite": 0.5742,
+    "Breadth": 0.707,
+    "Momentum": 0.187,
+    "Dynamic N": 16
+  }
+]

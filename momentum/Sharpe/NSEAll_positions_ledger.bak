@@ -1,0 +1,58 @@
+{
+  "CUPID": {
+    "entry_date": "2026-07-10",
+    "entry_price": 210.01
+  },
+  "STLTECH": {
+    "entry_date": "2026-07-10",
+    "entry_price": 554.35
+  },
+  "CPPLUS": {
+    "entry_date": "2026-07-10",
+    "entry_price": 3644.2
+  },
+  "HFCL": {
+    "entry_date": "2026-07-10",
+    "entry_price": 214.68
+  },
+  "SBC": {
+    "entry_date": "2026-07-10",
+    "entry_price": 42.11
+  },
+  "BLISSGVS": {
+    "entry_date": "2026-07-10",
+    "entry_price": 524.15
+  },
+  "RPTECH": {
+    "entry_date": "2026-07-10",
+    "entry_price": 779.25
+  },
+  "ACUTAAS": {
+    "entry_date": "2026-07-10",
+    "entry_price": 3458.8
+  },
+  "WELCORP": {
+    "entry_date": "2026-07-10",
+    "entry_price": 1601.9
+  },
+  "BAJAJCON": {
+    "entry_date": "2026-07-10",
+    "entry_price": 643.55
+  },
+  "DEEDEV": {
+    "entry_date": "2026-07-10",
+    "entry_price": 677.5
+  },
+  "MTARTECH": {
+    "entry_date": "2026-07-10",
+    "entry_price": 6938.5
+  },
+  "KIRLOSENG": {
+    "entry_date": "2026-07-10",
+    "entry_price": 2424.8
+  },
+  "PAISALO": {
+    "entry_date": "2026-07-10",
+    "entry_price": 72.4
+  }
+}
