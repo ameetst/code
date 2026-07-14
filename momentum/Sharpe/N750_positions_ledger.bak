@@ -15,17 +15,9 @@
     "entry_date": "2026-05-25",
     "entry_price": 998.35
   },
-  "TDPOWERSYS": {
-    "entry_date": "2026-05-25",
-    "entry_price": 1281.5590000000002
-  },
   "LAURUSLABS": {
     "entry_date": "2026-05-25",
     "entry_price": 1360.0754716981132
-  },
-  "POWERINDIA": {
-    "entry_date": "2026-05-25",
-    "entry_price": 35875.0
   },
   "SANSERA": {
     "entry_date": "2026-05-25",
@@ -34,10 +26,6 @@
   "ACUTAAS": {
     "entry_date": "2026-07-07",
     "entry_price": 3516.0
-  },
-  "ADANIPOWER": {
-    "entry_date": "2026-05-25",
-    "entry_price": 232.55263803680984
   },
   "WELCORP": {
     "entry_date": "2026-07-07",
@@ -62,5 +50,33 @@
   "RRKABEL": {
     "entry_date": "2026-06-29",
     "entry_price": 2481.7
+  },
+  "ANANDRATHI": {
+    "entry_date": "2026-07-13",
+    "entry_price": 2117.5
+  },
+  "ASTRAMICRO": {
+    "entry_date": "2026-07-13",
+    "entry_price": 1708.1000000000001
+  },
+  "GRANULES": {
+    "entry_date": "2026-07-13",
+    "entry_price": 897.95
+  },
+  "JBCHEPHARM": {
+    "entry_date": "2026-07-13",
+    "entry_price": 2456.3
+  },
+  "THANGAMAYL": {
+    "entry_date": "2026-07-13",
+    "entry_price": 6256.0
+  },
+  "ATHERENERG": {
+    "entry_date": "2026-07-13",
+    "entry_price": 7047.0
+  },
+  "GRWRHITECH": {
+    "entry_date": "2026-07-13",
+    "entry_price": 7047.0
   }
 }

@@ -124,5 +124,32 @@
     "benchmark_ret": 0.007556,
     "n_held": 16,
     "invested_frac": 0.64
+  },
+  {
+    "date": "2026-07-11",
+    "portfolio_nav": 103.2966,
+    "benchmark_nav": 101.6845,
+    "portfolio_ret": 0.007593,
+    "benchmark_ret": 0.011579,
+    "n_held": 16,
+    "invested_frac": 0.64
+  },
+  {
+    "date": "2026-07-13",
+    "portfolio_nav": 104.0809,
+    "benchmark_nav": 102.8619,
+    "portfolio_ret": 0.007593,
+    "benchmark_ret": 0.011579,
+    "n_held": 16,
+    "invested_frac": 0.64
+  },
+  {
+    "date": "2026-07-14",
+    "portfolio_nav": 103.4452,
+    "benchmark_nav": 102.856,
+    "portfolio_ret": -0.006107,
+    "benchmark_ret": -5.8e-05,
+    "n_held": 16,
+    "invested_frac": 0.64
   }
 ]

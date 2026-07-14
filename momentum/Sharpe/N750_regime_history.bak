@@ -225,9 +225,30 @@
   },
   {
     "date": "2026-07-10",
-    "Composite": 0.5069,
+    "Composite": 0.5252,
     "Breadth": 0.676,
     "Momentum": 0.201,
     "Dynamic N": 15
+  },
+  {
+    "date": "2026-07-11",
+    "Composite": 0.5753,
+    "Breadth": 0.72,
+    "Momentum": 0.189,
+    "Dynamic N": 20
+  },
+  {
+    "date": "2026-07-13",
+    "Composite": 0.5749,
+    "Breadth": 0.72,
+    "Momentum": 0.193,
+    "Dynamic N": 20
+  },
+  {
+    "date": "2026-07-14",
+    "Composite": 0.5503,
+    "Breadth": 0.721,
+    "Momentum": 0.192,
+    "Dynamic N": 19
   }
 ]

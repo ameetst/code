@@ -385,5 +385,95 @@
     "action": "BUY",
     "quantity": 21,
     "price": 3516.0
+  },
+  {
+    "id": "32cc4e52-8def-4a66-9f77-32c77fec48ff",
+    "date": "2026-07-07",
+    "timestamp": "2026-07-07T12:56:39.897905",
+    "ticker": "WELCORP",
+    "action": "BUY",
+    "quantity": 48,
+    "price": 1532.8
+  },
+  {
+    "id": "f2ba2a58-8eab-4a53-a09a-3cefe577c32a",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:11:03.441818",
+    "ticker": "ADANIPOWER",
+    "action": "SELL",
+    "quantity": 326,
+    "price": 215.52
+  },
+  {
+    "id": "4a55502f-fb3c-4445-b476-ba5519cc9e51",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:11:31.116017",
+    "ticker": "TDPOWERSYS",
+    "action": "SELL",
+    "quantity": 60,
+    "price": 1154.3
+  },
+  {
+    "id": "89183d59-33a5-4dbe-96ee-8931599dd332",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:12:02.996183",
+    "ticker": "POWERINDIA",
+    "action": "SELL",
+    "quantity": 2,
+    "price": 31945.0
+  },
+  {
+    "id": "1a6a7741-5587-4ca5-8bc5-e6f597acc9fd",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:12:44.782266",
+    "ticker": "ANANDRATHI",
+    "action": "BUY",
+    "quantity": 35,
+    "price": 2117.5
+  },
+  {
+    "id": "8bdc6423-a351-4daa-b2f3-0703875066e9",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:13:34.185931",
+    "ticker": "ASTRAMICRO",
+    "action": "BUY",
+    "quantity": 43,
+    "price": 1708.1
+  },
+  {
+    "id": "da1d4b26-bb26-4ae0-9c04-0351fe4dcc93",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:13:58.586600",
+    "ticker": "GRANULES",
+    "action": "BUY",
+    "quantity": 83,
+    "price": 897.95
+  },
+  {
+    "id": "ff468d93-d811-4da9-a60e-e35e92b7176e",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:14:21.120944",
+    "ticker": "JBCHEPHARM",
+    "action": "BUY",
+    "quantity": 30,
+    "price": 2456.3
+  },
+  {
+    "id": "8fbd271f-1803-4c09-999a-2c81730e0523",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:14:48.728356",
+    "ticker": "THANGAMAYL",
+    "action": "BUY",
+    "quantity": 12,
+    "price": 6256.0
+  },
+  {
+    "id": "3e77659f-c940-4d71-8370-6fce88f4f784",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:15:07.842757",
+    "ticker": "ATHERENERG",
+    "action": "BUY",
+    "quantity": 62,
+    "price": 7047.0
   }
 ]
