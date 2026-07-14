@@ -1059,7 +1059,7 @@ st.divider()
 # ── TABS ──────────────────────────────────────────────────────────────────────
 tab_top, tab_exits, tab_tradelog, tab_calcs, tab_early, tab_config, tab_perf = st.tabs([
     "📊 Top 25 Rankings",
-    "🚨 Actions Monitor",
+    "🚨 Exit Monitor",
     "📝 Tradelog & MTM",
     "📋 Full Rankings",
     "📈 Early Movers",
@@ -1148,15 +1148,14 @@ with tab_top:
     with mc4: st.metric("Cash Weight",      f"{actual_cash_wt:.1%}")
 
 
-# ── TAB 2: ACTIONS MONITOR ────────────────────────────────────────────────────
+# ── TAB 2: EXIT MONITOR ───────────────────────────────────────────────────────
 with tab_exits:
-    st.markdown("## 🚨 Actions Monitor")
+    st.markdown("## 🚨 Exit Evaluation")
 
     if not ledger:
         st.info(f"No open positions found in ledger `{Path(LEDGER_FILE).name}`. "
                 "Nothing to evaluate.")
     else:
-        # ── Build Exit Evaluation rows ────────────────────────────────────────
         exit_rows = []
         for ticker, rec in ledger.items():
             held     = (TODAY - rec["entry_date"]).days
@@ -1172,183 +1171,33 @@ with tab_exits:
             else:
                 trigger = "HEALTHY";     action = "✅ HOLD"
 
-            # Current price & unrealised P&L from tradelog
-            curr_price = latest_prices.get(ticker, rec["entry_price"])
-            shares = 0
-            for hm in holdings_metrics:
-                if hm["Ticker"] == ticker:
-                    shares = hm["Qty"]
-                    curr_price = hm["Current Price"]
-                    break
-            unrealised_pnl_val = (curr_price - rec["entry_price"]) * shares
-
             exit_rows.append({
-                "Ticker":          ticker,
-                "Action":          action,
-                "Trigger":         trigger,
-                "Rank":            int(rank_val) if pd.notna(rank_val) else None,
-                "52H%":            round(pct52, 1) if pd.notna(pct52) else None,
-                "Days Held":       held,
-                "Entry Date":      rec["entry_date"].isoformat(),
-                "Unrealised P&L":  round(unrealised_pnl_val, 0),
+                "Ticker":     ticker,
+                "Action":     action,
+                "Trigger":    trigger,
+                "Rank":       int(rank_val) if pd.notna(rank_val) else None,
+                "52H%":       round(pct52, 1) if pd.notna(pct52) else None,
+                "Days Held":  held,
+                "Entry Date": rec["entry_date"].isoformat(),
+                "Entry Price":round(rec["entry_price"], 2),
             })
 
         exit_df = pd.DataFrame(exit_rows)
+        breaches = exit_df[exit_df["Trigger"].isin(["52H_BREACH", "RANK_EXIT"])]
 
-        # ── Section 1: Exit Evaluation table ──────────────────────────────────
-        exit_triggers = exit_df[exit_df["Trigger"].isin(["52H_BREACH", "RANK_EXIT"])]
-        n_exits = len(exit_triggers)
-
-        if n_exits > 0:
-            st.error(f"🚨 **{n_exits} EXIT SIGNAL(S) — Action Required!**")
-            st.markdown("#### Exits Required")
-
-            def style_exit_rows(row):
-                if "SELL IMMEDIATELY" in str(row["Action"]): return ["background-color:#FFEBEE; font-weight:bold;"] * len(row)
-                if "SELL" in str(row["Action"]):             return ["background-color:#FFF3E0;"] * len(row)
-                return [""] * len(row)
-
-            st.dataframe(
-                exit_triggers.style.apply(style_exit_rows, axis=1).format(
-                    {"Rank": "{:.0f}", "Unrealised P&L": "Rs {:,.0f}"}, na_rep="—"),
-                use_container_width=True, hide_index=True)
+        if len(breaches) > 0:
+            st.error(f"🚨 **{len(breaches)} EXIT SIGNAL(S) — Action Required!**")
         else:
             st.success(f"✅ All {len(ledger)} positions healthy. No exits triggered.")
 
-        # ── Section 2: Summary Banner ─────────────────────────────────────────
-        st.divider()
-        n_current_holdings = len(ledger)
-        n_after_exits = n_current_holdings - n_exits
-        n_new_positions = dynamic_n - n_after_exits
-
-        if n_new_positions > 0 and allow_new:
-            bc1, bc2, bc3, bc4 = st.columns(4)
-            with bc1: st.metric("Max Stocks Allowed", f"{dynamic_n}")
-            with bc2: st.metric("Current Holdings", f"{n_current_holdings}")
-            with bc3: st.metric("Positions to Exit", f"{n_exits}")
-            with bc4: st.metric("New Positions", f"{n_new_positions}", delta=f"+{n_new_positions}", delta_color="normal")
-        else:
-            bc1, bc2, bc3 = st.columns(3)
-            with bc1: st.metric("Max Stocks Allowed", f"{dynamic_n}")
-            with bc2: st.metric("Current Holdings", f"{n_current_holdings}")
-            with bc3: st.metric("Positions to Exit", f"{n_exits}")
-
-        # ── Section 3: New Entries table ───────────────────────────────────────
-        if n_new_positions > 0 and allow_new:
-            st.divider()
-            st.markdown("#### 🆕 New Entry Candidates")
-
-            # Identify tickers to exclude (currently held + flagged for exit stays excluded)
-            held_tickers = set(ledger.keys())
-            # Pick top-ranked eligible stocks not currently held
-            entry_candidates = []
-            for ticker in result.index:
-                if ticker in held_tickers:
-                    continue
-                if len(entry_candidates) >= n_new_positions:
-                    break
-                entry_candidates.append(ticker)
-
-            if not entry_candidates:
-                st.info("No eligible entry candidates found in the current ranking.")
-            else:
-                # Calculate available cash after exits
-                exit_tickers = set(exit_triggers["Ticker"].tolist()) if n_exits > 0 else set()
-                cost_basis_after_exits = sum(
-                    h["Cost Value"] for h in holdings_metrics
-                    if h["Ticker"] not in exit_tickers
-                )
-                available_cash = max(0.0, capital - cost_basis_after_exits)
-
-                # Compute inverse-vol weights for entry candidates
-                raw_entry_w = {}
-                for t in entry_candidates:
-                    if t not in prices_df.index:
-                        continue
-                    px = prices_df.loc[t].dropna()
-                    if len(px) > 10:
-                        vols = []
-                        for w in [252, 189, 126, 63]:
-                            pw = px.iloc[-w:] if len(px) >= w else px
-                            lr = np.diff(np.log(pw.values))
-                            if len(lr) > 5: vols.append(np.std(lr, ddof=1) * np.sqrt(252))
-                        comp = result.loc[t, "COMPOSITE"] if t in result.index else 1.0
-                        raw_entry_w[t] = comp / np.mean(vols) if vols and np.mean(vols) > 0 else comp
-                    else:
-                        raw_entry_w[t] = result.loc[t, "COMPOSITE"] if t in result.index else 1.0
-
-                total_w = sum(raw_entry_w.values())
-                entry_weights = {}
-                for t in raw_entry_w:
-                    nw = raw_entry_w[t] / total_w if total_w > 0 else 1.0 / len(raw_entry_w)
-                    entry_weights[t] = min(max_wt, nw)
-
-                # Normalise weights so they sum to 1.0
-                ew_total = sum(entry_weights.values())
-                if ew_total > 0:
-                    entry_weights = {t: w / ew_total for t, w in entry_weights.items()}
-
-                # Check if sufficient cash
-                total_needed = sum(entry_weights[t] * available_cash for t in entry_weights)
-                if available_cash <= 0:
-                    st.info("ℹ️ No cash available for new entries.")
-                else:
-                    if total_needed > available_cash * 1.01:  # small tolerance
-                        st.warning("⚠️ Insufficient cash for all entries — allocation pro-rata scaled to available cash.")
-
-                    entry_rows = []
-                    for t in entry_candidates:
-                        if t not in entry_weights:
-                            continue
-                        inv_amount = entry_weights[t] * available_cash
-                        ltp = latest_prices.get(t, 0.0)
-                        qty = int(inv_amount // ltp) if ltp > 0 else 0
-                        rank_val = result.loc[t, "RANK"] if t in result.index else np.nan
-                        pct52 = result.loc[t, "PCT_FROM_52H"] if t in result.index else np.nan
-
-                        entry_rows.append({
-                            "Ticker":         t,
-                            "Action":         "🟢 BUY",
-                            "Rank":           int(rank_val) if pd.notna(rank_val) else None,
-                            "52H%":           round(pct52, 1) if pd.notna(pct52) else None,
-                            "Inv. Amount":    round(inv_amount, 0),
-                            "Qty to Purchase": qty,
-                        })
-
-                    if entry_rows:
-                        entry_df = pd.DataFrame(entry_rows)
-
-                        def style_entry_rows(row):
-                            return ["background-color:#E8F5E9;"] * len(row)
-
-                        st.dataframe(
-                            entry_df.style.apply(style_entry_rows, axis=1).format(
-                                {"Rank": "{:.0f}", "Inv. Amount": "Rs {:,.0f}",
-                                 "Qty to Purchase": "{:,.0f}"}, na_rep="—"),
-                            use_container_width=True, hide_index=True)
-
-                        st.caption(
-                            f"Available Cash: **Rs {available_cash:,.0f}**  |  "
-                            f"Total Allocation: **Rs {sum(r['Inv. Amount'] for r in entry_rows):,.0f}**")
-                    else:
-                        st.info("No eligible entry candidates could be allocated.")
-
-        elif not allow_new:
-            st.divider()
-            st.warning(f"⛔ Regime Score ({regime_score:.2f}) below threshold ({NEW_ENTRY_THRESHOLD}) — no new entries permitted.")
-
-        # ── Section 4: Full holdings summary ──────────────────────────────────
-        st.divider()
-        st.markdown("#### 📋 All Positions")
-
-        def style_all_positions(row):
+        def style_exits(row):
             if "SELL IMMEDIATELY" in str(row["Action"]): return ["background-color:#FFEBEE; font-weight:bold;"] * len(row)
             if "SELL" in str(row["Action"]):             return ["background-color:#FFF3E0;"] * len(row)
             if "Locked"  in str(row["Action"]):          return ["background-color:#FFF8E1;"] * len(row)
             return ["background-color:#E8F5E9;"] * len(row)
 
-        st.dataframe(exit_df.style.apply(style_all_positions, axis=1).format(
-                         {"Rank": "{:.0f}", "Unrealised P&L": "Rs {:,.0f}"}, na_rep="—"),
+        st.dataframe(exit_df.style.apply(style_exits, axis=1).format(
+                         {"Rank": "{:.0f}"}, na_rep="—"),
                      use_container_width=True, hide_index=True)
 
         st.markdown(
