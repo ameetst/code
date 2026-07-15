@@ -381,7 +381,7 @@ with tab_rankings:
 
     # Prepare display columns
     display_cols = ["RANK_INVESTABLE", "RANK_UNIVERSE", "TICKER", "ETF_NAME", "SECTOR",
-                    "WTD_SHARPE", "SHARPE_6M", "SHARPE_3M", "SCREEN_PASS"]
+                    "WTD_SHARPE", "SHARPE_6M", "SHARPE_3M", "MOM_ACCEL", "SCREEN_PASS"]
     available_cols = [c for c in display_cols if c in ranking.columns]
     rank_display = ranking[available_cols].copy()
 
@@ -395,6 +395,7 @@ with tab_rankings:
         "WTD_SHARPE": "Wtd Sharpe",
         "SHARPE_6M": "Sharpe 6M",
         "SHARPE_3M": "Sharpe 3M",
+        "MOM_ACCEL": "Mom Accel",
         "SCREEN_PASS": "Screen",
     }
     rank_display = rank_display.rename(columns=col_rename)
@@ -421,7 +422,7 @@ with tab_rankings:
     filtered = filtered.head(top_n_filter)
 
     # Format numeric columns
-    for col in ["Wtd Sharpe", "Sharpe 6M", "Sharpe 3M"]:
+    for col in ["Wtd Sharpe", "Sharpe 6M", "Sharpe 3M", "Mom Accel"]:
         if col in filtered.columns:
             filtered[col] = filtered[col].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
 
@@ -584,8 +585,6 @@ with tab_config:
                 "MAX_DRAWDOWN_FROM_HIGH": cfg_max_dd,
                 "SHARPE_W6M": cfg_sharpe_w6m,
                 "SHARPE_W3M": cfg_sharpe_w3m,
-                "R2_W6M": current_cfg["R2_W6M"],
-                "R2_W3M": current_cfg["R2_W3M"],
                 "REGIME_TICKER": cfg_regime_ticker.strip(),
                 "REGIME_FALLBACKS": [t.strip() for t in cfg_fallbacks.split(",") if t.strip()],
                 "TREND_FAST_EMA_WINDOW": cfg_fast_ema,
@@ -618,8 +617,6 @@ with tab_config:
                         "MAX_DRAWDOWN_FROM_HIGH": cfg_max_dd,
                         "SHARPE_W6M": cfg_sharpe_w6m,
                         "SHARPE_W3M": cfg_sharpe_w3m,
-                        "R2_W6M": current_cfg["R2_W6M"],
-                        "R2_W3M": current_cfg["R2_W3M"],
                         "REGIME_TICKER": cfg_regime_ticker.strip(),
                         "REGIME_FALLBACKS": [t.strip() for t in cfg_fallbacks.split(",") if t.strip()],
                         "TREND_FAST_EMA_WINDOW": cfg_fast_ema,

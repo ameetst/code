@@ -408,7 +408,15 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
 
         sh6 = sharpe_score(s, CONFIG.WINDOW_6M)
         sh3 = sharpe_score(s, CONFIG.WINDOW_3M)
-        # Raw Sharpe values stored; WTD_SHARPE computed post-loop via Z-scores
+        # Weighted Sharpe (composite ranking metric)
+        if not np.isnan(sh6) and not np.isnan(sh3):
+            wtd_sharpe = CONFIG.SHARPE_W6M * sh6 + CONFIG.SHARPE_W3M * sh3
+        elif not np.isnan(sh6):
+            wtd_sharpe = sh6
+        elif not np.isnan(sh3):
+            wtd_sharpe = sh3
+        else:
+            wtd_sharpe = np.nan
 
         # MOM_ACCEL — display-only Sharpe-Momentum-Accelerator score.
         # (Sharpe_1M + Sharpe_3M) - Sharpe_6M, all computed at 0% RF (independent
@@ -457,71 +465,26 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
             "EOM_PCT"       : eom_ret,
             "SHARPE_6M"     : sh6,
             "SHARPE_3M"     : sh3,
+            "WTD_SHARPE"    : wtd_sharpe,
             "MOM_ACCEL"     : mom_accel,
             "SCREEN_PASS"   : screen_pass,
         })
 
     df = pd.DataFrame(records)
 
-    # =================================================================
-    # CROSS-SECTIONAL Z-SCORING OF SHARPE RATIOS
-    # Z-score = (value - mean) / std, computed across ETFs with valid
-    # (non-NaN) values only.  NaN ETFs are excluded from mean/std
-    # calculation and remain NaN after Z-scoring.
-    # =================================================================
-    def _zscore(series: pd.Series) -> pd.Series:
-        """Cross-sectional Z-score; NaN values stay NaN."""
-        mu  = series.mean()   # pandas .mean() skips NaN by default
-        sig = series.std()    # pandas .std() skips NaN by default
-        if sig == 0 or np.isnan(sig):
-            return pd.Series(0.0, index=series.index)
-        return (series - mu) / sig
-
-    # ── Investable Z-scores (reference pool = screen-pass ETFs) ──
-    inv_mask = df["SCREEN_PASS"]
-    df["_Z6_INV"] = np.nan
-    df["_Z3_INV"] = np.nan
-    if inv_mask.sum() > 0:
-        df.loc[inv_mask, "_Z6_INV"] = _zscore(df.loc[inv_mask, "SHARPE_6M"])
-        df.loc[inv_mask, "_Z3_INV"] = _zscore(df.loc[inv_mask, "SHARPE_3M"])
-
-    # Blend Z-scored Sharpe for investable composite (fallback if only one valid)
-    z6i = df["_Z6_INV"]; z3i = df["_Z3_INV"]
-    both_i = z6i.notna() & z3i.notna()
-    only6i = z6i.notna() & z3i.isna()
-    only3i = z6i.isna()  & z3i.notna()
-    df["_WTD_INV"] = np.nan
-    df.loc[both_i, "_WTD_INV"] = CONFIG.SHARPE_W6M * z6i[both_i] + CONFIG.SHARPE_W3M * z3i[both_i]
-    df.loc[only6i, "_WTD_INV"] = z6i[only6i]
-    df.loc[only3i, "_WTD_INV"] = z3i[only3i]
-
-    # ── Universe Z-scores (reference pool = ALL ETFs with valid Sharpe) ──
-    z6u = _zscore(df["SHARPE_6M"]); z3u = _zscore(df["SHARPE_3M"])
-    both_u = z6u.notna() & z3u.notna()
-    only6u = z6u.notna() & z3u.isna()
-    only3u = z6u.isna()  & z3u.notna()
-    df["WTD_SHARPE"] = np.nan
-    df.loc[both_u, "WTD_SHARPE"] = CONFIG.SHARPE_W6M * z6u[both_u] + CONFIG.SHARPE_W3M * z3u[both_u]
-    df.loc[only6u, "WTD_SHARPE"] = z6u[only6u]
-    df.loc[only3u, "WTD_SHARPE"] = z3u[only3u]
-
-    # ── Rankings ─────────────────────────────────────────────────
-    # Universe rank — Z-scored composite across all ETFs
+    # --- Universe rank — based entirely on Weighted Sharpe ---
     df["RANK_UNIVERSE"] = df["WTD_SHARPE"].rank(ascending=False, na_option="bottom").astype(int)
     df["RANK_SHARPE"]   = df["RANK_UNIVERSE"]   # same — kept for column compatibility
 
-    # Investable rank — Z-scored composite among screen-pass ETFs only
+    # --- Investable rank — Weighted Sharpe among screen-pass ETFs only ---
     inv = df[df["SCREEN_PASS"]].copy()
     if len(inv) > 0:
-        inv["RANK_INVESTABLE"] = inv["_WTD_INV"].rank(ascending=False, na_option="bottom").astype(int)
+        inv["RANK_INVESTABLE"] = inv["WTD_SHARPE"].rank(ascending=False, na_option="bottom").astype(int)
         df = df.merge(inv[["TICKER", "RANK_INVESTABLE"]], on="TICKER", how="left")
     else:
         df["RANK_INVESTABLE"] = np.nan
 
     df["RANK_INVESTABLE"] = df["RANK_INVESTABLE"].fillna(0).astype(int)
-
-    # Drop intermediate Z-score working columns
-    df = df.drop(columns=["_Z6_INV", "_Z3_INV", "_WTD_INV"], errors="ignore")
 
     # Sort by investable rank first (passing ETFs at top), then universe rank
     df["_sort"] = df["RANK_INVESTABLE"].replace(0, 9999)
