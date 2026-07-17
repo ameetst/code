@@ -73,10 +73,22 @@
   },
   "ATHERENERG": {
     "entry_date": "2026-07-13",
-    "entry_price": 7047.0
+    "entry_price": 1191.4
   },
   "GRWRHITECH": {
     "entry_date": "2026-07-13",
     "entry_price": 7047.0
+  },
+  "CEMPRO": {
+    "entry_date": "2026-07-16",
+    "entry_price": 1601.4
+  },
+  "HONASA": {
+    "entry_date": "2026-07-16",
+    "entry_price": 470.75
+  },
+  "SHILPAMED": {
+    "entry_date": "2026-07-16",
+    "entry_price": 645.75
   }
 }
