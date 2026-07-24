@@ -1,8 +1,4 @@
 {
-  "MTARTECH": {
-    "entry_date": "2026-05-25",
-    "entry_price": 7646.4
-  },
   "CUPID": {
     "entry_date": "2026-07-07",
     "entry_price": 208.99
@@ -10,10 +6,6 @@
   "HFCL": {
     "entry_date": "2026-05-25",
     "entry_price": 188.87779521003722
-  },
-  "BBOX": {
-    "entry_date": "2026-05-25",
-    "entry_price": 998.35
   },
   "LAURUSLABS": {
     "entry_date": "2026-05-25",
@@ -80,15 +72,19 @@
     "entry_price": 7047.0
   },
   "CEMPRO": {
-    "entry_date": "2026-07-16",
-    "entry_price": 1601.4
+    "entry_date": "2026-07-24",
+    "entry_price": 1516.8
+  },
+  "BHARATFORG": {
+    "entry_date": "2026-07-24",
+    "entry_price": 2185.5
   },
   "HONASA": {
-    "entry_date": "2026-07-16",
-    "entry_price": 470.75
+    "entry_date": "2026-07-24",
+    "entry_price": 456.65
   },
-  "SHILPAMED": {
-    "entry_date": "2026-07-16",
-    "entry_price": 645.75
+  "SKYGOLD": {
+    "entry_date": "2026-07-24",
+    "entry_price": 671.25
   }
 }

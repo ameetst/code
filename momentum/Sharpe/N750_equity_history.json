@@ -169,5 +169,50 @@
     "benchmark_ret": 0.002778,
     "n_held": 20,
     "invested_frac": 0.8
+  },
+  {
+    "date": "2026-07-20",
+    "portfolio_nav": 102.8693,
+    "benchmark_nav": 103.5959,
+    "portfolio_ret": -0.018325,
+    "benchmark_ret": 0.004461,
+    "n_held": 20,
+    "invested_frac": 0.8
+  },
+  {
+    "date": "2026-07-21",
+    "portfolio_nav": 102.8869,
+    "benchmark_nav": 103.6037,
+    "portfolio_ret": 0.000171,
+    "benchmark_ret": 7.5e-05,
+    "n_held": 19,
+    "invested_frac": 0.76
+  },
+  {
+    "date": "2026-07-22",
+    "portfolio_nav": 104.1198,
+    "benchmark_nav": 103.6663,
+    "portfolio_ret": 0.011983,
+    "benchmark_ret": 0.000604,
+    "n_held": 19,
+    "invested_frac": 0.76
+  },
+  {
+    "date": "2026-07-23",
+    "portfolio_nav": 103.5353,
+    "benchmark_nav": 102.7469,
+    "portfolio_ret": -0.005614,
+    "benchmark_ret": -0.008869,
+    "n_held": 19,
+    "invested_frac": 0.76
+  },
+  {
+    "date": "2026-07-24",
+    "portfolio_nav": 102.941,
+    "benchmark_nav": 102.0249,
+    "portfolio_ret": -0.00574,
+    "benchmark_ret": -0.007027,
+    "n_held": 19,
+    "invested_frac": 0.76
   }
 ]

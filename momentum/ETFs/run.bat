@@ -1,0 +1,2 @@
+python etf_momentum_ranking.py
+streamlit run etf_dashboard.py

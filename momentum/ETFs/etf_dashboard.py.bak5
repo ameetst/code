@@ -57,13 +57,7 @@ st.markdown("""
         padding: 14px 18px;
     }
     div[data-testid="stMetric"] label { color: #6B7A8D !important; font-size: 13px !important; }
-    div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-        color: #1A1A2E !important;
-        font-size: clamp(14px, 2.2vw, 28px) !important;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
+    div[data-testid="stMetric"] div[data-testid="stMetricValue"] { color: #1A1A2E !important; }
     
     /* Table styling */
     .stDataFrame { border-radius: 8px; overflow: hidden; }
@@ -430,7 +424,7 @@ tab_alloc, tab_rankings, tab_config, tab_tradelog = st.tabs([
 # =========================================================
 with tab_alloc:
     # ── Current Allocation Table ───────────────────────────
-    st.markdown("## 📊 Top 5 Ranking")
+    st.markdown("## 📊 Current Allocation")
 
     alloc_display = allocation[["SLOT", "TICKER", "ETF_NAME", "SECTOR", "WEIGHT", "INV_RANK"]].copy()
     alloc_display["WEIGHT"] = alloc_display["WEIGHT"].apply(lambda x: f"{x:.0%}")
@@ -454,9 +448,7 @@ with tab_alloc:
     st.markdown("## 🛡️ Trailing Stop Loss Monitor")
 
     log = load_log()
-    _today = datetime.datetime.today()
-    _iso = _today.isocalendar()
-    month_key = f"{_iso.year}-W{_iso.week:02d}"   # weekly key
+    month_key = datetime.datetime.today().strftime("%Y-%m")
 
     if month_key in log:
         current_entry = log[month_key]
@@ -510,9 +502,59 @@ with tab_alloc:
         else:
             st.info("No active positions (all cash). Nothing to check.")
     else:
-        st.warning("No holdings found for current week. Run the weekly rebalance first.")
+        st.warning("No holdings found for current month. Run the monthly rebalance first.")
 
     st.divider()
+
+    # ── Rebalance Diff ─────────────────────────────────────
+    st.markdown("## 🔄 Rebalance Changes")
+
+    sorted_keys = sorted(log.keys())
+    prev_keys = [k for k in sorted_keys if k < month_key]
+
+    if prev_keys and month_key in log:
+        prev_entry = log[prev_keys[-1]]
+        curr_entry = log[month_key]
+        changes = emr.diff_allocations(prev_entry, curr_entry)
+
+        if changes:
+            prev_month = prev_entry.get("run_date", "?")[:7]
+            st.markdown(f"**Previous month:** {prev_month}  |  **Changes:** {len(changes)}")
+
+            change_rows = []
+            for ch in changes:
+                action = ch["action"]
+                change_rows.append({
+                    "Action": action,
+                    "Ticker": ch["ticker"],
+                    "ETF Name": ch["etf_name"],
+                    "Prev Wt": f"{ch['prev_wt']:.0%}" if ch["prev_wt"] > 0 else "—",
+                    "Curr Wt": f"{ch['curr_wt']:.0%}" if ch["curr_wt"] > 0 else "—",
+                    "Note": ch["note"],
+                })
+
+            changes_df = pd.DataFrame(change_rows)
+
+            def style_changes(row):
+                if row["Action"] == "BUY":
+                    return ["background-color: #E8F5E9;"] * len(row)
+                elif row["Action"] == "SELL":
+                    return ["background-color: #FFEBEE;"] * len(row)
+                elif row["Action"] == "REGIME":
+                    return ["background-color: #F3E5F5;"] * len(row)
+                return [""] * len(row)
+
+            st.dataframe(
+                changes_df.style.apply(style_changes, axis=1),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("No changes from previous month.")
+    elif not prev_keys:
+        st.info("First month — no previous holdings to compare.")
+    else:
+        st.warning("Current month's allocation not found. Run the monthly rebalance.")
 
     st.divider()
 
@@ -522,11 +564,11 @@ with tab_alloc:
     col_act1, col_act2 = st.columns(2)
 
     with col_act1:
-        if st.button("🔁 Run Weekly Rebalance", use_container_width=True, key="rebal_btn"):
+        if st.button("🔁 Run Monthly Rebalance", use_container_width=True, key="rebal_btn"):
             with st.spinner("Running full pipeline..."):
                 try:
                     emr.run_pipeline(input_path)
-                    st.success("✅ Weekly rebalance complete! Refresh the page to see updated results.")
+                    st.success("✅ Monthly rebalance complete! Refresh the page to see updated results.")
                     st.cache_data.clear()
                 except Exception as e:
                     st.error(f"Error: {e}")
@@ -543,7 +585,7 @@ with tab_alloc:
                     use_container_width=True,
                 )
         else:
-            st.info("Run the weekly rebalance first to generate the Excel output.")
+            st.info("Run the monthly rebalance first to generate the Excel output.")
 
 
 # =========================================================
@@ -554,7 +596,7 @@ with tab_rankings:
 
     # Prepare display columns
     display_cols = ["RANK_INVESTABLE", "RANK_UNIVERSE", "TICKER", "ETF_NAME", "SECTOR",
-                    "WTD_SHARPE", "SHARPE_6M", "SHARPE_3M", "SCREEN_PASS"]
+                    "WTD_SHARPE", "SHARPE_6M", "SHARPE_3M", "MOM_ACCEL", "SCREEN_PASS"]
     available_cols = [c for c in display_cols if c in ranking.columns]
     rank_display = ranking[available_cols].copy()
 
@@ -568,6 +610,7 @@ with tab_rankings:
         "WTD_SHARPE": "Wtd Sharpe",
         "SHARPE_6M": "Sharpe 6M",
         "SHARPE_3M": "Sharpe 3M",
+        "MOM_ACCEL": "Mom Accel",
         "SCREEN_PASS": "Screen",
     }
     rank_display = rank_display.rename(columns=col_rename)
@@ -594,7 +637,7 @@ with tab_rankings:
     filtered = filtered.head(top_n_filter)
 
     # Format numeric columns
-    for col in ["Wtd Sharpe", "Sharpe 6M", "Sharpe 3M"]:
+    for col in ["Wtd Sharpe", "Sharpe 6M", "Sharpe 3M", "Mom Accel"]:
         if col in filtered.columns:
             filtered[col] = filtered[col].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
 
@@ -708,17 +751,9 @@ with tab_config:
 
     # ── Regime Parameters ──────────────────────────────────
     st.markdown("### 🎯 Regime Filter")
-    cfg_index_ticker = st.text_input(
-        "Index Ticker (Yahoo Finance)",
-        value=current_cfg.get("REGIME_INDEX_TICKER", "^CRSLDX"),
-        key="cfg_index_ticker",
-        help="Live Nifty 500 index symbol fetched via yfinance (primary regime "
-             "source). Falls back to the ETF.xlsx-based Regime Ticker below if "
-             "this fetch fails or yfinance is unavailable.",
-    )
     cfg_col6, cfg_col7, cfg_col8 = st.columns(3)
     with cfg_col6:
-        cfg_regime_ticker = st.text_input("Regime Ticker (fallback)", value=current_cfg["REGIME_TICKER"], key="cfg_regime_ticker")
+        cfg_regime_ticker = st.text_input("Regime Ticker", value=current_cfg["REGIME_TICKER"], key="cfg_regime_ticker")
     with cfg_col7:
         cfg_fast_ema = st.number_input("Fast EMA Window", min_value=10, max_value=200,
                                         value=current_cfg["TREND_FAST_EMA_WINDOW"], step=5, key="cfg_fast_ema")
@@ -745,23 +780,7 @@ with tab_config:
         cfg_tsl = st.number_input("TSL Threshold", min_value=0.01, max_value=0.30,
                                    value=float(current_cfg["TSL_THRESHOLD"]), step=0.01,
                                    format="%.2f", key="cfg_tsl",
-                                   help="Trailing stop loss drawdown trigger (0.05 = 5%)")
-
-    st.divider()
-
-    # ── Weekly Exit Triggers ───────────────────────────────
-    st.markdown("### 🚪 Weekly Exit Triggers")
-    cfg_col11, cfg_col12 = st.columns(2)
-    with cfg_col11:
-        cfg_exit_dd = st.number_input("Exit: Max DD from 52W High", min_value=0.05, max_value=0.50,
-                                       value=float(current_cfg.get("EXIT_MAX_DD_FROM_HIGH", 0.25)), step=0.05,
-                                       format="%.2f", key="cfg_exit_dd",
-                                       help="Exit position if >X% away from 52-week high (0.25 = 25%)")
-    with cfg_col12:
-        cfg_exit_rank = st.number_input("Exit: Max Investable Rank", min_value=5, max_value=100,
-                                         value=int(current_cfg.get("EXIT_MAX_RANK", 20)), step=1,
-                                         key="cfg_exit_rank",
-                                         help="Exit position if investable rank exceeds this value")
+                                   help="Trailing stop loss drawdown trigger (0.10 = 10%)")
 
     st.divider()
 
@@ -783,14 +802,11 @@ with tab_config:
                 "SHARPE_W3M": cfg_sharpe_w3m,
                 "REGIME_TICKER": cfg_regime_ticker.strip(),
                 "REGIME_FALLBACKS": [t.strip() for t in cfg_fallbacks.split(",") if t.strip()],
-                "REGIME_INDEX_TICKER": cfg_index_ticker.strip(),
                 "TREND_FAST_EMA_WINDOW": cfg_fast_ema,
                 "TREND_EMA_WINDOW": cfg_slow_ema,
                 "SECTOR_CAP": cfg_sector_cap,
                 "DAILY_RF_ANNUAL": cfg_rf_annual,
                 "TSL_THRESHOLD": cfg_tsl,
-                "EXIT_MAX_DD_FROM_HIGH": cfg_exit_dd,
-                "EXIT_MAX_RANK": cfg_exit_rank,
             }
             try:
                 emr.save_config_to_json(new_cfg, SCRIPT_DIR)
@@ -818,7 +834,6 @@ with tab_config:
                         "SHARPE_W3M": cfg_sharpe_w3m,
                         "REGIME_TICKER": cfg_regime_ticker.strip(),
                         "REGIME_FALLBACKS": [t.strip() for t in cfg_fallbacks.split(",") if t.strip()],
-                        "REGIME_INDEX_TICKER": cfg_index_ticker.strip(),
                         "TREND_FAST_EMA_WINDOW": cfg_fast_ema,
                         "TREND_EMA_WINDOW": cfg_slow_ema,
                         "SECTOR_CAP": cfg_sector_cap,

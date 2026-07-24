@@ -57,29 +57,29 @@
     ]
   },
   "2026-07": {
-    "run_date": "2026-07-15 11:04",
+    "run_date": "2026-07-24 09:59",
     "regime": "BULL",
     "active_slots": 5,
     "allocation": [
       {
         "slot": 1,
-        "ticker": "HEALTHCARE",
-        "etf_name": "Mirae Asset Nifty 500 Hthc ETF",
+        "ticker": "MOHEALTH",
+        "etf_name": "Motilal Oswal BSE HC ETF",
         "sector": "HEALTHCARE",
         "weight": 0.2,
         "inv_rank": "1",
-        "entry_price": 21.16,
-        "peak": 21.420000076293945
+        "entry_price": 50.61,
+        "peak": 50.61
       },
       {
         "slot": 2,
-        "ticker": "GROWWHOSPI",
-        "etf_name": "Groww BSE Hospitals ETF",
-        "sector": "OTHER",
+        "ticker": "GROWWPOWER",
+        "etf_name": "Groww BSE Power ETF",
+        "sector": "ENERGY",
         "weight": 0.2,
         "inv_rank": "2",
-        "entry_price": 54.16,
-        "peak": 54.47999954223633
+        "entry_price": 11.88,
+        "peak": 11.88
       },
       {
         "slot": 3,
@@ -87,19 +87,19 @@
         "etf_name": "HDFC NIFTY Smallcap 250 ETF",
         "sector": "SMALLCAP",
         "weight": 0.2,
-        "inv_rank": "7",
-        "entry_price": 183.23,
-        "peak": 183.23
+        "inv_rank": "8",
+        "entry_price": 180.12,
+        "peak": 180.12
       },
       {
         "slot": 4,
-        "ticker": "GROWWRLTY",
-        "etf_name": "Groww Nifty Realty ETF",
-        "sector": "REALTY",
+        "ticker": "MOSMALL250",
+        "etf_name": "Motilal Oswal Nifty SC 250 ETF",
+        "sector": "OTHER",
         "weight": 0.2,
-        "inv_rank": "11",
-        "entry_price": 10.5,
-        "peak": 10.5
+        "inv_rank": "10",
+        "entry_price": 17.97,
+        "peak": 17.97
       },
       {
         "slot": 5,
@@ -107,9 +107,66 @@
         "etf_name": "Groww Nifty India Defence ETF",
         "sector": "DEFENCE",
         "weight": 0.2,
-        "inv_rank": "15",
-        "entry_price": 94.41,
-        "peak": 94.41
+        "inv_rank": "14",
+        "entry_price": 94.58,
+        "peak": 94.58
+      }
+    ]
+  },
+  "2026-W30": {
+    "run_date": "2026-07-24 15:51",
+    "regime": "BULL",
+    "active_slots": 5,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "MOHEALTH",
+        "etf_name": "Motilal Oswal BSE HC ETF",
+        "sector": "HEALTHCARE",
+        "weight": 0.2,
+        "inv_rank": "1",
+        "entry_price": 50.61,
+        "peak": 50.61
+      },
+      {
+        "slot": 2,
+        "ticker": "GROWWPOWER",
+        "etf_name": "Groww BSE Power ETF",
+        "sector": "ENERGY",
+        "weight": 0.2,
+        "inv_rank": "2",
+        "entry_price": 11.88,
+        "peak": 11.88
+      },
+      {
+        "slot": 3,
+        "ticker": "HDFCSML250",
+        "etf_name": "HDFC NIFTY Smallcap 250 ETF",
+        "sector": "SMALLCAP",
+        "weight": 0.2,
+        "inv_rank": "8",
+        "entry_price": 180.12,
+        "peak": 180.12
+      },
+      {
+        "slot": 4,
+        "ticker": "MOSMALL250",
+        "etf_name": "Motilal Oswal Nifty SC 250 ETF",
+        "sector": "OTHER",
+        "weight": 0.2,
+        "inv_rank": "10",
+        "entry_price": 17.97,
+        "peak": 17.97
+      },
+      {
+        "slot": 5,
+        "ticker": "GROWWDEFNC",
+        "etf_name": "Groww Nifty India Defence ETF",
+        "sector": "DEFENCE",
+        "weight": 0.2,
+        "inv_rank": "14",
+        "entry_price": 94.58,
+        "peak": 94.58
       }
     ]
   }

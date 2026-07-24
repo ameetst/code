@@ -172,7 +172,16 @@ def compute_sharpe(prices_df: pd.DataFrame,
     z_df["SHARPE_LT"] = z_df[lt_cols].mean(axis=1)
     z_df["SHARPE_3"]  = z_df[["Z_12M", "Z_6M", "Z_3M"]].mean(axis=1)
 
-    accel_raw         = z_df["SHARPE_ST"] - z_df["SHARPE_LT"]
+    # NEW: MOM_ACCEL with custom weights
+    # Formula: 0.4 * (Z_1M + Z_3M) - 0.2 * Z_6M
+    # where each component is cross-sectional Z-scored Sharpe
+    if "1M" in windows:
+        # Use new weighted formula: 0.4 * (Z_1m + Z_3m) - 0.2 * Z_6m
+        accel_raw = 0.4 * (z_df["Z_1M"] + z_df["Z_3M"]) - 0.2 * z_df["Z_6M"]
+    else:
+        # Fallback if 1M not available: use original logic
+        accel_raw = z_df["SHARPE_ST"] - z_df["SHARPE_LT"]
+    
     z_df["MOM_ACCEL"] = _cross_section_z(accel_raw)
 
     accel_pos = (z_df["MOM_ACCEL"] > 0).sum()

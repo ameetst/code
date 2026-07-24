@@ -1,0 +1,47 @@
+{
+  "HEALTHCARE": {
+    "ticker": "HEALTHCARE",
+    "entry_date": "2026-07-20",
+    "entry_price": 21.13,
+    "running_peak": 21.13,
+    "current_price": 21.13,
+    "status": "active",
+    "sector": "HEALTHCARE"
+  },
+  "GROWWHOSPI": {
+    "ticker": "GROWWHOSPI",
+    "entry_date": "2026-07-20",
+    "entry_price": 53.89,
+    "running_peak": 53.89,
+    "current_price": 53.89,
+    "status": "active",
+    "sector": "OTHER"
+  },
+  "GROWWRLTY": {
+    "ticker": "GROWWRLTY",
+    "entry_date": "2026-07-20",
+    "entry_price": 10.3,
+    "running_peak": 10.3,
+    "current_price": 10.3,
+    "status": "active",
+    "sector": "REALTY"
+  },
+  "HDFCSML250": {
+    "ticker": "HDFCSML250",
+    "entry_date": "2026-07-20",
+    "entry_price": 181.3,
+    "running_peak": 181.3,
+    "current_price": 181.3,
+    "status": "active",
+    "sector": "SMALLCAP"
+  },
+  "GROWWCHEM": {
+    "ticker": "GROWWCHEM",
+    "entry_date": "2026-07-20",
+    "entry_price": 30.25,
+    "running_peak": 30.25,
+    "current_price": 30.25,
+    "status": "active",
+    "sector": "CHEMICALS"
+  }
+}
