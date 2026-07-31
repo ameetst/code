@@ -404,11 +404,58 @@ def sync_to_positions_ledger(ledger_path, active_holdings):
         st.error(f"Error syncing to positions ledger: {e}")
 
 
-# ── REGIME PARAMETERS (sourced from momentum_lib — single source of truth) ────
-MIN_N               = ml.DEFAULT_MIN_N
-MAX_N               = ml.DEFAULT_MAX_N
-NEW_ENTRY_THRESHOLD = ml.DEFAULT_NEW_ENTRY_THRESHOLD
-SIGNAL_WEIGHTS      = ml.DEFAULT_SIGNAL_WEIGHTS
+# ── REGIME ENGINE (mirrors Sharpe.py exactly) ─────────────────────────────────
+MIN_N               = 5
+MAX_N               = 25
+NEW_ENTRY_THRESHOLD = 0.40
+SIGNAL_WEIGHTS      = {"ema50_breadth": 0.35, "ema_trend_breadth": 0.25,
+                       "breadth": 0.25, "momentum": 0.15}
+
+
+def compute_regime_score(nifty_s, eligible_mask, composite_series, prices_df=None):
+    px = nifty_s.dropna()
+    if len(px) < 200:
+        return 0.5, {"regime_score": 0.5, "dynamic_n": 15, "allow_new": True,
+                     "ema50_score": 0.5, "ema_trend_score": 0.5,
+                     "breadth_score": 0.5, "momentum_score": 0.5}
+    # Signal 1 & 2: Universe EMA breadth
+    if prices_df is not None and len(prices_df.columns) >= 200:
+        ema50_all  = prices_df.ewm(span=50,  adjust=False, axis=1).mean()
+        ema200_all = prices_df.ewm(span=200, adjust=False, axis=1).mean()
+        last_px    = prices_df.iloc[:, -1]
+        last_ema50 = ema50_all.iloc[:, -1]
+        last_ema200 = ema200_all.iloc[:, -1]
+        valid      = last_px.notna() & last_ema200.notna()
+        n_valid    = int(valid.sum())
+        if n_valid > 0:
+            ema50_score = float((last_px[valid] > last_ema50[valid]).sum()) / n_valid
+            ema_trend_score = float((last_ema50[valid] > last_ema200[valid]).sum()) / n_valid
+        else:
+            ema50_score = 0.5
+            ema_trend_score = 0.5
+    else:
+        price  = px.iloc[-1]
+        ema50  = px.ewm(span=50,  adjust=False).mean().iloc[-1]
+        ema200 = px.ewm(span=200, adjust=False).mean().iloc[-1]
+        ema50_score     = 1.0 if price > ema50 else 0.0
+        ema_trend_score = 1.0 if ema50 > ema200 else 0.0
+    total          = len(eligible_mask)
+    elig           = int(eligible_mask.sum())
+    breadth_score  = elig / total if total > 0 else 0.5
+    pos_mom        = int((composite_series[eligible_mask] > 1.5).sum())
+    momentum_score = pos_mom / max(1, elig)
+    score = (ema50_score     * SIGNAL_WEIGHTS["ema50_breadth"]     +
+             ema_trend_score * SIGNAL_WEIGHTS["ema_trend_breadth"] +
+             breadth_score   * SIGNAL_WEIGHTS["breadth"]   +
+             momentum_score  * SIGNAL_WEIGHTS["momentum"])
+    dyn_n = int(MIN_N + min(score / 0.75, 1.0) * (MAX_N - MIN_N))
+    return score, {"regime_score": round(score, 3),
+                   "dynamic_n": dyn_n,
+                   "allow_new": score >= NEW_ENTRY_THRESHOLD,
+                   "ema50_score": round(ema50_score, 3),
+                   "ema_trend_score": round(ema_trend_score, 3),
+                   "breadth_score": round(breadth_score, 3),
+                   "momentum_score": round(momentum_score, 3)}
 
 # ── CONFIGURATION (session-state driven, rendered in Config tab) ──────────────
 # Scan available xlsx files first (needed to set the default)
@@ -426,12 +473,6 @@ if "cfg_max_wt_pct" not in st.session_state:
     st.session_state.cfg_max_wt_pct = 5
 if "cfg_min_turnover" not in st.session_state:
     st.session_state.cfg_min_turnover = 1.0
-if "cfg_eq_series_filter" not in st.session_state:
-    st.session_state.cfg_eq_series_filter = True
-if "cfg_circuit_filter_enabled" not in st.session_state:
-    st.session_state.cfg_circuit_filter_enabled = True
-if "cfg_circuit_threshold" not in st.session_state:
-    st.session_state.cfg_circuit_threshold = 20
 
 # Derive runtime values from session state
 selected_file = st.session_state.cfg_file
@@ -446,10 +487,7 @@ LEDGER_FILE = next((str(p) for p in ledger_candidates if p.exists()),
 capital    = st.session_state.cfg_capital
 max_wt_pct = st.session_state.cfg_max_wt_pct
 max_wt     = max_wt_pct / 100.0
-min_turnover_cr       = st.session_state.cfg_min_turnover
-eq_series_filter      = st.session_state.cfg_eq_series_filter
-circuit_filter_enabled = st.session_state.cfg_circuit_filter_enabled
-circuit_threshold     = int(st.session_state.cfg_circuit_threshold)
+min_turnover_cr = st.session_state.cfg_min_turnover
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 RFR_ANNUAL   = 0.07
@@ -466,8 +504,6 @@ params = {
         "Hold Lock":        "28 days",
         "52H Filter":       ">= -25%",
         "ADTV Filter":      f">= {min_turnover_cr} Cr (12M or 6M median)",
-        "Series EQ Filter": "Enabled" if eq_series_filter else "Disabled",
-        "Circuit Filter":   f"Enabled (>= {circuit_threshold} days)" if circuit_filter_enabled else "Disabled",
         "Rank Buffer":      "50",
         "Cash Yield":       "6% p.a.",
         "Ledger File":      Path(LEDGER_FILE).name,
@@ -483,21 +519,44 @@ def load_volume_data(filepath):
     return ml.load_volume(filepath)
 
 @st.cache_data(show_spinner="Computing Sharpe rankings...")
-def compute_all(_prices_df, _nifty_series, _stock_tickers, _volume_df,
-                _min_turnover_cr, _eq_series_filter, _circuit_filter_enabled,
-                _circuit_threshold, _band_csv):
-    return ml.compute_universe_rankings(
-        _prices_df, _nifty_series, _stock_tickers,
-        volume_df=_volume_df,
-        min_turnover_cr=_min_turnover_cr,
-        eq_series_filter=_eq_series_filter,
-        circuit_filter_enabled=_circuit_filter_enabled,
-        circuit_threshold=_circuit_threshold,
-        band_csv_path=_band_csv,
-        windows=WINDOWS,
-        trading_days=TRADING_DAYS,
-        rfr_annual=RFR_ANNUAL,
-    )
+def compute_all(_prices_df, _nifty_series, _stock_tickers, _volume_df, _min_turnover_cr):
+    sharpe_df, z_df = ml.compute_sharpe(
+        _prices_df, _stock_tickers, WINDOWS, rfr_daily, TRADING_DAYS)
+    ret_df           = ml.compute_returns(_prices_df, _stock_tickers)
+    pct_52h          = ml.compute_pct_from_52h(_prices_df, _stock_tickers)
+    resmom_df, rs_z  = ml.compute_residual_momentum(
+        _prices_df, _stock_tickers, _nifty_series, WINDOWS, TRADING_DAYS)
+
+    result = z_df.join(sharpe_df.rename(columns={l: f"S_{l}" for l in WINDOWS}))
+    for col in ["COMPOSITE", "SHARPE_3"]:
+        result[col] = result[col].map(ml.normalise_composite)
+    result["SHARPE_ALL"] = result["COMPOSITE"]
+    result["PCT_FROM_52H"] = pct_52h
+
+    # ADTV turnover filter
+    if _volume_df is not None:
+        turnover_df = ml.compute_turnover(_prices_df, _volume_df, _stock_tickers)
+        result = result.join(turnover_df)
+        adtv_12m_ok = result["TURNOVER_12M"] >= _min_turnover_cr
+        adtv_6m_ok  = result["TURNOVER_6M"]  >= _min_turnover_cr
+        adtv_ok     = (adtv_12m_ok | adtv_6m_ok).fillna(False)
+        result["ADTV_ELIGIBLE"] = adtv_ok
+    else:
+        adtv_ok = pd.Series(True, index=result.index)
+        result["ADTV_ELIGIBLE"] = True
+
+    eligible = (result["PCT_FROM_52H"] >= -25) & adtv_ok
+    result["RANK"] = np.nan
+    result.loc[eligible, "RANK"] = (
+        result.loc[eligible, "COMPOSITE"]
+        .rank(ascending=False, method="first", na_option="bottom"))
+    result = result.sort_values(["RANK", "COMPOSITE"], ascending=[True, False])
+    result = result.join(ret_df).join(resmom_df).join(rs_z)
+
+    # Dynamic Regime Score
+    score, detail = compute_regime_score(
+        _nifty_series, eligible, result["COMPOSITE"], prices_df=prices_df)
+    return result, score, detail
 
 def compute_weights(result, dynamic_n, capital_val, max_weight):
     top_tickers = result.head(dynamic_n).index.tolist()
@@ -725,24 +784,9 @@ except Exception:
 
 try:
     result, regime_score, regime_detail = compute_all(
-        prices_df, nifty_series, stock_tickers, volume_df, min_turnover_cr,
-        eq_series_filter, circuit_filter_enabled, circuit_threshold,
-        str(SCRIPT_DIR / "Price_Band_List.csv"))
+        prices_df, nifty_series, stock_tickers, volume_df, min_turnover_cr)
 except Exception as e:
     st.error(f"Error computing rankings: {e}"); st.stop()
-
-# Load Series mapping from Price_Band_List.csv
-series_map = {}
-band_csv = SCRIPT_DIR / "Price_Band_List.csv"
-if band_csv.exists():
-    try:
-        b_df = pd.read_csv(band_csv)
-        for _, r in b_df.iterrows():
-            series_map[str(r["Symbol"]).strip()] = str(r["Series"]).strip()
-    except Exception:
-        pass
-
-result["SERIES"] = [series_map.get(t, "EQ") for t in result.index]
 
 
 # Record today's regime score and load full history for trend chart
@@ -1119,42 +1163,14 @@ with tab_exits:
             rank_val = result.loc[ticker, "RANK"]       if ticker in result.index else np.nan
             pct52    = result.loc[ticker, "PCT_FROM_52H"] if ticker in result.index else np.nan
 
-            # Determine explicit exit trigger category
-            is_52h_breach = pd.notna(pct52) and pct52 < -25
-
-            is_circuit_breach = False
-            if circuit_filter_enabled and ticker in result.index and "TOTAL_CIRCUIT_HITS" in result.columns:
-                c_hits = result.loc[ticker, "TOTAL_CIRCUIT_HITS"]
-                if pd.notna(c_hits) and c_hits >= circuit_threshold:
-                    is_circuit_breach = True
-
-            is_series_breach = False
-            if eq_series_filter and ticker in result.index and "SERIES" in result.columns:
-                series_val = result.loc[ticker, "SERIES"]
-                if pd.notna(series_val) and str(series_val).strip() != "EQ":
-                    is_series_breach = True
-
-            is_adtv_breach = False
-            if ticker in result.index and "ADTV_ELIGIBLE" in result.columns:
-                if not bool(result.loc[ticker, "ADTV_ELIGIBLE"]):
-                    is_adtv_breach = True
-
-            if is_52h_breach:
-                trigger = "52H_BREACH";      action = "⚠️ SELL IMMEDIATELY (52H drop)"
-            elif is_circuit_breach:
-                trigger = "CIRCUIT_BREACH";  action = "⚠️ SELL IMMEDIATELY (Circuit limit)"
-            elif is_series_breach:
-                trigger = "SERIES_BREACH";   action = "⚠️ SELL IMMEDIATELY (Non-EQ series)"
-            elif is_adtv_breach:
-                trigger = "ADTV_BREACH";     action = "⚠️ SELL IMMEDIATELY (Low ADTV)"
-            elif pd.isna(rank_val):
-                trigger = "FILTER_BREACH";   action = "⚠️ SELL IMMEDIATELY"
+            if pd.isna(rank_val) or (pd.notna(pct52) and pct52 < -25):
+                trigger = "52H_BREACH";  action = "⚠️ SELL IMMEDIATELY"
             elif pd.notna(rank_val) and rank_val > int(params["Rank Buffer"]) and held >= 28:
-                trigger = "RANK_EXIT";       action = "🔻 SELL (rank dropped)"
+                trigger = "RANK_EXIT";   action = "🔻 SELL (rank dropped)"
             elif pd.notna(rank_val) and rank_val > int(params["Rank Buffer"]) and held < 28:
-                trigger = "HOLD_LOCK";       action = f"🔒 Locked ({held}/28d)"
+                trigger = "HOLD_LOCK";   action = f"🔒 Locked ({held}/28d)"
             else:
-                trigger = "HEALTHY";         action = "✅ HOLD"
+                trigger = "HEALTHY";     action = "✅ HOLD"
 
             # Current price & unrealised P&L from tradelog
             curr_price = latest_prices.get(ticker, rec["entry_price"])
@@ -1180,7 +1196,7 @@ with tab_exits:
         exit_df = pd.DataFrame(exit_rows)
 
         # ── Section 1: Exit Evaluation table ──────────────────────────────────
-        exit_triggers = exit_df[exit_df["Trigger"].str.contains("BREACH|RANK_EXIT")]
+        exit_triggers = exit_df[exit_df["Trigger"].isin(["52H_BREACH", "RANK_EXIT"])]
         n_exits = len(exit_triggers)
 
         if n_exits > 0:
@@ -1687,7 +1703,11 @@ with tab_calcs:
         sort_col = st.selectbox("Sort by",
                                  ["RANK", "COMPOSITE", "RES_MOM", "PCT_FROM_52H"])
 
-    display_cols = ["RANK", "SERIES", "COMPOSITE", "SHARPE_3"]
+    display_cols = ["RANK", "COMPOSITE", "SHARPE_3"]
+    for lbl in WINDOWS:
+        for pfx in ["S_", "Z_"]:
+            c = f"{pfx}{lbl}"
+            if c in result.columns: display_cols.append(c)
     for c in ["RES_MOM", "1M%", "3M%", "12M%", "PCT_FROM_52H"]:
         if c in result.columns: display_cols.append(c)
 
@@ -1705,7 +1725,7 @@ with tab_calcs:
         na_position="last").head(top_n_show)
 
     fmt = {c: "{:.3f}" for c in calcs_df.columns
-           if c not in ["RANK", "TICKER", "SERIES"]}
+           if c not in ["RANK", "TICKER"]}
     fmt["PCT_FROM_52H"] = "{:.1f}"
     for c in ["1M%", "3M%", "12M%"]:
         if c in fmt: fmt[c] = "{:.1f}"
@@ -1919,39 +1939,6 @@ with tab_config:
     else:
         st.caption("⚠️ No VOLUME sheet in data file — ADTV filter inactive. "
                    "Run `update_stock_price.py` with latest version to add volume data.")
-
-    st.divider()
-    st.markdown("#### 🚦 Universe Eligibility Filters")
-
-    st.toggle("Restrict to Series EQ only",
-              key="cfg_eq_series_filter",
-              help="When enabled, only stocks in the NSE 'EQ' (rolling settlement) series are "
-                   "included in rankings. Non-EQ series stocks (e.g. BE / Trade-for-Trade) are "
-                   "excluded. Stocks not found in Price_Band_List.csv default to EQ.")
-
-    st.toggle("Circuit Hit Frequency Filter",
-              key="cfg_circuit_filter_enabled",
-              help="When enabled, stocks that close at their upper or lower circuit limit too "
-                   "frequently are excluded from rankings. Uses Price_Band_List.csv for band limits.")
-
-    if st.session_state.cfg_circuit_filter_enabled:
-        st.number_input(
-            "Max Circuit Hit Days (in 252 trading days)",
-            min_value=5, max_value=100, step=5, format="%d",
-            key="cfg_circuit_threshold",
-            help="Stocks that closed at their upper or lower circuit limit on >= this many days "
-                 "in the past 252 trading days will be excluded from rankings. Default: 20.")
-        # Show how many stocks currently exceed the threshold
-        band_csv_path = SCRIPT_DIR / "Price_Band_List.csv"
-        if band_csv_path.exists():
-            try:
-                _c_df = ml.compute_circuit_hits(
-                    prices_df, stock_tickers, str(band_csv_path), lookback_period=252)
-                _n_excluded = int((_c_df["TOTAL_CIRCUIT_HITS"] >= circuit_threshold).sum())
-                st.caption(f"ℹ️ {_n_excluded} stocks currently exceed the {circuit_threshold}-day "
-                           f"threshold and will be excluded from rankings.")
-            except Exception:
-                pass
 
     st.divider()
     st.markdown("#### 📋 Strategy Parameters (Read-only)")

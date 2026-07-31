@@ -484,5 +484,14 @@
     "action": "BUY",
     "quantity": 10,
     "price": 7047.0
+  },
+  {
+    "id": "32d070e3-6bc3-4989-a187-218327aa3434",
+    "date": "2026-07-20",
+    "timestamp": "2026-07-20T13:55:26.481443",
+    "ticker": "MTARTECH",
+    "action": "SELL",
+    "quantity": 10,
+    "price": 5744.0
   }
 ]

@@ -404,11 +404,58 @@ def sync_to_positions_ledger(ledger_path, active_holdings):
         st.error(f"Error syncing to positions ledger: {e}")
 
 
-# ── REGIME PARAMETERS (sourced from momentum_lib — single source of truth) ────
-MIN_N               = ml.DEFAULT_MIN_N
-MAX_N               = ml.DEFAULT_MAX_N
-NEW_ENTRY_THRESHOLD = ml.DEFAULT_NEW_ENTRY_THRESHOLD
-SIGNAL_WEIGHTS      = ml.DEFAULT_SIGNAL_WEIGHTS
+# ── REGIME ENGINE (mirrors Sharpe.py exactly) ─────────────────────────────────
+MIN_N               = 5
+MAX_N               = 25
+NEW_ENTRY_THRESHOLD = 0.40
+SIGNAL_WEIGHTS      = {"ema50_breadth": 0.35, "ema_trend_breadth": 0.25,
+                       "breadth": 0.25, "momentum": 0.15}
+
+
+def compute_regime_score(nifty_s, eligible_mask, composite_series, prices_df=None):
+    px = nifty_s.dropna()
+    if len(px) < 200:
+        return 0.5, {"regime_score": 0.5, "dynamic_n": 15, "allow_new": True,
+                     "ema50_score": 0.5, "ema_trend_score": 0.5,
+                     "breadth_score": 0.5, "momentum_score": 0.5}
+    # Signal 1 & 2: Universe EMA breadth
+    if prices_df is not None and len(prices_df.columns) >= 200:
+        ema50_all  = prices_df.ewm(span=50,  adjust=False, axis=1).mean()
+        ema200_all = prices_df.ewm(span=200, adjust=False, axis=1).mean()
+        last_px    = prices_df.iloc[:, -1]
+        last_ema50 = ema50_all.iloc[:, -1]
+        last_ema200 = ema200_all.iloc[:, -1]
+        valid      = last_px.notna() & last_ema200.notna()
+        n_valid    = int(valid.sum())
+        if n_valid > 0:
+            ema50_score = float((last_px[valid] > last_ema50[valid]).sum()) / n_valid
+            ema_trend_score = float((last_ema50[valid] > last_ema200[valid]).sum()) / n_valid
+        else:
+            ema50_score = 0.5
+            ema_trend_score = 0.5
+    else:
+        price  = px.iloc[-1]
+        ema50  = px.ewm(span=50,  adjust=False).mean().iloc[-1]
+        ema200 = px.ewm(span=200, adjust=False).mean().iloc[-1]
+        ema50_score     = 1.0 if price > ema50 else 0.0
+        ema_trend_score = 1.0 if ema50 > ema200 else 0.0
+    total          = len(eligible_mask)
+    elig           = int(eligible_mask.sum())
+    breadth_score  = elig / total if total > 0 else 0.5
+    pos_mom        = int((composite_series[eligible_mask] > 1.5).sum())
+    momentum_score = pos_mom / max(1, elig)
+    score = (ema50_score     * SIGNAL_WEIGHTS["ema50_breadth"]     +
+             ema_trend_score * SIGNAL_WEIGHTS["ema_trend_breadth"] +
+             breadth_score   * SIGNAL_WEIGHTS["breadth"]   +
+             momentum_score  * SIGNAL_WEIGHTS["momentum"])
+    dyn_n = int(MIN_N + min(score / 0.75, 1.0) * (MAX_N - MIN_N))
+    return score, {"regime_score": round(score, 3),
+                   "dynamic_n": dyn_n,
+                   "allow_new": score >= NEW_ENTRY_THRESHOLD,
+                   "ema50_score": round(ema50_score, 3),
+                   "ema_trend_score": round(ema_trend_score, 3),
+                   "breadth_score": round(breadth_score, 3),
+                   "momentum_score": round(momentum_score, 3)}
 
 # ── CONFIGURATION (session-state driven, rendered in Config tab) ──────────────
 # Scan available xlsx files first (needed to set the default)
@@ -486,18 +533,70 @@ def load_volume_data(filepath):
 def compute_all(_prices_df, _nifty_series, _stock_tickers, _volume_df,
                 _min_turnover_cr, _eq_series_filter, _circuit_filter_enabled,
                 _circuit_threshold, _band_csv):
-    return ml.compute_universe_rankings(
-        _prices_df, _nifty_series, _stock_tickers,
-        volume_df=_volume_df,
-        min_turnover_cr=_min_turnover_cr,
-        eq_series_filter=_eq_series_filter,
-        circuit_filter_enabled=_circuit_filter_enabled,
-        circuit_threshold=_circuit_threshold,
-        band_csv_path=_band_csv,
-        windows=WINDOWS,
-        trading_days=TRADING_DAYS,
-        rfr_annual=RFR_ANNUAL,
-    )
+    sharpe_df, z_df = ml.compute_sharpe(
+        _prices_df, _stock_tickers, WINDOWS, rfr_daily, TRADING_DAYS)
+    ret_df           = ml.compute_returns(_prices_df, _stock_tickers)
+    pct_52h          = ml.compute_pct_from_52h(_prices_df, _stock_tickers)
+    resmom_df, rs_z  = ml.compute_residual_momentum(
+        _prices_df, _stock_tickers, _nifty_series, WINDOWS, TRADING_DAYS)
+
+    result = z_df.join(sharpe_df.rename(columns={l: f"S_{l}" for l in WINDOWS}))
+    for col in ["COMPOSITE", "SHARPE_3"]:
+        result[col] = result[col].map(ml.normalise_composite)
+    result["SHARPE_ALL"] = result["COMPOSITE"]
+    result["PCT_FROM_52H"] = pct_52h
+
+    # ADTV turnover filter
+    if _volume_df is not None:
+        turnover_df = ml.compute_turnover(_prices_df, _volume_df, _stock_tickers)
+        result = result.join(turnover_df)
+        adtv_12m_ok = result["TURNOVER_12M"] >= _min_turnover_cr
+        adtv_6m_ok  = result["TURNOVER_6M"]  >= _min_turnover_cr
+        adtv_ok     = (adtv_12m_ok | adtv_6m_ok).fillna(False)
+        result["ADTV_ELIGIBLE"] = adtv_ok
+    else:
+        adtv_ok = pd.Series(True, index=result.index)
+        result["ADTV_ELIGIBLE"] = True
+
+    # Series EQ filter
+    eq_ok = pd.Series(True, index=result.index)
+    if _eq_series_filter and _band_csv and Path(_band_csv).exists():
+        try:
+            b_df = pd.read_csv(_band_csv)
+            series_map = {str(r["Symbol"]).strip(): str(r["Series"]).strip()
+                          for _, r in b_df.iterrows()}
+            eq_ok = pd.Series(
+                [series_map.get(t, "EQ") == "EQ" for t in result.index],
+                index=result.index)
+        except Exception:
+            pass
+
+    # Circuit hit frequency filter
+    circuit_ok = pd.Series(True, index=result.index)
+    if _circuit_filter_enabled and _band_csv:
+        try:
+            c_df = ml.compute_circuit_hits(
+                _prices_df, list(result.index), _band_csv, lookback_period=252)
+            circuit_ok = (
+                c_df["TOTAL_CIRCUIT_HITS"]
+                .reindex(result.index)
+                .fillna(0) < _circuit_threshold
+            )
+        except Exception:
+            pass
+
+    eligible = (result["PCT_FROM_52H"] >= -25) & adtv_ok & eq_ok & circuit_ok
+    result["RANK"] = np.nan
+    result.loc[eligible, "RANK"] = (
+        result.loc[eligible, "COMPOSITE"]
+        .rank(ascending=False, method="first", na_option="bottom"))
+    result = result.sort_values(["RANK", "COMPOSITE"], ascending=[True, False])
+    result = result.join(ret_df).join(resmom_df).join(rs_z)
+
+    # Dynamic Regime Score
+    score, detail = compute_regime_score(
+        _nifty_series, eligible, result["COMPOSITE"], prices_df=prices_df)
+    return result, score, detail
 
 def compute_weights(result, dynamic_n, capital_val, max_weight):
     top_tickers = result.head(dynamic_n).index.tolist()

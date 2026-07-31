@@ -114,7 +114,7 @@
     ]
   },
   "2026-W30": {
-    "run_date": "2026-07-24 15:51",
+    "run_date": "2026-07-25 05:32",
     "regime": "BULL",
     "active_slots": 5,
     "allocation": [
@@ -167,6 +167,63 @@
         "inv_rank": "14",
         "entry_price": 94.58,
         "peak": 94.58
+      }
+    ]
+  },
+  "2026-W31": {
+    "run_date": "2026-07-30 09:22",
+    "regime": "BULL",
+    "active_slots": 5,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "MOHEALTH",
+        "etf_name": "Motilal Oswal BSE HC ETF",
+        "sector": "HEALTHCARE",
+        "weight": 0.2,
+        "inv_rank": "2",
+        "entry_price": 50.61,
+        "peak": 51.03
+      },
+      {
+        "slot": 2,
+        "ticker": "HDFCSML250",
+        "etf_name": "HDFC NIFTY Smallcap 250 ETF",
+        "sector": "SMALLCAP",
+        "weight": 0.2,
+        "inv_rank": "13",
+        "entry_price": 180.12,
+        "peak": 180.12
+      },
+      {
+        "slot": 3,
+        "ticker": "MOSMALL250",
+        "etf_name": "Motilal Oswal Nifty SC 250 ETF",
+        "sector": "OTHER",
+        "weight": 0.2,
+        "inv_rank": "17",
+        "entry_price": 17.97,
+        "peak": 17.97
+      },
+      {
+        "slot": 4,
+        "ticker": "PHARMABEES",
+        "etf_name": "Nippon India Nifty Pharma ETF",
+        "sector": "NIFTY PHARMA",
+        "weight": 0.2,
+        "inv_rank": "1",
+        "entry_price": 27.08,
+        "peak": 27.08
+      },
+      {
+        "slot": 5,
+        "ticker": "GROWWRLTY",
+        "etf_name": "Groww Nifty Realty ETF",
+        "sector": "NIFTY REALTY",
+        "weight": 0.2,
+        "inv_rank": "5",
+        "entry_price": 10.32,
+        "peak": 10.32
       }
     ]
   }

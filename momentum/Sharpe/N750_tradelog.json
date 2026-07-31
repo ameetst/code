@@ -493,5 +493,14 @@
     "action": "SELL",
     "quantity": 10,
     "price": 5744.0
+  },
+  {
+    "id": "248ff0b0-657a-4e7b-87bb-1c57e04f3757",
+    "date": "2026-07-27",
+    "timestamp": "2026-07-27T12:33:19.754603",
+    "ticker": "BBOX",
+    "action": "SELL",
+    "quantity": 70,
+    "price": 779.7
   }
 ]

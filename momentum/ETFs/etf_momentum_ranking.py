@@ -186,6 +186,34 @@ _apply_json_config(CONFIG, load_config_from_json())
 # Auto-derived from ETF name keywords. Rules are ordered
 # most-specific first — first match wins.
 # =========================================================
+# ── Primary: direct ticker→sector lookup from ETF_SECTOR.xlsx ──────────
+_SECTOR_LOOKUP: dict[str, str] = {}
+_SECTOR_FILE = _SCRIPT_DIR / "ETF_SECTOR.xlsx"
+
+def _load_sector_lookup():
+    """Load ticker→sector mapping from ETF_SECTOR.xlsx (sheet 'ETF_SECTOR')."""
+    global _SECTOR_LOOKUP
+    if not _SECTOR_FILE.exists():
+        print(f"  [warn] {_SECTOR_FILE.name} not found; using keyword fallback only")
+        return
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(_SECTOR_FILE, data_only=True)
+        ws = wb["ETF_SECTOR"]
+        for r in range(2, ws.max_row + 1):
+            ticker = ws.cell(r, 1).value
+            sector = ws.cell(r, 2).value
+            if ticker and sector:
+                _SECTOR_LOOKUP[str(ticker).strip().upper()] = str(sector).strip()
+        wb.close()
+        print(f"  [sectors] Loaded {len(_SECTOR_LOOKUP)} mappings from {_SECTOR_FILE.name}")
+    except Exception as e:
+        print(f"  [warn] Could not load {_SECTOR_FILE.name}: {e}")
+
+_load_sector_lookup()   # run once at module import
+
+
+# ── Fallback: keyword-based rules for tickers not in ETF_SECTOR.xlsx ───
 _SECTOR_RULES = [
     ("PSU_BANK",         ["psu bank","psubnk","psubank","bse psu bank"]),
     ("PRIVATE_BANK",     ["private bank","pvt bank","pvtban","nifty pb "]),
@@ -224,7 +252,7 @@ _SECTOR_RULES = [
     ("FACTOR_EQUAL_WT",  ["equal weight","eq weight","eqwt","eqlwgt","eqlwght","equal wt"]),
     ("INTERNATIONAL",    ["nasdaq","s&p 500","hang seng","hangseng","hngsng","msci","fang+"]),
     ("MIDCAP",           ["midcap","mid cap","mdsmc","midsmall"]),
-    ("SMALLCAP",         ["smallcap","small cap","sml100","smcp"]),
+    ("SMALLCAP",         ["smallcap","small cap","sml100","smcp","mosmall","sc 250"]),
     ("NEXT_50",          ["next 50","next50","juniorbees","jr bees"]),
     ("BROAD_MARKET",     ["nifty 50","nifty50","sensex","nifty 100","nifty100",
                           "nifty 200","nifty 500","nifty500","total market",
@@ -234,6 +262,16 @@ _SECTOR_RULES = [
 ]
 
 def classify_sector(etf_name: str, ticker: str) -> str:
+    """
+    Classify ETF sector.
+    Priority: 1. Direct lookup from ETF_SECTOR.xlsx  2. Keyword rules  3. 'OTHER'
+    """
+    # 1. Direct lookup (exact ticker match)
+    t_upper = ticker.strip().upper()
+    if t_upper in _SECTOR_LOOKUP:
+        return _SECTOR_LOOKUP[t_upper]
+
+    # 2. Keyword fallback
     n = etf_name.lower()
     t = ticker.lower()
     for sector, keywords in _SECTOR_RULES:
@@ -594,8 +632,8 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
     only3i = z6i.isna()  & z3i.notna()
     df["_WTD_INV"] = np.nan
     df.loc[both_i, "_WTD_INV"] = CONFIG.SHARPE_W6M * z6i[both_i] + CONFIG.SHARPE_W3M * z3i[both_i]
-    df.loc[only6i, "_WTD_INV"] = z6i[only6i]
-    df.loc[only3i, "_WTD_INV"] = z3i[only3i]
+    df.loc[only6i, "_WTD_INV"] = CONFIG.SHARPE_W6M * z6i[only6i]
+    df.loc[only3i, "_WTD_INV"] = CONFIG.SHARPE_W3M * z3i[only3i]
 
     # ── Universe Z-scores (reference pool = ALL ETFs with valid Sharpe) ──
     z6u = _zscore(df["SHARPE_6M"]); z3u = _zscore(df["SHARPE_3M"])
@@ -608,11 +646,10 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
     df.loc[only3u, "WTD_SHARPE"] = z3u[only3u]
 
     # ── Rankings ─────────────────────────────────────────────────
-    # Universe rank — Z-scored composite across all ETFs
-    df["RANK_UNIVERSE"] = df["WTD_SHARPE"].rank(ascending=False, na_option="bottom").astype(int)
-    df["RANK_SHARPE"]   = df["RANK_UNIVERSE"]   # same — kept for column compatibility
-
-    # Investable rank — Z-scored composite among screen-pass ETFs only
+    # Investable rank — Z-scored composite among screen-pass ETFs only.
+    # ETFs that fail the 52-week-high screen get RANK_INVESTABLE = NaN
+    # (blank on display), not 0 — they were never ranked at all, since
+    # they're not part of the investable population being ranked.
     inv = df[df["SCREEN_PASS"]].copy()
     if len(inv) > 0:
         inv["RANK_INVESTABLE"] = inv["_WTD_INV"].rank(ascending=False, na_option="bottom").astype(int)
@@ -620,14 +657,13 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
     else:
         df["RANK_INVESTABLE"] = np.nan
 
-    df["RANK_INVESTABLE"] = df["RANK_INVESTABLE"].fillna(0).astype(int)
-
     # Drop intermediate Z-score working columns
     df = df.drop(columns=["_Z6_INV", "_Z3_INV", "_WTD_INV"], errors="ignore")
 
-    # Sort by investable rank first (passing ETFs at top), then universe rank
-    df["_sort"] = df["RANK_INVESTABLE"].replace(0, 9999)
-    df = df.sort_values(["_sort", "RANK_UNIVERSE"]).drop(columns="_sort").reset_index(drop=True)
+    # Sort by investable rank first (passing ETFs at top, best rank first),
+    # then by raw Weighted Sharpe for the remaining (non-investable) ETFs
+    df["_sort"] = df["RANK_INVESTABLE"].fillna(9999)
+    df = df.sort_values(["_sort", "WTD_SHARPE"], ascending=[True, False]).drop(columns="_sort").reset_index(drop=True)
 
     return df
 
@@ -857,7 +893,7 @@ def print_summary(df, regime, allocation):
 
     inv_count = df["SCREEN_PASS"].sum()
     print(f"\n  RANKING  (investable rank = scored among {inv_count} ETFs passing abs filter)")
-    print(f"  {'InvRk':>5} {'UniRk':>5} {'Ticker':<14} {'ETF Name':<36} "
+    print(f"  {'InvRk':>5} {'Ticker':<14} {'ETF Name':<36} "
           f"{'WtdSharpe':>10} {'Sharpe6M':>9} {'Sharpe3M':>9} "
           f"{'Screen':>7}")
     print("  " + "-" * 95)
@@ -866,7 +902,7 @@ def print_summary(df, regime, allocation):
         def f(v, d=3): return f"{v:.{d}f}" if pd.notna(v) and v != 0 else "N/A"
         inv_rk = str(int(r2["RANK_INVESTABLE"])) if r2["SCREEN_PASS"] else "-"
         screen = "PASS" if r2["SCREEN_PASS"] else "FAIL"
-        print(f"  {inv_rk:>5} {int(r2['RANK_UNIVERSE']):>5} {r2['TICKER']:<14} "
+        print(f"  {inv_rk:>5} {r2['TICKER']:<14} "
               f"{str(r2['ETF_NAME'])[:35]:<36} "
               f"{f(r2['WTD_SHARPE']):>10} {f(r2['SHARPE_6M']):>9} {f(r2['SHARPE_3M']):>9} "
               f"{screen:>7}")
@@ -1532,8 +1568,6 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
 
     COLS = [
         ("Investable\nRank",    10, "0"),
-        ("Universe\nRank",      10, "0"),
-        ("Sharpe\nRank",         9, "0"),
         ("Ticker",              14, "@"),
         ("ETF Name",            40, "@"),
         ("Sector",              18, "@"),
@@ -1548,7 +1582,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         ("Screen\nResult",      11, "@"),
     ]
     KEYS = [
-        "RANK_INVESTABLE", "RANK_UNIVERSE", "RANK_SHARPE",
+        "RANK_INVESTABLE",
         "TICKER", "ETF_NAME", "SECTOR", "CLOSE", "52WK_HIGH", "PCT_FROM_HIGH",
         "EMA_100",
         "EOM_PCT",
@@ -1582,8 +1616,8 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
             val = row[key]
             if key == "SCREEN_PASS":
                 val = "PASS" if val else "FAIL"
-            elif key == "RANK_INVESTABLE" and (not passed or val == 0):
-                val = "-"
+            elif key == "RANK_INVESTABLE" and (not passed or pd.isna(val)):
+                val = None
             # Close cell: dark green font when NAV > 100 EMA, background unchanged
             cell_fg = "1A5C2E" if (key == "CLOSE" and close_above_ema100) else "000000"
             _d(ws, ri, ci, val, bg=bg,

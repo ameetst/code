@@ -79,10 +79,52 @@ st.markdown("""
     /* Section headers */
     h2 { color: #1F4E79 !important; border-bottom: 2px solid #E8ECF1; padding-bottom: 8px; }
     
-    /* Regime badges */
-    .regime-bull { background: #E8F5E9; color: #2E7D32; padding: 6px 16px; border-radius: 20px; font-weight: 700; }
-    .regime-partial { background: #FFF8E1; color: #F57F17; padding: 6px 16px; border-radius: 20px; font-weight: 700; }
-    .regime-bear { background: #FFEBEE; color: #C62828; padding: 6px 16px; border-radius: 20px; font-weight: 700; }
+    /* Regime banner — single-row, uniform, compact cards */
+    .regime-row {
+        display: flex;
+        gap: 8px;
+        width: 100%;
+        margin-bottom: 4px;
+        flex-wrap: nowrap;
+    }
+    .regime-card {
+        flex: 1 1 0;
+        min-width: 0;
+        background: #F5F7FA;
+        border: 1px solid #E8ECF1;
+        border-radius: 10px;
+        padding: 10px 12px;
+        overflow: hidden;
+    }
+    .regime-card-label {
+        color: #6B7A8D;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .regime-card-value {
+        color: #1A1A2E;
+        font-size: clamp(11px, 1.15vw, 20px);
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 3px;
+    }
+    .regime-pill {
+        display: inline-block;
+        padding: 1px 10px;
+        border-radius: 20px;
+        font-weight: 700;
+        font-size: inherit;
+    }
+    .regime-pill.bull    { background: #E8F5E9; color: #2E7D32; }
+    .regime-pill.partial { background: #FFF8E1; color: #F57F17; }
+    .regime-pill.bear    { background: #FFEBEE; color: #C62828; }
     
     /* Action badges */
     .badge-buy { background: #E8F5E9; color: #2E7D32; padding: 3px 10px; border-radius: 12px; font-weight: 600; font-size: 12px; }
@@ -320,6 +362,36 @@ def get_etf_latest_price(ticker: str, prices_df: pd.DataFrame) -> float:
     return 0.0
 
 
+def apply_ticker_selection_to_tradelog(event, source_df: pd.DataFrame,
+                                        session_key: str, ticker_col: str = "Ticker"):
+    """
+    Generic row-selection handler for any on_select='rerun' st.dataframe.
+    When a new row is selected (in Top 5 Ranking, Full Rankings, or the
+    Tradelog Active Holdings table), auto-populates the Log New Transaction
+    form's Select ETF field (and refreshes its price) with that ticker —
+    regardless of which tab the selection happened in, since session_state
+    is shared across tabs within the same script run.
+    """
+    if session_key not in st.session_state:
+        st.session_state[session_key] = None
+
+    rows = []
+    if event and hasattr(event, "selection"):
+        sel = event.selection
+        rows = sel.rows if hasattr(sel, "rows") else sel.get("rows", [])
+
+    if rows:
+        idx = rows[0]
+        if st.session_state[session_key] != idx:
+            sel_ticker = source_df.iloc[idx][ticker_col]
+            if sel_ticker and sel_ticker != "CASH":
+                st.session_state.tl_ticker = sel_ticker
+                st.session_state.tl_price = float(get_etf_latest_price(sel_ticker, prices))
+            st.session_state[session_key] = idx
+    else:
+        st.session_state[session_key] = None
+
+
 # =========================================================
 # DATA LOADING — resolve input path from config
 # =========================================================
@@ -359,38 +431,35 @@ except Exception as e:
 # ── Regime Banner ──────────────────────────────────────────
 regime_label = regime["label"]
 if regime_label == "BULL":
-    badge_class = "regime-bull"
+    pill_class = "bull"
     regime_emoji = "🟢"
 elif regime_label == "PARTIAL":
-    badge_class = "regime-partial"
+    pill_class = "partial"
     regime_emoji = "🟡"
 else:
-    badge_class = "regime-bear"
+    pill_class = "bear"
     regime_emoji = "🔴"
 
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.markdown(
-        f"<div style='text-align:center; padding:12px;'>"
-        f"<span class='{badge_class}' style='font-size:18px;'>{regime_emoji} {regime_label}</span>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-with col2:
-    st.metric("Price", f"{regime['nifty_price']:.2f}")
-with col3:
-    st.metric("EMA 50", f"{regime['nifty_ema_50']:.2f}")
-with col4:
-    st.metric("EMA 100", f"{regime['nifty_ema_100']:.2f}")
+data_range = f"{prices.index[0].strftime('%Y-%m-%d')} → {prices.index[-1].strftime('%Y-%m-%d')}"
 
-col_a, col_b, col_c = st.columns(3)
-with col_a:
-    st.metric("Active Slots", f"{regime['active_slots']} / {emr.CONFIG.TOP_N}")
-with col_b:
-    st.metric("Trend Ticker", regime.get("trend_ticker", "N/A"))
-with col_c:
-    data_range = f"{prices.index[0].strftime('%Y-%m-%d')} → {prices.index[-1].strftime('%Y-%m-%d')}"
-    st.metric("Data Range", data_range)
+banner_cards = [
+    ("Regime",       f"<span class='regime-pill {pill_class}'>{regime_emoji} {regime_label}</span>"),
+    ("Price",        f"{regime['nifty_price']:.2f}"),
+    ("EMA 50",       f"{regime['nifty_ema_50']:.2f}"),
+    ("EMA 100",      f"{regime['nifty_ema_100']:.2f}"),
+    ("Active Slots", f"{regime['active_slots']} / {emr.CONFIG.TOP_N}"),
+    ("Trend Ticker", regime.get("trend_ticker", "N/A")),
+    ("Data Range",   data_range),
+]
+
+cards_html = "".join(
+    f"<div class='regime-card'>"
+    f"<div class='regime-card-label'>{label}</div>"
+    f"<div class='regime-card-value'>{value}</div>"
+    f"</div>"
+    for label, value in banner_cards
+)
+st.markdown(f"<div class='regime-row'>{cards_html}</div>", unsafe_allow_html=True)
 
 st.divider()
 
@@ -441,12 +510,17 @@ with tab_alloc:
             return ["background-color: #F9FAFB; color: #9AA5B4;"] * len(row)
         return ["background-color: #FFFFFF;"] * len(row)
 
-    st.dataframe(
+    alloc_event = st.dataframe(
         alloc_display.style.apply(style_allocation, axis=1),
         use_container_width=True,
         hide_index=True,
         height=220,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="alloc_table_select",
     )
+    apply_ticker_selection_to_tradelog(alloc_event, alloc_display, "alloc_last_selected_row")
+    st.caption("💡 Select a row above to auto-fill it in **Log New Transaction** (Tradelog & MTM tab).")
 
     st.divider()
 
@@ -553,7 +627,7 @@ with tab_rankings:
     st.markdown("## 📋 Full Rankings")
 
     # Prepare display columns
-    display_cols = ["RANK_INVESTABLE", "RANK_UNIVERSE", "TICKER", "ETF_NAME", "SECTOR",
+    display_cols = ["RANK_INVESTABLE", "TICKER", "ETF_NAME", "SECTOR",
                     "WTD_SHARPE", "SHARPE_6M", "SHARPE_3M", "SCREEN_PASS"]
     available_cols = [c for c in display_cols if c in ranking.columns]
     rank_display = ranking[available_cols].copy()
@@ -561,7 +635,6 @@ with tab_rankings:
     # Rename for readability
     col_rename = {
         "RANK_INVESTABLE": "Inv Rank",
-        "RANK_UNIVERSE": "Uni Rank",
         "TICKER": "Ticker",
         "ETF_NAME": "ETF Name",
         "SECTOR": "Sector",
@@ -598,6 +671,10 @@ with tab_rankings:
         if col in filtered.columns:
             filtered[col] = filtered[col].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
 
+    # Inv Rank: blank (not 0, not NaN) for ETFs that don't pass the 52wk-high screen
+    if "Inv Rank" in filtered.columns:
+        filtered["Inv Rank"] = filtered["Inv Rank"].apply(lambda x: str(int(x)) if pd.notna(x) else "")
+
     def style_rankings(row):
         if row.get("Screen") == False:
             return ["background-color: #FFF8F8; color: #B0B0B0;"] * len(row)
@@ -609,12 +686,17 @@ with tab_rankings:
             pass
         return [""] * len(row)
 
-    st.dataframe(
+    rankings_event = st.dataframe(
         filtered.style.apply(style_rankings, axis=1),
         use_container_width=True,
         hide_index=True,
         height=500,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="rankings_table_select",
     )
+    apply_ticker_selection_to_tradelog(rankings_event, filtered, "rankings_last_selected_row")
+    st.caption("💡 Select a row above to auto-fill it in **Log New Transaction** (Tradelog & MTM tab).")
 
     st.caption(f"Universe: {len(meta)} ETFs  |  Investable: {ranking['SCREEN_PASS'].sum()}  |  "
                f"Screened out: {(~ranking['SCREEN_PASS']).sum()}")
