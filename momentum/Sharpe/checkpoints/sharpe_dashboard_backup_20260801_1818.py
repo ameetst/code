@@ -417,28 +417,21 @@ _cfg_files = sorted([f.name for f in SCRIPT_DIR.glob("*.xlsx")
                      and "ranking" not in f.name.lower()])
 _cfg_preferred = next((f for f in ["N750_updated.xlsx", "N750.xlsx"] if f in _cfg_files), None)
 
-# Initialise session-state defaults from persistent config (first run only)
-_saved_cfg = ml.load_config(str(SCRIPT_DIR))
-
+# Initialise session-state defaults on first run
 if "cfg_file" not in st.session_state:
-    saved_file = _saved_cfg.get("file", "")
-    # Prefer the saved file if it exists in available files, else fall back
-    if saved_file in _cfg_files:
-        st.session_state.cfg_file = saved_file
-    else:
-        st.session_state.cfg_file = _cfg_preferred if _cfg_preferred else (_cfg_files[0] if _cfg_files else "")
+    st.session_state.cfg_file = _cfg_preferred if _cfg_preferred else (_cfg_files[0] if _cfg_files else "")
 if "cfg_capital" not in st.session_state:
-    st.session_state.cfg_capital = _saved_cfg["capital"]
+    st.session_state.cfg_capital = 1_500_000
 if "cfg_max_wt_pct" not in st.session_state:
-    st.session_state.cfg_max_wt_pct = _saved_cfg["max_wt_pct"]
+    st.session_state.cfg_max_wt_pct = 5
 if "cfg_min_turnover" not in st.session_state:
-    st.session_state.cfg_min_turnover = _saved_cfg["min_turnover"]
+    st.session_state.cfg_min_turnover = 1.0
 if "cfg_eq_series_filter" not in st.session_state:
-    st.session_state.cfg_eq_series_filter = _saved_cfg["eq_series_filter"]
+    st.session_state.cfg_eq_series_filter = True
 if "cfg_circuit_filter_enabled" not in st.session_state:
-    st.session_state.cfg_circuit_filter_enabled = _saved_cfg["circuit_filter_enabled"]
+    st.session_state.cfg_circuit_filter_enabled = True
 if "cfg_circuit_threshold" not in st.session_state:
-    st.session_state.cfg_circuit_threshold = _saved_cfg["circuit_threshold"]
+    st.session_state.cfg_circuit_threshold = 20
 
 # Derive runtime values from session state
 selected_file = st.session_state.cfg_file
@@ -1967,40 +1960,8 @@ with tab_config:
         st.markdown(f"**{k}:** `{v}`")
 
     st.divider()
-    st.markdown("#### 💾 Persist Configuration")
-    st.caption("Save current settings to `dashboard_config.json` so they persist across "
-               "browser refreshes and server restarts. Sharpe.py will also use these settings.")
-
-    _save_cols = st.columns([1, 3])
-    with _save_cols[0]:
-        if st.button("💾 Save Configuration", type="primary", use_container_width=True):
-            _current_cfg = {
-                "file":                   st.session_state.cfg_file,
-                "capital":                st.session_state.cfg_capital,
-                "max_wt_pct":             st.session_state.cfg_max_wt_pct,
-                "min_turnover":           float(st.session_state.cfg_min_turnover),
-                "eq_series_filter":       st.session_state.cfg_eq_series_filter,
-                "circuit_filter_enabled": st.session_state.cfg_circuit_filter_enabled,
-                "circuit_threshold":      int(st.session_state.cfg_circuit_threshold),
-            }
-            try:
-                _saved_path = ml.save_config(_current_cfg, str(SCRIPT_DIR))
-                st.success(f"✅ Configuration saved to `{_saved_path.name}`")
-            except Exception as _e:
-                st.error(f"❌ Failed to save: {_e}")
-    with _save_cols[1]:
-        _cfg_path = SCRIPT_DIR / ml.CONFIG_FILENAME
-        if _cfg_path.exists():
-            _mod_time = datetime.datetime.fromtimestamp(_cfg_path.stat().st_mtime)
-            st.caption(f"📄 Last saved: {_mod_time.strftime('%d-%b-%Y %H:%M')}  •  "
-                       f"Path: `{_cfg_path.name}`")
-        else:
-            st.caption("⚠️ No saved config found — using defaults. Click Save to persist.")
-
-    st.divider()
     st.caption("Sharpe Momentum Strategy v3.0 — Dynamic Regime")
-    st.info("Changes to settings take effect immediately on the next rerun. "
-            "Click **Save Configuration** to persist them across sessions and share with Sharpe.py.")
+    st.info("Changes to Data Source, Capital, or Max Weight take effect immediately on the next rerun.")
 
 # ── TAB 7: PERFORMANCE TRACKER ────────────────────────────────────────────────
 with tab_perf:

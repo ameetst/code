@@ -60,7 +60,6 @@ compute_turnover(prices_df, volume_df, stock_tickers, windows)
 """
 
 import datetime
-import json
 import warnings
 
 import numpy as np
@@ -71,62 +70,6 @@ from scipy import stats
 
 warnings.filterwarnings("ignore")
 
-
-# ── SHARED CONFIGURATION ─────────────────────────────────────────────────────
-
-CONFIG_FILENAME = "dashboard_config.json"
-
-CONFIG_DEFAULTS = {
-    "file":                    "N750_updated.xlsx",
-    "capital":                 1_500_000,
-    "max_wt_pct":              5,
-    "min_turnover":            1.0,
-    "eq_series_filter":        True,
-    "circuit_filter_enabled":  True,
-    "circuit_threshold":       20,
-}
-
-
-def load_config(config_dir: str = None) -> dict:
-    """
-    Load persistent configuration from dashboard_config.json.
-    Returns CONFIG_DEFAULTS merged with any saved overrides.
-
-    Parameters
-    ----------
-    config_dir : str or Path, optional
-        Directory containing dashboard_config.json.
-        Defaults to the directory containing momentum_lib.py.
-    """
-    if config_dir is None:
-        config_dir = Path(__file__).resolve().parent
-    config_path = Path(config_dir) / CONFIG_FILENAME
-    cfg = dict(CONFIG_DEFAULTS)
-    if config_path.exists():
-        try:
-            with open(config_path, "r") as f:
-                saved = json.load(f)
-            cfg.update(saved)
-        except Exception:
-            pass  # fall back to defaults on any read error
-    return cfg
-
-
-def save_config(config: dict, config_dir: str = None) -> Path:
-    """
-    Save configuration to dashboard_config.json.
-    Only saves keys that exist in CONFIG_DEFAULTS (ignores unknown keys).
-
-    Returns the path to the saved file.
-    """
-    if config_dir is None:
-        config_dir = Path(__file__).resolve().parent
-    config_path = Path(config_dir) / CONFIG_FILENAME
-    # Only persist known keys
-    to_save = {k: config[k] for k in CONFIG_DEFAULTS if k in config}
-    with open(config_path, "w") as f:
-        json.dump(to_save, f, indent=2)
-    return config_path
 
 # ── DATA LOADING ──────────────────────────────────────────────────────────────
 

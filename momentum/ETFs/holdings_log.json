@@ -171,7 +171,7 @@
     ]
   },
   "2026-W31": {
-    "run_date": "2026-07-30 09:22",
+    "run_date": "2026-08-01 17:25",
     "regime": "BULL",
     "active_slots": 5,
     "allocation": [
@@ -183,7 +183,7 @@
         "weight": 0.2,
         "inv_rank": "2",
         "entry_price": 50.61,
-        "peak": 51.03
+        "peak": 51.66
       },
       {
         "slot": 2,
@@ -191,9 +191,9 @@
         "etf_name": "HDFC NIFTY Smallcap 250 ETF",
         "sector": "SMALLCAP",
         "weight": 0.2,
-        "inv_rank": "13",
+        "inv_rank": "10",
         "entry_price": 180.12,
-        "peak": 180.12
+        "peak": 180.67
       },
       {
         "slot": 3,
@@ -201,9 +201,9 @@
         "etf_name": "Motilal Oswal Nifty SC 250 ETF",
         "sector": "OTHER",
         "weight": 0.2,
-        "inv_rank": "17",
+        "inv_rank": "12",
         "entry_price": 17.97,
-        "peak": 17.97
+        "peak": 18.05
       },
       {
         "slot": 4,
@@ -212,18 +212,18 @@
         "sector": "NIFTY PHARMA",
         "weight": 0.2,
         "inv_rank": "1",
-        "entry_price": 27.08,
-        "peak": 27.08
+        "entry_price": 27.27,
+        "peak": 27.27
       },
       {
         "slot": 5,
-        "ticker": "GROWWRLTY",
-        "etf_name": "Groww Nifty Realty ETF",
-        "sector": "NIFTY REALTY",
+        "ticker": "MIDSELIETF",
+        "etf_name": "ICICI Pru BSE MC Sel ETF",
+        "sector": "MIDCAP",
         "weight": 0.2,
-        "inv_rank": "5",
-        "entry_price": 10.32,
-        "peak": 10.32
+        "inv_rank": "6",
+        "entry_price": 19.6,
+        "peak": 19.6
       }
     ]
   }

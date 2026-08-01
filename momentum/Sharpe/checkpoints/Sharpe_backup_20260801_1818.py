@@ -83,32 +83,27 @@ _parser.add_argument("--dry-run", action="store_true",
                      help="Generate rankings/exits without saving changes to the positions ledger")
 _args = _parser.parse_args()
 
-# -- LOAD SHARED CONFIG (from dashboard_config.json, shared with dashboard) ----
-_SCRIPT_DIR       = Path(__file__).resolve().parent
-_saved_cfg        = ml.load_config(str(_SCRIPT_DIR))
-
 # -- CONFIG --------------------------------------------------------------------
 UNIVERSE          = _args.universe
 FILE              = f"{UNIVERSE}_updated.xlsx"
 OUTPUT_FILE       = f"{UNIVERSE}_rankings.xlsx"
 LEDGER_FILE       = _args.ledger or f"{UNIVERSE}_positions_ledger.json"
 
-PORTFOLIO_CAPITAL = _saved_cfg["capital"]    # INR — baseline for allocation display
+PORTFOLIO_CAPITAL = 1_000_000   # INR — baseline for allocation display
 RFR_ANNUAL        = 0.07
 TRADING_DAYS      = 252
 TOP_N             = 20         # used for Excel sheet label only; actual N is dynamic
 HOLD_RANK_BUFFER  = 50          # exit rank threshold
 MIN_HOLD_DAYS     = 28          # calendar days before rank-based exit is permitted
 LIQUID_YIELD_PA   = 0.06        # 6% p.a. on idle cash
-# CLI --min-turnover overrides saved config; use saved config as default
-MIN_TURNOVER_CR   = _args.min_turnover if _args.min_turnover != 1.0 else _saved_cfg["min_turnover"]
+MIN_TURNOVER_CR   = _args.min_turnover   # Minimum median daily turnover (₹ Cr)
 DRY_RUN           = _args.dry_run
 
-# -- UNIVERSE ELIGIBILITY FILTERS (from shared config) -------------------------
-EQ_SERIES_FILTER        = _saved_cfg["eq_series_filter"]
-CIRCUIT_FILTER_ENABLED  = _saved_cfg["circuit_filter_enabled"]
-CIRCUIT_HIT_THRESHOLD   = _saved_cfg["circuit_threshold"]
-BAND_CSV                = _SCRIPT_DIR / "Price_Band_List.csv"
+# -- UNIVERSE ELIGIBILITY FILTERS ----------------------------------------------
+EQ_SERIES_FILTER        = True    # if True, restrict universe to EQ series only
+CIRCUIT_FILTER_ENABLED  = True    # if True, exclude stocks with >= threshold circuit hits
+CIRCUIT_HIT_THRESHOLD   = 20     # total UC+LC close days in lookback (252d) to exclude
+BAND_CSV                = Path(__file__).resolve().parent / "Price_Band_List.csv"
 
 # -- DYNAMIC REGIME PARAMETERS -------------------------------------------------
 MIN_N               = 5      # minimum holdings at lowest regime score
