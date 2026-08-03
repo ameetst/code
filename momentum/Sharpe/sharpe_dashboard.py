@@ -411,11 +411,15 @@ NEW_ENTRY_THRESHOLD = ml.DEFAULT_NEW_ENTRY_THRESHOLD
 SIGNAL_WEIGHTS      = ml.DEFAULT_SIGNAL_WEIGHTS
 
 # ── CONFIGURATION (session-state driven, rendered in Config tab) ──────────────
-# Scan available xlsx files first (needed to set the default)
-_cfg_files = sorted([f.name for f in SCRIPT_DIR.glob("*.xlsx")
-                     if not f.name.startswith("~")
-                     and "ranking" not in f.name.lower()])
-_cfg_preferred = next((f for f in ["N750_updated.xlsx", "N750.xlsx"] if f in _cfg_files), None)
+# Scan available xlsx files (prefer _updated.xlsx files over raw universe templates)
+_all_xlsx = [f.name for f in SCRIPT_DIR.glob("*.xlsx")
+             if not f.name.startswith("~") and "ranking" not in f.name.lower()]
+_updated_set = set(f for f in _all_xlsx if f.endswith("_updated.xlsx"))
+_cfg_files = sorted([
+    f for f in _all_xlsx
+    if f.endswith("_updated.xlsx") or f"{f.replace('.xlsx', '')}_updated.xlsx" not in _updated_set
+])
+_cfg_preferred = next((f for f in ["N750_updated.xlsx", "NSEAll_updated.xlsx", "N500_updated.xlsx"] if f in _cfg_files), None)
 
 # Initialise session-state defaults from persistent config (first run only)
 _saved_cfg = ml.load_config(str(SCRIPT_DIR))

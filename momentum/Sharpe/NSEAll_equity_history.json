@@ -7,5 +7,14 @@
     "benchmark_ret": 0.007556,
     "n_held": 0,
     "invested_frac": 0.0
+  },
+  {
+    "date": "2026-08-02",
+    "portfolio_nav": 100.3617,
+    "benchmark_nav": 101.2402,
+    "portfolio_ret": 0.003452,
+    "benchmark_ret": 0.00481,
+    "n_held": 0,
+    "invested_frac": 0.0
   }
 ]

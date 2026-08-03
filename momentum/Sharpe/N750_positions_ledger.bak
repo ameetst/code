@@ -55,13 +55,9 @@
     "entry_date": "2026-07-13",
     "entry_price": 897.95
   },
-  "JBCHEPHARM": {
+  "TORNTPHARM": {
     "entry_date": "2026-07-13",
-    "entry_price": 2456.3
-  },
-  "THANGAMAYL": {
-    "entry_date": "2026-07-13",
-    "entry_price": 6256.0
+    "entry_price": 4816.27
   },
   "ATHERENERG": {
     "entry_date": "2026-07-13",
@@ -70,5 +66,13 @@
   "GRWRHITECH": {
     "entry_date": "2026-07-13",
     "entry_price": 7047.0
+  },
+  "DIACABS": {
+    "entry_date": "2026-08-03",
+    "entry_price": 320.3
+  },
+  "HONASA": {
+    "entry_date": "2026-08-03",
+    "entry_price": 456.35
   }
 }

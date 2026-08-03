@@ -1,1 +1,22 @@
-{}
+{
+  "PHARMABEES": {
+    "entry_date": "2026-08-03",
+    "entry_price": 27.23
+  },
+  "MOHEALTH": {
+    "entry_date": "2026-08-03",
+    "entry_price": 51.6
+  },
+  "MIDSELIETF": {
+    "entry_date": "2026-08-03",
+    "entry_price": 19.77
+  },
+  "SML100CASE": {
+    "entry_date": "2026-08-03",
+    "entry_price": 11.15
+  },
+  "MOALPHA50": {
+    "entry_date": "2026-08-03",
+    "entry_price": 54.36
+  }
+}

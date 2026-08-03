@@ -453,10 +453,10 @@
     "id": "ff468d93-d811-4da9-a60e-e35e92b7176e",
     "date": "2026-07-13",
     "timestamp": "2026-07-14T12:14:21.120944",
-    "ticker": "JBCHEPHARM",
+    "ticker": "TORNTPHARM",
     "action": "BUY",
-    "quantity": 30,
-    "price": 2456.3
+    "quantity": 15,
+    "price": 4816.27
   },
   {
     "id": "8fbd271f-1803-4c09-999a-2c81730e0523",
@@ -502,5 +502,32 @@
     "action": "SELL",
     "quantity": 70,
     "price": 779.7
+  },
+  {
+    "id": "9e0734fb-1bf3-4b85-936c-e467111460db",
+    "date": "2026-08-03",
+    "timestamp": "2026-08-03T09:34:58.912243",
+    "ticker": "THANGAMAYL",
+    "action": "SELL",
+    "quantity": 12,
+    "price": 5017.0
+  },
+  {
+    "id": "0aba5370-e9b4-4c0e-83f2-b9f9b8e0eae3",
+    "date": "2026-08-03",
+    "timestamp": "2026-08-03T14:59:46.740457",
+    "ticker": "DIACABS",
+    "action": "BUY",
+    "quantity": 235,
+    "price": 320.3
+  },
+  {
+    "id": "da9afad7-89a5-4f17-b8dc-73d8ecd460bc",
+    "date": "2026-08-03",
+    "timestamp": "2026-08-03T15:00:31.984871",
+    "ticker": "HONASA",
+    "action": "BUY",
+    "quantity": 165,
+    "price": 456.35
   }
 ]
