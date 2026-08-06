@@ -27,8 +27,9 @@ compute_clenow(prices_df, stock_tickers, windows, trading_days)
     Returns (slope_df, r2_df, raw_df, cz_df)
     cz_df contains CZ_<label> columns plus CLENOW_Z.
 
-compute_residual_momentum(prices_df, stock_tickers, nifty_series, windows, trading_days)
-    Compute per-window residual Sharpe (OLS vs NIFTY500) and Z-scores.
+compute_residual_momentum(prices_df, stock_tickers, nifty_series, windows, trading_days, rfr_daily)
+    Compute per-window residual Information Ratio (date-aligned excess-return
+    OLS vs NIFTY500: alpha / residual volatility) and Z-scores.
     Returns (resmom_df, rs_z_df)
     rs_z_df contains RZ_<label> columns plus RES_MOM.
 
@@ -84,6 +85,7 @@ CONFIG_DEFAULTS = {
     "eq_series_filter":        True,
     "circuit_filter_enabled":  True,
     "circuit_threshold":       20,
+    "rel_dd_breach_threshold": -20,
 }
 
 
@@ -638,49 +640,64 @@ def compute_clenow(prices_df: pd.DataFrame,
 
 # ── RESIDUAL MOMENTUM ─────────────────────────────────────────────────────────
 
-def _residual_sharpe(stock_series: pd.Series, mkt_rets: np.ndarray,
-                     window: int, trading_days: int) -> float:
-    """OLS-regress stock returns on market returns; return Sharpe of residuals."""
+def _residual_information_ratio(stock_series: pd.Series, mkt_rets: pd.Series,
+                     window: int, trading_days: int,
+                     rfr_daily: float = 0.0) -> float:
+    """
+    Date-aligned OLS regression of a stock's excess log-returns on NIFTY500's
+    excess log-returns; return the annualised Information Ratio of the fit
+    (alpha / residual volatility).
+    """
     px = stock_series.dropna()
-    if len(px) < window * 0.90:
+    if len(px) < 2:
         return np.nan
-    n      = min(len(px) - 1, window)
-    s_rets = np.diff(np.log(px.iloc[-n-1:].values))
-    m_rets = mkt_rets[-n:]
-    if len(s_rets) != len(m_rets) or len(s_rets) < 10:
+    s_rets = pd.Series(np.diff(np.log(px.values)), index=px.index[1:])
+
+    aligned = pd.concat([s_rets, mkt_rets], axis=1, join="inner").dropna()
+    if len(aligned) < max(window * 0.90, 10):
         return np.nan
-    X = np.column_stack([np.ones(len(m_rets)), m_rets])
+    aligned = aligned.iloc[-window:]
+
+    s = aligned.iloc[:, 0].values - rfr_daily
+    m = aligned.iloc[:, 1].values - rfr_daily
+
+    X = np.column_stack([np.ones(len(m)), m])
     try:
-        coeffs, _, _, _ = np.linalg.lstsq(X, s_rets, rcond=None)
+        coeffs, _, _, _ = np.linalg.lstsq(X, s, rcond=None)
     except np.linalg.LinAlgError:
         return np.nan
-    residuals = s_rets - X @ coeffs
+    residuals = s - X @ coeffs
     sd = residuals.std(ddof=1)
     if sd < 1e-12:
         return np.nan
-    return (residuals.mean() / sd) * np.sqrt(trading_days)
+    alpha = coeffs[0]
+    return (alpha / sd) * np.sqrt(trading_days)
 
 
 def compute_residual_momentum(prices_df: pd.DataFrame,
                                stock_tickers: list,
                                nifty_series: pd.Series,
                                windows: dict,
-                               trading_days: int = 252):
+                               trading_days: int = 252,
+                               rfr_daily: float = 0.0):
     """
-    Compute residual Sharpe after regressing each stock against NIFTY500.
+    Compute residual Information Ratio (alpha / residual volatility) from a
+    date-aligned OLS regression of each stock's excess returns against
+    NIFTY500's excess returns.
 
     Returns
     -------
-    resmom_df : DataFrame  RS_<label>  residual Sharpe per window
+    resmom_df : DataFrame  RS_<label>  residual Information Ratio per window
     rs_z_df   : DataFrame  RZ_<label>  Z-scored + RES_MOM composite
     """
     print("\nComputing residual momentum scores ...")
-    nifty_log_rets = np.diff(np.log(nifty_series.dropna().values))
+    nifty_px = nifty_series.dropna()
+    mkt_rets = pd.Series(np.diff(np.log(nifty_px.values)), index=nifty_px.index[1:])
 
     resmom_data = {}
     for label, window in windows.items():
-        col = [_residual_sharpe(prices_df.loc[t], nifty_log_rets,
-                                window, trading_days)
+        col = [_residual_information_ratio(prices_df.loc[t], mkt_rets,
+                                window, trading_days, rfr_daily)
                for t in stock_tickers]
         valid = sum(1 for v in col if not np.isnan(v))
         resmom_data[f"RS_{label}"] = col
@@ -692,7 +709,14 @@ def compute_residual_momentum(prices_df: pd.DataFrame,
     for label in windows:
         rs_z_df[f"RZ_{label}"] = _cross_section_z(resmom_df[f"RS_{label}"])
 
-    rz_cols            = [f"RZ_{l}" for l in windows]
+    rz_cols      = [f"RZ_{l}" for l in windows]
+    missing_mask = rs_z_df[rz_cols].isna().any(axis=1)
+    n_affected   = missing_mask.sum()
+    if n_affected > 0:
+        print(f"  Note: {n_affected} stock(s) missing one or more window(s); "
+              f"those window Z-scores set to 0 for the RES_MOM composite")
+        rs_z_df[rz_cols] = rs_z_df[rz_cols].fillna(0.0)
+
     rs_z_df["RES_MOM"] = rs_z_df[rz_cols].mean(axis=1)
 
     return resmom_df, rs_z_df
@@ -786,6 +810,45 @@ def compute_alpha_vol(prices_df: pd.DataFrame,
     return df, z_df
 
 
+def compute_beta(prices_df: pd.DataFrame,
+                  stock_tickers: list,
+                  nifty_series: pd.Series,
+                  window: int = 252,
+                  min_periods: int = 60) -> pd.Series:
+    """
+    Compute Beta vs NIFTY500 over a trailing window of daily log-returns.
+
+    Beta = Cov(stock, market) / Var(market) on raw (non-excess) log-returns,
+    date-aligned per ticker. Tickers with fewer than min_periods overlapping
+    return observations get NaN.
+
+    Returns
+    -------
+    pd.Series  BETA, indexed by ticker
+    """
+    nifty_px = nifty_series.dropna()
+    mkt_rets = pd.Series(np.diff(np.log(nifty_px.values)), index=nifty_px.index[1:])
+
+    beta_data = {}
+    for t in stock_tickers:
+        px = prices_df.loc[t].dropna()
+        if len(px) < 2:
+            beta_data[t] = np.nan
+            continue
+        s_rets = pd.Series(np.diff(np.log(px.values)), index=px.index[1:])
+
+        aligned = pd.concat([s_rets, mkt_rets], axis=1, join="inner").dropna()
+        if len(aligned) < min_periods:
+            beta_data[t] = np.nan
+            continue
+
+        aligned = aligned.iloc[-window:]
+        s, m = aligned.iloc[:, 0].values, aligned.iloc[:, 1].values
+        mkt_var = np.var(m, ddof=1)
+        beta_data[t] = (np.cov(s, m, ddof=1)[0, 1] / mkt_var) if mkt_var > 1e-12 else np.nan
+
+    return pd.Series(beta_data, name="BETA")
+
 
 # ── RETURN CONTEXT ────────────────────────────────────────────────────────────
 
@@ -811,6 +874,23 @@ def compute_returns(prices_df: pd.DataFrame,
 
 # ── 52-WEEK HIGH ──────────────────────────────────────────────────────────────
 
+def _pct_from_52h(series: pd.Series, window: int = 252) -> float:
+    """
+    % distance of the last price from the trailing `window`-bar high.
+    Negative = price is below its 52W high. Shared by compute_pct_from_52h()
+    (per-stock) and compute_relative_52h_dd() (benchmark).
+    """
+    px = series.dropna()
+    if len(px) < 2:
+        return np.nan
+    px_w     = px.iloc[-window:] if len(px) >= window else px
+    high_52w = px_w.max()
+    last_px  = px.iloc[-1]
+    if high_52w <= 0:
+        return np.nan
+    return (last_px / high_52w - 1) * 100
+
+
 def compute_pct_from_52h(prices_df: pd.DataFrame,
                           stock_tickers: list,
                           window: int = 252) -> pd.Series:
@@ -818,21 +898,36 @@ def compute_pct_from_52h(prices_df: pd.DataFrame,
     Compute % distance from 52-week high for each stock.
     Negative = price is below its 52W high.
     """
-    def _pct(series):
-        px = series.dropna()
-        if len(px) < 2:
-            return np.nan
-        px_w     = px.iloc[-window:] if len(px) >= window else px
-        high_52w = px_w.max()
-        last_px  = px.iloc[-1]
-        if high_52w <= 0:
-            return np.nan
-        return (last_px / high_52w - 1) * 100
-
     return pd.Series(
-        {t: _pct(prices_df.loc[t]) for t in stock_tickers},
+        {t: _pct_from_52h(prices_df.loc[t], window) for t in stock_tickers},
         name="PCT_FROM_52H"
     )
+
+
+def compute_relative_52h_dd(pct_from_52h: pd.Series,
+                             nifty_series: pd.Series,
+                             eligible_mask: pd.Series = None,
+                             window: int = 252) -> pd.Series:
+    """
+    Additive Spread Approach — Relative 52H Gap.
+
+      Rel_52H_DD = Stock_PCT52H - Bench_PCT52H
+
+    Positive: the stock is holding up better than the benchmark relative
+    to its own peak. Negative: the stock is drawing down worse than the
+    benchmark relative to its own peak.
+
+    Computed only where `eligible_mask` is True (i.e. stocks that passed
+    the P/52H filter, PCT_FROM_52H >= -25); NaN elsewhere. If no mask is
+    given, computed for every stock with a valid PCT_FROM_52H.
+    """
+    bench_pct_52h = _pct_from_52h(nifty_series, window)
+
+    rel_dd = pct_from_52h - bench_pct_52h
+    if eligible_mask is not None:
+        rel_dd = rel_dd.where(eligible_mask)
+    rel_dd.name = "REL_52H_DD"
+    return rel_dd
 
 
 # ── MARKET REGIME ─────────────────────────────────────────────────────────────
@@ -1103,7 +1198,7 @@ def compute_universe_rankings(
 
     Workflow:
       1. Compute Sharpe Ratios & Cross-sectional Z-Scores
-      2. Compute PCT_FROM_52H and Price Returns (1M, 3M, 12M)
+      2. Compute PCT_FROM_52H, REL_52H_DD (vs benchmark) and Price Returns (1M, 3M, 12M)
       3. Compute Residual Momentum Z-Scores
       4. Apply ADTV Turnover filter (if volume data present)
       5. Apply Series EQ filter (excludes non-EQ series)
@@ -1126,13 +1221,18 @@ def compute_universe_rankings(
     ret_df  = compute_returns(prices_df, stock_tickers)
     pct_52h = compute_pct_from_52h(prices_df, stock_tickers)
     resmom_df, rs_z = compute_residual_momentum(
-        prices_df, stock_tickers, nifty_series, windows, trading_days)
+        prices_df, stock_tickers, nifty_series, windows, trading_days, rfr_daily)
+    beta_series = compute_beta(
+        prices_df, stock_tickers, nifty_series, window=trading_days)
 
     result = z_df.join(sharpe_df.rename(columns={l: f"S_{l}" for l in windows}))
     for col in ["COMPOSITE", "SHARPE_3"]:
         result[col] = result[col].map(normalise_composite)
     result["SHARPE_ALL"]   = result["COMPOSITE"]
     result["PCT_FROM_52H"] = pct_52h
+    result["REL_52H_DD"]   = compute_relative_52h_dd(
+        result["PCT_FROM_52H"], nifty_series,
+        eligible_mask=result["PCT_FROM_52H"] >= -25)
 
     # 2. ADTV Turnover Filter
     if volume_df is not None:
@@ -1194,6 +1294,7 @@ def compute_universe_rankings(
     )
     result = result.sort_values(["RANK", "COMPOSITE"], ascending=[True, False])
     result = result.join(ret_df).join(resmom_df).join(rs_z)
+    result["BETA"] = beta_series
 
     # 6. Dynamic Regime Score
     regime_score, regime_detail = compute_regime_score(

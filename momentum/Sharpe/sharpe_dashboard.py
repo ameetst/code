@@ -443,6 +443,8 @@ if "cfg_circuit_filter_enabled" not in st.session_state:
     st.session_state.cfg_circuit_filter_enabled = _saved_cfg["circuit_filter_enabled"]
 if "cfg_circuit_threshold" not in st.session_state:
     st.session_state.cfg_circuit_threshold = _saved_cfg["circuit_threshold"]
+if "cfg_rel_dd_breach_threshold" not in st.session_state:
+    st.session_state.cfg_rel_dd_breach_threshold = _saved_cfg["rel_dd_breach_threshold"]
 
 # Derive runtime values from session state
 selected_file = st.session_state.cfg_file
@@ -461,6 +463,7 @@ min_turnover_cr       = st.session_state.cfg_min_turnover
 eq_series_filter      = st.session_state.cfg_eq_series_filter
 circuit_filter_enabled = st.session_state.cfg_circuit_filter_enabled
 circuit_threshold     = int(st.session_state.cfg_circuit_threshold)
+rel_dd_breach_threshold = float(st.session_state.cfg_rel_dd_breach_threshold)
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 RFR_ANNUAL   = 0.07
@@ -476,6 +479,7 @@ params = {
         "Entry Gate":       f"Regime score >= {NEW_ENTRY_THRESHOLD}",
         "Hold Lock":        "28 days",
         "52H Filter":       ">= -25%",
+        "Rel 52H DD Exit":  f"< {rel_dd_breach_threshold:.0f}% (respects hold lock)",
         "ADTV Filter":      f">= {min_turnover_cr} Cr (12M or 6M median)",
         "Series EQ Filter": "Enabled" if eq_series_filter else "Disabled",
         "Circuit Filter":   f"Enabled (>= {circuit_threshold} days)" if circuit_filter_enabled else "Disabled",
@@ -549,7 +553,7 @@ def load_ledger(path):
 
 
 # ── SCORE HISTORY TRACKING ────────────────────────────────────────────────────
-MAX_HISTORY_RUNS    = 50
+MAX_HISTORY_RUNS    = 262
 FAST_MOVER_RANK_CAP = 200
 
 def load_score_history(universe_name):
@@ -558,7 +562,19 @@ def load_score_history(universe_name):
     if not path.exists():
         return []
     try:
-        with open(path) as f:
+        mtime = path.stat().st_mtime
+    except Exception:
+        mtime = None
+    return _load_score_history_cached(str(path), mtime)
+
+
+@st.cache_data
+def _load_score_history_cached(path_str, mtime):
+    """Cached JSON read, keyed on file mtime so a rewritten file busts the cache
+    automatically without re-parsing on every Streamlit rerun (widget interactions
+    re-run the whole script)."""
+    try:
+        with open(path_str) as f:
             return json.load(f)
     except Exception:
         return []
@@ -566,8 +582,19 @@ def load_score_history(universe_name):
 
 def append_score_history(universe_name, input_path, result_df):
     """
-    Append the current run's composite scores to the history file.
+    Record the current run's composite scores into the history file.
     Only writes if the price file mtime has changed since the last recorded run.
+    At most one entry per calendar day is kept — a later run on the same day
+    replaces that day's entry rather than appending a duplicate.
+
+    Also skips recording entirely if the computed scores are identical to the
+    last recorded entry, even across different calendar days / mtimes — this
+    happens when the pipeline is re-run before a new trading day's close is
+    actually available (e.g. a file resave for an unrelated reason). Without
+    this check, a same-value entry stamped with a new date would read as a
+    flat (non-rising) step and zero out Streak/Velocity in Early Movers even
+    though no real market data changed.
+
     Caps at MAX_HISTORY_RUNS entries (rolling window).
     Returns the updated history list.
     """
@@ -593,12 +620,23 @@ def append_score_history(universe_name, input_path, result_df):
         if z3m_val is not None and pd.notna(z3m_val):
             z3m_scores[ticker] = round(float(z3m_val), 4)
 
-    history.append({
-        "run_date":   datetime.date.today().isoformat(),
+    # Skip if the underlying data hasn't actually moved since the last
+    # recorded run (no new trading day's prices were reflected)
+    if history and history[-1].get("scores") == scores:
+        return history
+
+    today_str = datetime.date.today().isoformat()
+    entry = {
+        "run_date":   today_str,
         "file_mtime": mtime_str,
         "scores":     scores,
         "z3m_scores": z3m_scores,
-    })
+    }
+
+    if history and history[-1].get("run_date") == today_str:
+        history[-1] = entry
+    else:
+        history.append(entry)
 
     if len(history) > MAX_HISTORY_RUNS:
         history = history[-MAX_HISTORY_RUNS:]
@@ -1129,9 +1167,11 @@ with tab_exits:
             held     = (TODAY - rec["entry_date"]).days
             rank_val = result.loc[ticker, "RANK"]       if ticker in result.index else np.nan
             pct52    = result.loc[ticker, "PCT_FROM_52H"] if ticker in result.index else np.nan
+            reldd    = result.loc[ticker, "REL_52H_DD"] if ticker in result.index else np.nan
 
             # Determine explicit exit trigger category
             is_52h_breach = pd.notna(pct52) and pct52 < -25
+            is_reldd_breach = pd.notna(reldd) and reldd < rel_dd_breach_threshold
 
             is_circuit_breach = False
             if circuit_filter_enabled and ticker in result.index and "TOTAL_CIRCUIT_HITS" in result.columns:
@@ -1160,6 +1200,10 @@ with tab_exits:
                 trigger = "ADTV_BREACH";     action = "⚠️ SELL IMMEDIATELY (Low ADTV)"
             elif pd.isna(rank_val):
                 trigger = "FILTER_BREACH";   action = "⚠️ SELL IMMEDIATELY"
+            elif is_reldd_breach and held >= 28:
+                trigger = "REL_DD_BREACH";   action = "🔻 SELL (relative 52H drawdown)"
+            elif is_reldd_breach and held < 28:
+                trigger = "REL_DD_LOCK";     action = f"🔒 Locked (Rel DD, {held}/28d)"
             elif pd.notna(rank_val) and rank_val > int(params["Rank Buffer"]) and held >= 28:
                 trigger = "RANK_EXIT";       action = "🔻 SELL (rank dropped)"
             elif pd.notna(rank_val) and rank_val > int(params["Rank Buffer"]) and held < 28:
@@ -1183,6 +1227,7 @@ with tab_exits:
                 "Trigger":         trigger,
                 "Rank":            int(rank_val) if pd.notna(rank_val) else None,
                 "52H%":            round(pct52, 1) if pd.notna(pct52) else None,
+                "Rel_52H_DD":      round(reldd, 1) if pd.notna(reldd) else None,
                 "Days Held":       held,
                 "Entry Date":      rec["entry_date"].isoformat(),
                 "Unrealised P&L":  round(unrealised_pnl_val, 0),
@@ -1348,8 +1393,9 @@ with tab_exits:
         st.markdown(
             f"**Positions:** {len(ledger)}  |  "
             f"**52H Exits:** {len(exit_df[exit_df['Trigger']=='52H_BREACH'])}  |  "
+            f"**Rel DD Exits:** {len(exit_df[exit_df['Trigger']=='REL_DD_BREACH'])}  |  "
             f"**Rank Exits:** {len(exit_df[exit_df['Trigger']=='RANK_EXIT'])}  |  "
-            f"**Hold-Locked:** {len(exit_df[exit_df['Trigger']=='HOLD_LOCK'])}  |  "
+            f"**Hold-Locked:** {len(exit_df[exit_df['Trigger'].isin(['HOLD_LOCK', 'REL_DD_LOCK'])])}  |  "
             f"**Healthy:** {len(exit_df[exit_df['Trigger']=='HEALTHY'])}")
 
 # ── TAB 3: TRADELOG & MTM ─────────────────────────────────────────────────────
@@ -1696,10 +1742,10 @@ with tab_calcs:
                                 min(100, len(result)), 10)
     with fc3:
         sort_col = st.selectbox("Sort by",
-                                 ["RANK", "COMPOSITE", "RES_MOM", "PCT_FROM_52H"])
+                                 ["RANK", "COMPOSITE", "RES_MOM", "PCT_FROM_52H", "REL_52H_DD"])
 
     display_cols = ["RANK", "SERIES", "COMPOSITE", "SHARPE_3"]
-    for c in ["RES_MOM", "1M%", "3M%", "12M%", "PCT_FROM_52H"]:
+    for c in ["RES_MOM", "1M%", "3M%", "12M%", "PCT_FROM_52H", "REL_52H_DD", "BETA"]:
         if c in result.columns: display_cols.append(c)
 
     calcs_df = result[[c for c in display_cols if c in result.columns]].copy()
@@ -1718,12 +1764,16 @@ with tab_calcs:
     fmt = {c: "{:.3f}" for c in calcs_df.columns
            if c not in ["RANK", "TICKER", "SERIES"]}
     fmt["PCT_FROM_52H"] = "{:.1f}"
+    fmt["REL_52H_DD"]   = "{:.1f}"
     for c in ["1M%", "3M%", "12M%"]:
         if c in fmt: fmt[c] = "{:.1f}"
+    if "BETA" in fmt: fmt["BETA"] = "{:.2f}"
 
     def style_calcs(row):
         if pd.notna(row.get("PCT_FROM_52H")) and row["PCT_FROM_52H"] < -25:
             return ["background-color:#FFF8F8; color:#B0B0B0;"] * len(row)
+        if pd.notna(row.get("REL_52H_DD")) and row["REL_52H_DD"] < rel_dd_breach_threshold:
+            return ["background-color:#FCE8E6;"] * len(row)
         try:
             if pd.notna(row.get("RANK")) and int(row["RANK"]) <= dynamic_n:
                 return ["background-color:#E8F5E9;"] * len(row)
@@ -1738,6 +1788,7 @@ with tab_calcs:
         f"Universe: {len(stock_tickers)}  |  "
         f"Eligible: {(result['PCT_FROM_52H'] >= -25).sum()}  |  "
         f"Disqualified: {(result['PCT_FROM_52H'] < -25).sum()}  |  "
+        f"Rel_52H_DD < {rel_dd_breach_threshold:.0f}%: {(result['REL_52H_DD'] < rel_dd_breach_threshold).sum()}  |  "
         f"Regime N (green rows): {dynamic_n}")
 
 # ── TAB 5: EARLY MOVERS ──────────────────────────────────────────────────────
@@ -1965,6 +2016,19 @@ with tab_config:
                 pass
 
     st.divider()
+    st.markdown("#### 📉 Relative 52H Drawdown Exit")
+    st.caption("Additive Spread Approach: Rel_52H_DD = Stock's % distance from its 52W high "
+               "minus the benchmark's % distance from its 52W high. A held stock whose "
+               "Rel_52H_DD falls below the threshold below is flagged REL_DD_BREACH in the "
+               "Actions Monitor (respects the 28-day hold lock).")
+    st.number_input(
+        "Rel_52H_DD Breach Threshold (%)",
+        min_value=-50, max_value=0, step=1, format="%d",
+        key="cfg_rel_dd_breach_threshold",
+        help="A held stock is flagged REL_DD_BREACH when its Rel_52H_DD (stock's 52H-high "
+             "distance minus benchmark's) falls below this value. Default: -20.")
+
+    st.divider()
     st.markdown("#### 📋 Strategy Parameters (Read-only)")
 
     for k, v in params.items():
@@ -1986,6 +2050,7 @@ with tab_config:
                 "eq_series_filter":       st.session_state.cfg_eq_series_filter,
                 "circuit_filter_enabled": st.session_state.cfg_circuit_filter_enabled,
                 "circuit_threshold":      int(st.session_state.cfg_circuit_threshold),
+                "rel_dd_breach_threshold": int(st.session_state.cfg_rel_dd_breach_threshold),
             }
             try:
                 _saved_path = ml.save_config(_current_cfg, str(SCRIPT_DIR))

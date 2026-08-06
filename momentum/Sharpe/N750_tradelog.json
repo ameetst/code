@@ -529,5 +529,23 @@
     "action": "BUY",
     "quantity": 165,
     "price": 456.35
+  },
+  {
+    "id": "087bd70f-bb49-48a4-bbd3-2ab27551189f",
+    "date": "2026-08-06",
+    "timestamp": "2026-08-06T17:00:03.606303",
+    "ticker": "SANSERA",
+    "action": "SELL",
+    "quantity": 26,
+    "price": 3769.0
+  },
+  {
+    "id": "95de563d-f89b-4bbc-9b21-63f3d19bd6d5",
+    "date": "2026-08-06",
+    "timestamp": "2026-08-06T17:00:26.322329",
+    "ticker": "CUPID",
+    "action": "SELL",
+    "quantity": 350,
+    "price": 262.9
   }
 ]

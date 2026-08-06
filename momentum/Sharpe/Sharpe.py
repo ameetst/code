@@ -6,7 +6,8 @@ Ranks NSE N500 stocks by a multi-window momentum composite.
 Scores computed (via momentum_lib):
   SHARPE_ALL  — equal-weighted Z-score of 12M/9M/6M/3M Sharpe ratios
   SHARPE_3    — equal-weighted Z-score of 12M/6M/3M Sharpe ratios
-  RES_MOM     — equal-weighted Z-score of 12M/9M/6M/3M residual Sharpe
+  RES_MOM     — equal-weighted Z-score of 12M/9M/6M/3M residual Information
+                Ratio (alpha / residual vol vs NIFTY500, date-aligned OLS)
                 (display only — not used in ranking or exit logic)
 
 Eligibility filter : PCT_FROM_52H >= -25%
@@ -108,6 +109,7 @@ DRY_RUN           = _args.dry_run
 EQ_SERIES_FILTER        = _saved_cfg["eq_series_filter"]
 CIRCUIT_FILTER_ENABLED  = _saved_cfg["circuit_filter_enabled"]
 CIRCUIT_HIT_THRESHOLD   = _saved_cfg["circuit_threshold"]
+REL_DD_BREACH_THRESHOLD = _saved_cfg["rel_dd_breach_threshold"]  # Rel_52H_DD exit trigger
 BAND_CSV                = _SCRIPT_DIR / "Price_Band_List.csv"
 
 # -- DYNAMIC REGIME PARAMETERS -------------------------------------------------
@@ -409,7 +411,7 @@ print(f"  Dynamic N     : {dynamic_n}  "
 
 # -- EXIT EVALUATION -----------------------------------------------------------
 #
-# Two exit triggers — evaluated independently for every held position.
+# Exit triggers — evaluated independently for every held position.
 #
 # EXIT_52H  — 52H disqualification.
 #   The stock has PCT_FROM_52H < -25%.
@@ -418,6 +420,12 @@ print(f"  Dynamic N     : {dynamic_n}  "
 # EXIT_FILTER — Non-rank eligibility disqualification.
 #   The stock has no RANK for a non-52H reason, e.g. ADTV failure or missing data.
 #   This is kept separate so liquidity/data issues are not mislabeled as 52H breaches.
+#
+# EXIT_REL_DD — Relative 52H drawdown breach.
+#   The stock has REL_52H_DD < REL_DD_BREACH_THRESHOLD, i.e. it is drawing
+#   down worse than the benchmark (relative to each one's own peak) by more
+#   than the configured margin. Respects the 28-day hold lock, same as
+#   EXIT_RANK.
 #
 # EXIT_RANK — Rank-based exit.
 #   The stock's rank has fallen beyond HOLD_RANK_BUFFER (40)
@@ -434,6 +442,7 @@ print(f"{'-'*60}")
 
 exit_52h_list    = []   # immediate exits — 52H breach (lock overridden)
 exit_filter_list = []   # non-52H eligibility exits — e.g. ADTV failure / missing rank
+exit_reldd_list  = []   # relative 52H drawdown exits — respects hold lock
 exit_rank_list   = []   # rank exits — rank > 40 AND hold >= 28 days
 hold_list        = []   # retained positions
 
@@ -441,6 +450,7 @@ for ticker, rec in ledger.items():
     held_days  = days_held(ticker, ledger)
     rank_val   = result.loc[ticker, "RANK"] if ticker in result.index else np.nan
     pct52h_val = result.loc[ticker, "PCT_FROM_52H"] if ticker in result.index else np.nan
+    reldd_val  = result.loc[ticker, "REL_52H_DD"] if ticker in result.index else np.nan
     adtv_val   = result.loc[ticker, "ADTV_ELIGIBLE"] if (
         ticker in result.index and "ADTV_ELIGIBLE" in result.columns
     ) else True
@@ -452,6 +462,7 @@ for ticker, rec in ledger.items():
             "held_days":    held_days,
             "rank":         None,
             "pct_52h":      round(pct52h_val, 1) if pd.notna(pct52h_val) else None,
+            "rel_dd":       round(reldd_val, 1) if pd.notna(reldd_val) else None,
             "entry_date":   rec["entry_date"].isoformat(),
             "entry_price":  rec["entry_price"],
             "exit_trigger": "52H_BREACH",
@@ -485,12 +496,38 @@ for ticker, rec in ledger.items():
             "held_days":    held_days,
             "rank":         None,
             "pct_52h":      round(pct52h_val, 1) if pd.notna(pct52h_val) else None,
+            "rel_dd":       round(reldd_val, 1) if pd.notna(reldd_val) else None,
             "entry_date":   rec["entry_date"].isoformat(),
             "entry_price":  rec["entry_price"],
             "exit_trigger": trigger,
         })
 
-    # -- Trigger 2: Rank exit (respects 28-day lock)
+    # -- Trigger 2: Relative 52H drawdown exit (respects 28-day lock)
+    elif pd.notna(reldd_val) and reldd_val < REL_DD_BREACH_THRESHOLD:
+        if held_days >= MIN_HOLD_DAYS:
+            exit_reldd_list.append({
+                "ticker":       ticker,
+                "held_days":    held_days,
+                "rank":         int(rank_val) if pd.notna(rank_val) else None,
+                "pct_52h":      round(pct52h_val, 1) if pd.notna(pct52h_val) else None,
+                "rel_dd":       round(reldd_val, 1),
+                "entry_date":   rec["entry_date"].isoformat(),
+                "entry_price":  rec["entry_price"],
+                "exit_trigger": "REL_DD_BREACH",
+            })
+        else:
+            # Relative drawdown breached but hold lock still active — hold and note
+            hold_list.append({
+                "ticker":       ticker,
+                "held_days":    held_days,
+                "rank":         int(rank_val) if pd.notna(rank_val) else None,
+                "pct_52h":      round(pct52h_val, 1) if pd.notna(pct52h_val) else None,
+                "rel_dd":       round(reldd_val, 1),
+                "note":         f"rel_dd {reldd_val:.1f} < {REL_DD_BREACH_THRESHOLD} but lock active "
+                                f"({held_days}/{MIN_HOLD_DAYS}d)",
+            })
+
+    # -- Trigger 3: Rank exit (respects 28-day lock)
     elif rank_val > HOLD_RANK_BUFFER:
         if held_days >= MIN_HOLD_DAYS:
             exit_rank_list.append({
@@ -498,6 +535,7 @@ for ticker, rec in ledger.items():
                 "held_days":    held_days,
                 "rank":         int(rank_val),
                 "pct_52h":      round(pct52h_val, 1) if pd.notna(pct52h_val) else None,
+                "rel_dd":       round(reldd_val, 1) if pd.notna(reldd_val) else None,
                 "entry_date":   rec["entry_date"].isoformat(),
                 "entry_price":  rec["entry_price"],
                 "exit_trigger": "RANK_EXIT",
@@ -509,21 +547,23 @@ for ticker, rec in ledger.items():
                 "held_days":    held_days,
                 "rank":         int(rank_val),
                 "pct_52h":      round(pct52h_val, 1) if pd.notna(pct52h_val) else None,
+                "rel_dd":       round(reldd_val, 1) if pd.notna(reldd_val) else None,
                 "note":         f"rank {int(rank_val)} > {HOLD_RANK_BUFFER} but lock active "
                                 f"({held_days}/{MIN_HOLD_DAYS}d)",
             })
     else:
-        # Healthy — rank within buffer, no 52H breach
+        # Healthy — rank within buffer, no 52H breach, no rel_dd breach
         hold_list.append({
             "ticker":    ticker,
             "held_days": held_days,
             "rank":      int(rank_val),
             "pct_52h":   round(pct52h_val, 1) if pd.notna(pct52h_val) else None,
+            "rel_dd":    round(reldd_val, 1) if pd.notna(reldd_val) else None,
             "note":      "HOLD",
         })
 
 # -- PRINT EXIT SUMMARY --------------------------------------------------------
-all_exits = exit_52h_list + exit_filter_list + exit_rank_list
+all_exits = exit_52h_list + exit_filter_list + exit_reldd_list + exit_rank_list
 
 if exit_52h_list:
     print(f"\n  [EXIT — 52H BREACH]  Sell immediately. Hold lock overridden.")
@@ -541,6 +581,15 @@ if exit_filter_list:
     for e in exit_filter_list:
         print(f"  {e['ticker']:<14} {e['held_days']:>4}d  "
               f"  {e['exit_trigger']:>10}  {str(e['pct_52h']):>7}  "
+              f"{e['entry_date']:>10}  {e['entry_price']:>10,.2f}")
+
+if exit_reldd_list:
+    print(f"\n  [EXIT — REL DD BREACH]  Rel_52H_DD < {REL_DD_BREACH_THRESHOLD}% and hold >= {MIN_HOLD_DAYS} days.")
+    print(f"  {'TICKER':<14} {'HELD':>5}  {'RANK':>6}  {'52H%':>7}  {'REL_DD':>7}  {'ENTRY':>10}  {'@ PRICE':>10}")
+    print(f"  {'-'*70}")
+    for e in exit_reldd_list:
+        print(f"  {e['ticker']:<14} {e['held_days']:>4}d  "
+              f"  {str(e['rank']):>6}  {str(e['pct_52h']):>7}  {str(e['rel_dd']):>7}  "
               f"{e['entry_date']:>10}  {e['entry_price']:>10,.2f}")
 
 if exit_rank_list:
@@ -565,6 +614,7 @@ if not ledger:
 
 print(f"\n  Summary: {len(exit_52h_list)} 52H exit(s)  |  "
       f"{len(exit_filter_list)} eligibility exit(s)  |  "
+      f"{len(exit_reldd_list)} rel-DD exit(s)  |  "
       f"{len(exit_rank_list)} rank exit(s)  |  {len(hold_list)} hold(s)")
 print(f"{'-'*60}")
 
@@ -662,12 +712,14 @@ HEAD = (f"{'RNK':>4}  {'TICKER':<12}  {'STATUS':<10}  {'TARGET_WT':>9}  {'ALLOC_
 # Determine per-ticker display status
 exit_tickers  = {e["ticker"] for e in exit_52h_list}
 filter_exit_set = {e["ticker"] for e in exit_filter_list}
+reldd_exit_set = {e["ticker"] for e in exit_reldd_list}
 rank_exit_set = {e["ticker"] for e in exit_rank_list}
 new_entry_set = set(entry_candidates)
 
 def ticker_status(ticker):
     if ticker in exit_tickers:   return "EXIT-52H"
     if ticker in filter_exit_set:return "EXIT-FLTR"
+    if ticker in reldd_exit_set: return "EXIT-RELDD"
     if ticker in rank_exit_set:  return "EXIT-RANK"
     if ticker in new_entry_set:  return "NEW BUY"
     if ticker in currently_held: return "HOLD"
@@ -708,7 +760,7 @@ print(f" {'-':>4}  {'CASH (LIQUID)':<12}  {'':10}  {total_cash_weight*100:8.1f}%
 print(SEP)
 print(f"\n  SHARPE_ALL = mean(Z_12M..Z_3M)  |  "
       f"SHARPE_3 = mean(Z_12M,Z_6M,Z_3M)  |  "
-      f"RES_MOM = residual Sharpe composite (display only)\n")
+      f"RES_MOM = residual Information Ratio composite (display only)\n")
 
 # -- EXCEL OUTPUT --------------------------------------------------------------
 print(f"Writing {OUTPUT_FILE} ...")
@@ -760,6 +812,7 @@ def row_style(ticker):
     """Return (font, bg_fill) based on exit / entry status."""
     if ticker in exit_tickers:   return AMBER_FONT, EXIT52_FILL
     if ticker in filter_exit_set:return RED_FONT,   EXITRK_FILL
+    if ticker in reldd_exit_set: return RED_FONT,   EXITRK_FILL
     if ticker in rank_exit_set:  return RED_FONT,   EXITRK_FILL
     if ticker in new_entry_set:  return GREEN_FONT, NEWBY_FILL
     return GOLD_FONT, HOLD_FILL
@@ -832,7 +885,7 @@ for extra_col in range(6, 10):
 ws_exit = wb_out.create_sheet("EXITS")
 ws_exit.sheet_view.showGridLines = False
 
-ws_exit.merge_cells("A1:H1")
+ws_exit.merge_cells("A1:I1")
 te           = ws_exit["A1"]
 te.value     = (f"Exit Actions  .  {TODAY.strftime('%d-%b-%Y')}  .  "
                 f"{len(all_exits)} exit(s) this rebalance")
@@ -842,7 +895,7 @@ te.alignment = Alignment(horizontal="center", vertical="center")
 ws_exit.row_dimensions[1].height = 22
 
 exit_cols = [
-    ("TICKER", 14), ("TRIGGER", 14), ("RANK", 8), ("52H%", 8),
+    ("TICKER", 14), ("TRIGGER", 14), ("RANK", 8), ("52H%", 8), ("REL_DD", 8),
     ("HELD_DAYS", 10), ("ENTRY_DATE", 12), ("ENTRY_PRICE", 13), ("NOTE", 30),
 ]
 for c, (col_name, col_w) in enumerate(exit_cols, 1):
@@ -857,6 +910,7 @@ for i, e in enumerate(all_exits, 3):
     note    = (
         "Lock overridden — 52H breach" if is_52h
         else f"Rank > {HOLD_RANK_BUFFER}, held >= {MIN_HOLD_DAYS}d" if e["exit_trigger"] == "RANK_EXIT"
+        else f"Rel_52H_DD < {REL_DD_BREACH_THRESHOLD}%, held >= {MIN_HOLD_DAYS}d" if e["exit_trigger"] == "REL_DD_BREACH"
         else "Failed non-52H eligibility filter"
     )
     vals = [
@@ -864,6 +918,7 @@ for i, e in enumerate(all_exits, 3):
         (e["exit_trigger"],row_fnt, row_bg),
         (e.get("rank"),    row_fnt, row_bg),
         (e["pct_52h"],     row_fnt, row_bg),
+        (e.get("rel_dd"),  row_fnt, row_bg),
         (e["held_days"],   row_fnt, row_bg),
         (e["entry_date"],  row_fnt, row_bg),
         (e["entry_price"], row_fnt, row_bg),
@@ -871,11 +926,11 @@ for i, e in enumerate(all_exits, 3):
     ]
     for c, (val, fnt, bg_c) in enumerate(vals, 1):
         set_cell(ws_exit.cell(row=i, column=c), val, fnt, bg_c,
-                 align="left" if c in (1, 2, 8) else "right")
+                 align="left" if c in (1, 2, 9) else "right")
     ws_exit.row_dimensions[i].height = 16
 
 if not all_exits:
-    ws_exit.merge_cells("A3:H3")
+    ws_exit.merge_cells("A3:I3")
     nc = ws_exit["A3"]
     nc.value = "No exits this rebalance."
     nc.font  = MUTED_FONT
@@ -907,7 +962,7 @@ calcs_cols = [
     ("RZ_12M",     9), ("RZ_9M",      9), ("RZ_6M",    9), ("RZ_3M",   9),
     ("RES_MOM",   10),
     ("1M%",        8), ("3M%",        8), ("12M%",     8),
-    ("52H%",      10),
+    ("52H%",      10), ("REL_DD",    10), ("BETA",      8),
 ]
 for c, (col_name, col_w) in enumerate(calcs_cols, 1):
     set_hdr(ws2.cell(row=2, column=c), col_name)
@@ -921,6 +976,15 @@ for i, (ticker, row) in enumerate(result.iterrows(), 3):
     pct52h_ok  = pd.notna(pct52h) and pct52h >= -25
     pct52h_fnt = GREEN_FONT if pct52h_ok else MUTED_FONT
     pct52h_bg  = fill("E6F4EA") if pct52h_ok else fill("F0F0F0")
+    reldd      = row.get("REL_52H_DD", np.nan)
+    if pd.isna(reldd):
+        reldd_fnt, reldd_bg = MUTED_FONT, fill("F0F0F0")
+    elif reldd < REL_DD_BREACH_THRESHOLD:
+        reldd_fnt, reldd_bg = RED_FONT, fill("FCE8E6")
+    elif reldd >= 0:
+        reldd_fnt, reldd_bg = GREEN_FONT, fill("E6F4EA")
+    else:
+        reldd_fnt, reldd_bg = TEXT_FONT, bg
 
     values = [
         (rank_v,             GOLD_FONT,  bg,        None),
@@ -948,6 +1012,8 @@ for i, (ticker, row) in enumerate(result.iterrows(), 3):
         (row["3M%"],         TEXT_FONT,  bg,        "0.0"),
         (row["12M%"],        TEXT_FONT,  bg,        "0.0"),
         (pct52h,             pct52h_fnt, pct52h_bg, "0.0"),
+        (reldd,              reldd_fnt,  reldd_bg,  "0.0"),
+        (row.get("BETA", np.nan), MUTED_FONT, bg, "0.00"),
     ]
     for c, (val, fnt, bg_c, nfmt) in enumerate(values, 1):
         v = None if (isinstance(val, float) and np.isnan(val)) else val

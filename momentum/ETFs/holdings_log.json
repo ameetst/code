@@ -228,7 +228,7 @@
     ]
   },
   "2026-W32": {
-    "run_date": "2026-08-03 09:04",
+    "run_date": "2026-08-06 09:20",
     "regime": "BULL",
     "active_slots": 5,
     "allocation": [
@@ -240,7 +240,7 @@
         "weight": 0.2,
         "inv_rank": "2",
         "entry_price": 50.61,
-        "peak": 51.66
+        "peak": 51.71
       },
       {
         "slot": 2,
@@ -248,9 +248,9 @@
         "etf_name": "HDFC NIFTY Smallcap 250 ETF",
         "sector": "SMALLCAP",
         "weight": 0.2,
-        "inv_rank": "10",
+        "inv_rank": "12",
         "entry_price": 180.12,
-        "peak": 183.5
+        "peak": 183.29
       },
       {
         "slot": 3,
@@ -258,9 +258,9 @@
         "etf_name": "Motilal Oswal Nifty SC 250 ETF",
         "sector": "OTHER",
         "weight": 0.2,
-        "inv_rank": "8",
+        "inv_rank": "18",
         "entry_price": 17.97,
-        "peak": 18.1299991607666
+        "peak": 18.13
       },
       {
         "slot": 4,
@@ -270,7 +270,7 @@
         "weight": 0.2,
         "inv_rank": "1",
         "entry_price": 27.27,
-        "peak": 27.309999465942383
+        "peak": 27.33
       },
       {
         "slot": 5,
@@ -280,7 +280,7 @@
         "weight": 0.2,
         "inv_rank": "6",
         "entry_price": 19.6,
-        "peak": 19.65999984741211
+        "peak": 19.81
       }
     ]
   }

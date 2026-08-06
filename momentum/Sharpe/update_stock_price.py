@@ -241,6 +241,26 @@ def main(input_file: str, output_file: str, extra_copy_dir: str = None):
     # ── Tickers with no data at all ──────────────────────────────────────────
     errors = [t for t in tickers if not all_close.get(t)]
 
+    # ── Harden date headers: formula → literal values ─────────────────────────
+    # Row 1 in the template is a live Excel array formula (dates roll off
+    # TODAY()). openpyxl can't evaluate formulas, so re-saving this workbook
+    # would otherwise drop the cached date values, forcing every downstream
+    # reader (momentum_lib.load_prices) to fall back to inferring dates from
+    # column position. We already have the correct dates in date_cols /
+    # vol_date_cols (read from the template's cache before it goes stale) —
+    # write them back as literal values so the output file never depends on
+    # formula recalculation again.
+    print("Hardening date headers (formula -> literal values)…")
+    for date, col in date_cols.items():
+        cell = ws_data.cell(row=1, column=col)
+        cell.value = date
+        cell.number_format = "dd-mmm-yy"
+    if ws_vol is not None:
+        for date, col in vol_date_cols.items():
+            cell = ws_vol.cell(row=1, column=col)
+            cell.value = date
+            cell.number_format = "dd-mmm-yy"
+
     # ── Save ──────────────────────────────────────────────────────────────────
     print(f"\nSaving → {output_file}")
     wb.save(output_file)

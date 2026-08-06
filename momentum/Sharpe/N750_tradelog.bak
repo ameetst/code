@@ -516,10 +516,10 @@
     "id": "0aba5370-e9b4-4c0e-83f2-b9f9b8e0eae3",
     "date": "2026-08-03",
     "timestamp": "2026-08-03T14:59:46.740457",
-    "ticker": "UTLSOLAR",
+    "ticker": "DIACABS",
     "action": "BUY",
     "quantity": 235,
-    "price": 380.5
+    "price": 320.3
   },
   {
     "id": "da9afad7-89a5-4f17-b8dc-73d8ecd460bc",
@@ -529,5 +529,14 @@
     "action": "BUY",
     "quantity": 165,
     "price": 456.35
+  },
+  {
+    "id": "087bd70f-bb49-48a4-bbd3-2ab27551189f",
+    "date": "2026-08-06",
+    "timestamp": "2026-08-06T17:00:03.606303",
+    "ticker": "SANSERA",
+    "action": "SELL",
+    "quantity": 26,
+    "price": 3769.0
   }
 ]
