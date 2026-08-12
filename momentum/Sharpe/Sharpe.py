@@ -113,8 +113,16 @@ REL_DD_BREACH_THRESHOLD = _saved_cfg["rel_dd_breach_threshold"]  # Rel_52H_DD ex
 BAND_CSV                = _SCRIPT_DIR / "Price_Band_List.csv"
 
 # -- DYNAMIC REGIME PARAMETERS -------------------------------------------------
-MIN_N               = 5      # minimum holdings at lowest regime score
-MAX_N               = 25     # maximum holdings at highest regime score
+MIN_N               = _saved_cfg["min_n"]   # minimum holdings at lowest regime score
+MAX_N               = _saved_cfg["max_n"]   # maximum holdings at highest regime score
+
+# Max Position Weight (%) / Max Position Size (INR) are fully derived from
+# MAX_N — an equal-weight share of capital across the largest the portfolio
+# can ever grow to. Not an independent setting.
+MAX_WT                = 1.0 / MAX_N
+MAX_WT_PCT            = MAX_WT * 100.0
+MAX_POSITION_SIZE_INR = PORTFOLIO_CAPITAL / MAX_N
+
 NEW_ENTRY_THRESHOLD = 0.40   # regime score below this — no new buys
 SIGNAL_WEIGHTS      = {      # must sum to 1.0
     "ema50_breadth":     0.35,   # % stocks > own EMA50
@@ -695,10 +703,12 @@ for ticker in top_n_tickers:
 
 total_raw = sum(raw_weights.values())
 for ticker in top_n_tickers:
-    norm_w   = raw_weights[ticker] / total_raw if total_raw > 0 else 1.0 / len(top_n_tickers)
-    capped_w = min(0.05, norm_w)
+    norm_w      = raw_weights[ticker] / total_raw if total_raw > 0 else 1.0 / len(top_n_tickers)
+    raw_alloc   = norm_w * PORTFOLIO_CAPITAL
+    capped_alloc = min(raw_alloc, MAX_POSITION_SIZE_INR)
+    capped_w    = capped_alloc / PORTFOLIO_CAPITAL if PORTFOLIO_CAPITAL > 0 else 0.0
     result.loc[ticker, "TARGET_WT"] = capped_w
-    result.loc[ticker, "ALLOC_INR"] = capped_w * PORTFOLIO_CAPITAL
+    result.loc[ticker, "ALLOC_INR"] = capped_alloc
 
 total_equity_weight = result.head(TOP_N)["TARGET_WT"].sum()
 total_cash_weight   = max(0.0, 1.0 - total_equity_weight)
@@ -736,7 +746,8 @@ print(f"  REGIME SCORE   : {regime_score:.2f}  "
 print(f"  Windows        : 12M/9M/6M/3M (Overlapping)  |  RFR={RFR_ANNUAL*100:.1f}%")
 print(f"  Policies       : Weekly | {MIN_HOLD_DAYS}-Day Hold Lock | "
       f"52H% >= -25% | Rank buffer = {HOLD_RANK_BUFFER}")
-print(f"  Capital Model  : {PORTFOLIO_CAPITAL:,.0f} INR | 5% Cap Vol Sizing | "
+print(f"  Capital Model  : {PORTFOLIO_CAPITAL:,.0f} INR | {MAX_WT_PCT:.1f}% Cap "
+      f"({MAX_POSITION_SIZE_INR:,.0f} INR) Vol Sizing | "
       f"Cash yield {LIQUID_YIELD_PA*100:.0f}% p.a. | Entry threshold {NEW_ENTRY_THRESHOLD}")
 print(f"{'':=<100}")
 

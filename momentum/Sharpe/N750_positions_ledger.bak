@@ -1,4 +1,8 @@
 {
+  "CUPID": {
+    "entry_date": "2026-08-10",
+    "entry_price": 261.24
+  },
   "HFCL": {
     "entry_date": "2026-05-25",
     "entry_price": 188.87779521003722
@@ -6,6 +10,10 @@
   "LAURUSLABS": {
     "entry_date": "2026-05-25",
     "entry_price": 1360.0754716981132
+  },
+  "SANSERA": {
+    "entry_date": "2026-08-10",
+    "entry_price": 3849.2
   },
   "ACUTAAS": {
     "entry_date": "2026-07-07",
@@ -18,10 +26,6 @@
   "CPPLUS": {
     "entry_date": "2026-06-23",
     "entry_price": 3616.0100000000007
-  },
-  "STLTECH": {
-    "entry_date": "2026-06-23",
-    "entry_price": 609.0
   },
   "SYRMA": {
     "entry_date": "2026-06-23",
@@ -47,10 +51,6 @@
     "entry_date": "2026-07-13",
     "entry_price": 897.95
   },
-  "TORNTPHARM": {
-    "entry_date": "2026-07-13",
-    "entry_price": 4816.27
-  },
   "ATHERENERG": {
     "entry_date": "2026-07-13",
     "entry_price": 1191.4
@@ -59,12 +59,24 @@
     "entry_date": "2026-07-13",
     "entry_price": 7047.0
   },
-  "DIACABS": {
-    "entry_date": "2026-08-03",
-    "entry_price": 320.3
-  },
   "HONASA": {
     "entry_date": "2026-08-03",
     "entry_price": 456.35
+  },
+  "SHILPAMED": {
+    "entry_date": "2026-08-10",
+    "entry_price": 803.35
+  },
+  "SONACOMS": {
+    "entry_date": "2026-08-10",
+    "entry_price": 818.25
+  },
+  "SKYGOLD": {
+    "entry_date": "2026-08-10",
+    "entry_price": 759.5
+  },
+  "BHARATFORG": {
+    "entry_date": "2026-08-10",
+    "entry_price": 2262.9
   }
 }

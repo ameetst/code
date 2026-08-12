@@ -80,13 +80,17 @@ CONFIG_FILENAME = "dashboard_config.json"
 CONFIG_DEFAULTS = {
     "file":                    "N750_updated.xlsx",
     "capital":                 1_500_000,
-    "max_wt_pct":              5,
+    "min_n":                   5,     # minimum holdings at lowest regime score
+    "max_n":                   25,    # maximum holdings at highest regime score
     "min_turnover":            1.0,
     "eq_series_filter":        True,
     "circuit_filter_enabled":  True,
     "circuit_threshold":       20,
     "rel_dd_breach_threshold": -20,
 }
+# Max Position Weight (%) / Max Position Size (INR) are derived from
+# capital / max_n (see Sharpe.py, sharpe_dashboard.py) — not stored here,
+# since they're a calculation, not an independent setting.
 
 
 def load_config(config_dir: str = None) -> dict:
@@ -1083,7 +1087,7 @@ DEFAULT_NEW_ENTRY_THRESHOLD = 0.40
 
 def compute_regime_score(
     nifty_s: pd.Series,
-    eligible_mask: pd.Series,
+    pct52h_mask: pd.Series,
     composite_series: pd.Series,
     prices_df: pd.DataFrame = None,
     signal_weights: dict = None,
@@ -1092,11 +1096,23 @@ def compute_regime_score(
     new_entry_threshold: float = None,
 ) -> tuple:
     """
-    Compute a continuous Regime Strength Score (0.0 to 1.0) from 4 signals:
-      Signal 1: EMA50 breadth     — % of universe stocks trading above their own EMA50
-      Signal 2: EMA trend breadth — % of universe stocks with their EMA50 > their EMA200
-      Signal 3: 52H breadth       — % stocks within -25% of 52-week high
-      Signal 4: Momentum breadth  — % eligible stocks with COMPOSITE > 1.5
+    Compute a continuous Regime Strength Score (0.0 to 1.0) from 4 signals.
+
+    Regime score deliberately measures the WHOLE universe, not just the
+    ADTV/EQ/circuit-tradable subset — it answers "how healthy is the market",
+    a different question from "what can I actually buy" (that's what the
+    ranking eligibility gate in compute_universe_rankings is for; it is
+    untouched by this function and still governs RANK/entries/exits).
+    Coupling regime score to tradability gates was tried and reverted — it
+    only introduced inconsistencies between signals with no real benefit.
+
+      Signal 1: EMA50 breadth     — % of whole universe trading above their own EMA50
+      Signal 2: EMA trend breadth — % of whole universe with their EMA50 > their EMA200
+      Signal 3: 52H breadth       — % of whole universe within -25% of 52-week high
+      Signal 4: Momentum breadth  — % of 52H-qualifying stocks with COMPOSITE > 1.5
+
+    `pct52h_mask` : boolean Series indexed by ticker — PCT_FROM_52H >= -25 only
+    (NOT the full ranking-eligibility gate). Drives Signals 3 & 4.
 
     Returns (regime_score: float, detail: dict)
     """
@@ -1119,7 +1135,7 @@ def compute_regime_score(
             "eligible": 0, "note": "insufficient data",
         }
 
-    # Signal 1 & 2: Universe EMA breadth
+    # Signal 1 & 2: Universe EMA breadth (whole universe, no eligibility gates)
     if prices_df is not None and len(prices_df.columns) >= 200:
         ema50_all   = prices_df.T.ewm(span=50,  adjust=False).mean().T
         ema200_all  = prices_df.T.ewm(span=200, adjust=False).mean().T
@@ -1141,13 +1157,13 @@ def compute_regime_score(
         ema50_score     = 1.0 if price > ema50 else 0.0
         ema_trend_score = 1.0 if ema50 > ema200 else 0.0
 
-    # Signal 3: 52H breadth
-    total_stocks = len(eligible_mask)
-    elig_count   = int(eligible_mask.sum())
+    # Signal 3: 52H breadth (whole universe)
+    total_stocks = len(pct52h_mask)
+    elig_count   = int(pct52h_mask.sum())
     breadth_score = elig_count / total_stocks if total_stocks > 0 else 0.5
 
-    # Signal 4: Momentum breadth
-    elig_comp      = composite_series[eligible_mask]
+    # Signal 4: Momentum breadth (within the 52H-qualifying population)
+    elig_comp      = composite_series[pct52h_mask]
     pos_mom        = int((elig_comp > 1.5).sum())
     momentum_score = pos_mom / max(1, elig_count)
 
@@ -1296,9 +1312,12 @@ def compute_universe_rankings(
     result = result.join(ret_df).join(resmom_df).join(rs_z)
     result["BETA"] = beta_series
 
-    # 6. Dynamic Regime Score
+    # 6. Dynamic Regime Score — measures the WHOLE universe (Signals 1-4 all
+    # exclude the ADTV/EQ/circuit tradability gates), decoupled from the
+    # `eligible`/RANK gate above, which still governs actual entries/exits.
+    pct52h_mask = result["PCT_FROM_52H"] >= -25
     regime_score, regime_detail = compute_regime_score(
-        nifty_series, eligible, result["COMPOSITE"],
+        nifty_series, pct52h_mask, result["COMPOSITE"],
         prices_df=prices_df,
         signal_weights=signal_weights,
         min_n=min_n,

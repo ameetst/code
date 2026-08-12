@@ -1,0 +1,9 @@
+{
+  "file": "N750_updated.xlsx",
+  "capital": 1500000,
+  "max_wt_pct": 5,
+  "min_turnover": 1.0,
+  "eq_series_filter": true,
+  "circuit_filter_enabled": false,
+  "circuit_threshold": 20
+}

@@ -547,5 +547,86 @@
     "action": "SELL",
     "quantity": 350,
     "price": 262.9
+  },
+  {
+    "id": "4a252b89-e5ce-480c-8eb9-75fe02f54ac7",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T09:32:45.903387",
+    "ticker": "DIACABS",
+    "action": "SELL",
+    "quantity": 235,
+    "price": 352.8
+  },
+  {
+    "id": "9ff8c19e-d2f5-4f68-b8aa-1481867aa6ad",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T09:33:04.892431",
+    "ticker": "STLTECH",
+    "action": "SELL",
+    "quantity": 123,
+    "price": 621.0
+  },
+  {
+    "id": "0250c5e2-5158-4fce-a88f-767aac231b1a",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T09:51:32.934796",
+    "ticker": "TORNTPHARM",
+    "action": "SELL",
+    "quantity": 15,
+    "price": 4940.5
+  },
+  {
+    "id": "a32a7af8-af9b-4434-a36b-b7664cfcf0ca",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T13:46:45.751686",
+    "ticker": "CUPID",
+    "action": "BUY",
+    "quantity": 225,
+    "price": 261.24
+  },
+  {
+    "id": "ebee57fd-79f2-413b-ba0c-31b43f5f5e28",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T13:47:08.086679",
+    "ticker": "SANSERA",
+    "action": "BUY",
+    "quantity": 15,
+    "price": 3849.2
+  },
+  {
+    "id": "45267fd2-97ca-40ad-b67e-cc6a4044bb0a",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T13:47:34.146122",
+    "ticker": "SHILPAMED",
+    "action": "BUY",
+    "quantity": 70,
+    "price": 803.35
+  },
+  {
+    "id": "8d59b05b-3fdd-4676-a0b8-236d6c8f2b62",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T13:47:55.520925",
+    "ticker": "SONACOMS",
+    "action": "BUY",
+    "quantity": 70,
+    "price": 818.25
+  },
+  {
+    "id": "27d58003-9691-4714-a654-138dfd4d46be",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T13:48:24.328952",
+    "ticker": "SKYGOLD",
+    "action": "BUY",
+    "quantity": 75,
+    "price": 759.5
+  },
+  {
+    "id": "37220026-3ca7-4800-a95a-b73046806c85",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T13:48:56.885103",
+    "ticker": "BHARATFORG",
+    "action": "BUY",
+    "quantity": 26,
+    "price": 2262.9
   }
 ]

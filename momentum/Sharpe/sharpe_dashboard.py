@@ -405,8 +405,6 @@ def sync_to_positions_ledger(ledger_path, active_holdings):
 
 
 # ── REGIME PARAMETERS (sourced from momentum_lib — single source of truth) ────
-MIN_N               = ml.DEFAULT_MIN_N
-MAX_N               = ml.DEFAULT_MAX_N
 NEW_ENTRY_THRESHOLD = ml.DEFAULT_NEW_ENTRY_THRESHOLD
 SIGNAL_WEIGHTS      = ml.DEFAULT_SIGNAL_WEIGHTS
 
@@ -433,8 +431,10 @@ if "cfg_file" not in st.session_state:
         st.session_state.cfg_file = _cfg_preferred if _cfg_preferred else (_cfg_files[0] if _cfg_files else "")
 if "cfg_capital" not in st.session_state:
     st.session_state.cfg_capital = _saved_cfg["capital"]
-if "cfg_max_wt_pct" not in st.session_state:
-    st.session_state.cfg_max_wt_pct = _saved_cfg["max_wt_pct"]
+if "cfg_min_n" not in st.session_state:
+    st.session_state.cfg_min_n = _saved_cfg["min_n"]
+if "cfg_max_n" not in st.session_state:
+    st.session_state.cfg_max_n = _saved_cfg["max_n"]
 if "cfg_min_turnover" not in st.session_state:
     st.session_state.cfg_min_turnover = _saved_cfg["min_turnover"]
 if "cfg_eq_series_filter" not in st.session_state:
@@ -456,9 +456,17 @@ ledger_candidates = [
 ]
 LEDGER_FILE = next((str(p) for p in ledger_candidates if p.exists()),
                    str(ledger_candidates[0]))
-capital    = st.session_state.cfg_capital
-max_wt_pct = st.session_state.cfg_max_wt_pct
-max_wt     = max_wt_pct / 100.0
+capital = st.session_state.cfg_capital
+MIN_N   = int(st.session_state.cfg_min_n)
+MAX_N   = int(st.session_state.cfg_max_n)
+
+# Max Position Weight (%) / Max Position Size (INR) are fully derived from
+# capital / MAX_N — an equal-weight share across the largest the portfolio
+# can ever grow to. Not an independent setting.
+max_wt     = 1.0 / MAX_N
+max_wt_pct = max_wt * 100.0
+max_position_size_inr = capital / MAX_N   # max INR allocatable to a single position
+
 min_turnover_cr       = st.session_state.cfg_min_turnover
 eq_series_filter      = st.session_state.cfg_eq_series_filter
 circuit_filter_enabled = st.session_state.cfg_circuit_filter_enabled
@@ -513,31 +521,6 @@ def compute_all(_prices_df, _nifty_series, _stock_tickers, _volume_df,
         trading_days=TRADING_DAYS,
         rfr_annual=RFR_ANNUAL,
     )
-
-def compute_weights(result, dynamic_n, capital_val, max_weight):
-    top_tickers = result.head(dynamic_n).index.tolist()
-    raw_w = {}
-    for t in top_tickers:
-        if t not in prices_df.index:
-            continue
-        comp = result.loc[t, "COMPOSITE"]
-        px   = prices_df.loc[t].dropna()
-        if len(px) > 10:
-            vols = []
-            for w in [252, 189, 126, 63]:
-                pw = px.iloc[-w:] if len(px) >= w else px
-                lr = np.diff(np.log(pw.values))
-                if len(lr) > 5: vols.append(np.std(lr, ddof=1) * np.sqrt(252))
-            raw_w[t] = comp / np.mean(vols) if vols and np.mean(vols) > 0 else comp
-        else:
-            raw_w[t] = comp
-    total = sum(raw_w.values())
-    weights = {}
-    for t in raw_w:
-        nw = raw_w[t] / total if total > 0 else 1.0 / len(raw_w)
-        weights[t] = min(max_weight, nw)
-    cash_wt = max(0.0, 1.0 - sum(weights.values()))
-    return weights, cash_wt
 
 def load_ledger(path):
     p = Path(path)
@@ -799,7 +782,6 @@ regime_history = append_regime_history(universe, regime_score, regime_detail)
 
 dynamic_n = regime_detail["dynamic_n"]
 allow_new = regime_detail["allow_new"]
-weights, cash_wt = compute_weights(result, dynamic_n, capital, max_wt)
 
 # Load trade log and synchronize the positions ledger
 latest_prices = {ticker: get_latest_price(ticker, prices_df) for ticker in stock_tickers}
@@ -1320,10 +1302,13 @@ with tab_exits:
                 total_w = sum(raw_entry_w.values())
                 entry_weights = {}
                 for t in raw_entry_w:
-                    nw = raw_entry_w[t] / total_w if total_w > 0 else 1.0 / len(raw_entry_w)
-                    entry_weights[t] = min(max_wt, nw)
+                    nw           = raw_entry_w[t] / total_w if total_w > 0 else 1.0 / len(raw_entry_w)
+                    raw_alloc    = nw * capital
+                    capped_alloc = min(raw_alloc, max_position_size_inr)
+                    entry_weights[t] = capped_alloc / capital if capital > 0 else 0.0
 
-                # Target investment amount based on total capital (capped at max_wt e.g. 5%)
+                # Target investment amount based on total capital
+                # (capped at Max Position Size (INR), set in Configuration)
                 total_needed = sum(entry_weights[t] * capital for t in entry_weights)
 
                 if available_cash <= 0:
@@ -1960,8 +1945,20 @@ with tab_config:
     st.markdown("#### 💰 Capital & Sizing")
     st.number_input("Portfolio Capital (INR)", min_value=100_000,
                     step=100_000, format="%d", key="cfg_capital")
-    st.slider("Max Position Weight (%)", min_value=3, max_value=10,
-              step=1, format="%d%%", key="cfg_max_wt_pct")
+
+    pc1, pc2 = st.columns(2)
+    with pc1:
+        st.number_input("Min Positions", min_value=3, max_value=10,
+                        step=1, format="%d", key="cfg_min_n")
+    with pc2:
+        st.number_input("Max Positions", min_value=15, max_value=30,
+                        step=1, format="%d", key="cfg_max_n")
+
+    st.markdown(f"**Rs {max_position_size_inr:,.0f}**  Max Position Size (INR) "
+                f"*({max_wt_pct:.1f}% of capital)*")
+    st.caption("Auto-computed as Portfolio Capital ÷ Max Positions. This is the hard "
+               "cap on capital allocated to any single position — used by both the "
+               "dashboard's position sizing and Sharpe.py.")
 
     st.divider()
     st.markdown("#### 📊 ADTV Liquidity Filter")
@@ -2045,7 +2042,8 @@ with tab_config:
             _current_cfg = {
                 "file":                   st.session_state.cfg_file,
                 "capital":                st.session_state.cfg_capital,
-                "max_wt_pct":             st.session_state.cfg_max_wt_pct,
+                "min_n":                  int(st.session_state.cfg_min_n),
+                "max_n":                  int(st.session_state.cfg_max_n),
                 "min_turnover":           float(st.session_state.cfg_min_turnover),
                 "eq_series_filter":       st.session_state.cfg_eq_series_filter,
                 "circuit_filter_enabled": st.session_state.cfg_circuit_filter_enabled,
