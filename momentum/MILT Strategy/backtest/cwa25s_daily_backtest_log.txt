@@ -1,0 +1,31 @@
+Loading C:\Users\ameet\Documents\Github\code\momentum\MILT Strategy\backtest\MILT_N750_backtest.xlsx ...
+  750 tickers | 1239 daily bars (2021-08-11 -> 2026-08-11)
+
+Excluded 12 split-artifact ticker(s)
+
+Building daily indicators (BB50/2.5sigma, EMA100, ATR14) ...
+  735 tickers with usable daily history
+
+Running walk-forward DAILY backtest (this loops over ~1200+ days x ~700 tickers, may take a few minutes) ...
+  Simulated 1138 trading days (2022-01-05 -> 2026-08-10)
+  1415 closed trades
+
+Saved cwa25s_daily_backtest_equity.csv, cwa25s_daily_backtest_trades.csv
+
+======================================================================
+CWA 2.5-SIGMA (DAILY BARS) -- BACKTEST RESULTS
+======================================================================
+  Period            : 2022-01-05 -> 2026-08-10 (4.59 yrs)
+  CAGR              : +26.58%
+  Annualised vol    : 17.25%
+  Sharpe (rf 7%)    : 1.07
+  Max drawdown      : -23.75%
+  Trades            : 1415
+  Win rate          : 40.3%
+  Avg win / loss    : +14.43% / -6.09%
+  Best / worst trade: +207.93% / -26.07%
+  Avg hold period   : 18.3 days
+  Exit reasons      : {'atr_ratchet_stop': 1286, 'ema100_break': 104, 'open_at_backtest_end': 24, 'hard_stop_20pct': 1}
+  NIFTY500 CAGR (same window): +9.89%
+======================================================================
+Saved cwa25s_daily_backtest_equity.png

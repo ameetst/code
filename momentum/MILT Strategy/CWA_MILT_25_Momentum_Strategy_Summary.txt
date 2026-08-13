@@ -1,0 +1,78 @@
+MOMENTUM INVESTING LONG TERM (MILT) STRATEGY
+Summary of Rakesh Pujara's CWA MILT 25 Framework
+(From Sanjay Kathuria Podcast EP70)
+================================================================================
+
+OVERVIEW
+--------------------------------------------------------------------------------
+The CWA MILT 25 (Momentum Investing Long Term) strategy is a strictly rule-based, 
+algorithm-driven system designed to eliminate human emotion, biases, and the 
+need for fundamental forecasting. It operates on the core philosophy of momentum: 
+"What is in motion tends to stay in motion." 
+
+By ruthlessly cutting losers and letting winners run unchecked, the strategy 
+aims to capture massive "alpha" from a few multi-bagger stocks over a long period. 
+Historically, this specific approach yielded approximately 27% CAGR over 3 years.
+
+1. UNIVERSE & SIZING
+--------------------------------------------------------------------------------
+* Target Universe: Top 750 stocks on the National Stock Exchange (NSE). This 
+  includes Large, Mid, Small, and Micro-caps. Limiting to the index ensures a 
+  baseline of fundamentals and liquidity (generally companies above ~2000 Cr 
+  market cap), avoiding highly manipulated or illiquid stocks.
+* Portfolio Limit: Maximum 25 stocks at any given time.
+* Allocation: Equal weight initial allocation of 4% per stock.
+
+2. ENTRY RULES (THE SETUP)
+--------------------------------------------------------------------------------
+* Timeframe: Weekly charts. Scans are run after the Friday market close.
+* Core Indicator: Bollinger Bands.
+* The Setup: Instead of the standard 2.0 Standard Deviations (SD), this strategy 
+  uses an extreme 3.7 Standard Deviations on the upper band.
+* The Logic: 95% of price action falls within 2.0 SD. By requiring a close above 
+  3.7 SD, the strategy ignores "normal" stocks and only enters the top 1% of 
+  extreme outliers exhibiting explosive, unquestionable momentum.
+* Execution: If a stock closes above the 3.7 SD band on Friday, buy at the open 
+  on Monday morning.
+* Tie-Breakers: If the market is highly bullish and more than 25 stocks trigger 
+  a buy signal, filter the top 25 using Relative Strength (RS) or 12-month 
+  Rate of Change (ROC).
+
+3. EXIT RULES (THE SAFEGUARDS)
+--------------------------------------------------------------------------------
+Once invested, a stock is sold if it hits ANY of the following three conditions 
+based on a Friday close:
+
+1. Initial Stop Loss: A 20% drop from the purchase price. This protects against 
+   false breakouts.
+2. Trend Reversal (Trailing Stop): A weekly close below the 23-Week Moving Average. 
+   This helps capture the bulk of the profit once a stock has run up significantly, 
+   ensuring you don't ride a winner all the way back down.
+3. Vertical Fall Protection (ATR): A weekly close below the Average True Range 
+   (ATR), using settings of 14 periods and a 1.8 multiplier. 
+   Why use this? Sometimes a stock moves up vertically (e.g., jumps 4x in a few 
+   months). In such cases, the 23-week MA will be too far below the current price. 
+   If a sudden crash occurs, the ATR acts as a tighter circuit breaker to lock 
+   in gains before the stock drops all the way back to the moving average.
+
+4. PORTFOLIO MAINTENANCE
+--------------------------------------------------------------------------------
+* Do NOT Rebalance Winners: If a stock grows from a 4% allocation to a 10% or 
+  15% allocation due to price appreciation, leave it alone. Selling winners to 
+  rebalance is punishing merit. The outsized returns ("alpha") come from these 
+  runaway winners.
+* First-In, First-Out (FIFO): Stick with the stocks that triggered first in the 
+  momentum cycle. Late-stage signals in a bull cycle are often weaker stocks.
+* Low Time Commitment: The system demands zero attention from Tuesday to Thursday. 
+  Check signals on the weekend, execute on Monday morning (takes ~15 minutes a week).
+* Dealing with Drawdowns: During massive market corrections where momentum dies, 
+  the portfolio will naturally trigger stop-losses and transition into cash/liquid 
+  funds. For peace of mind, investors can set rules to park cash in Gold or T-Bills 
+  until momentum returns.
+
+CONCLUSION
+--------------------------------------------------------------------------------
+The MILT strategy forces an investor to do what is psychologically hardest: 
+buy stocks that have already gone up significantly, hold onto massive profits 
+without selling early, and accept small losses quickly without hoping they bounce 
+back.

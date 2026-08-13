@@ -1,0 +1,34 @@
+Reading universe from: N750.xlsx
+  751 tickers
+
+Downloading 1 index ticker(s): ['^CRSLDX']
+  ^CRSLDX (NIFTY500)  [ok] (492 rows)
+
+Downloading 750 equities (OHLCV) in 15 batches of <=50...
+  Batch 1/15: UTLSOLAR.NS ... KITEX.NS  [ok] (499 rows)
+  Batch 2/15: LXCHEM.NS ... IDFCFIRSTB.NS  [ok] (499 rows)
+  Batch 3/15: RBA.NS ... IEX.NS  [ok] (499 rows)
+  Batch 4/15: GAIL.NS ... WIPRO.NS  [ok] (499 rows)
+  Batch 5/15: LTF.NS ... EXIDEIND.NS  [ok] (499 rows)
+  Batch 6/15: BEL.NS ... ZAGGLE.NS  [ok] (499 rows)
+  Batch 7/15: SENCO.NS ... HINDZINC.NS  [ok] (499 rows)
+  Batch 8/15: GRAPHITE.NS ... TIPSMUSIC.NS  [ok] (499 rows)
+  Batch 9/15: ASHAPURMIN.NS ... TATACHEM.NS  [ok] (499 rows)
+  Batch 10/15: AHLUCONT.NS ... MANYAVAR.NS  [ok] (499 rows)
+  Batch 11/15: JYOTICNC.NS ... ERIS.NS  [ok] (499 rows)
+  Batch 12/15: ASTRAL.NS ... BEML.NS  [ok] (499 rows)
+  Batch 13/15: LUPIN.NS ... GODFRYPHLP.NS$AKZOINDIA.NS: possibly delisted; no price data found  (period=2y) (Yahoo error = "No data found, symbol may be delisted")
+
+1 Failed download:
+['AKZOINDIA.NS']: possibly delisted; no price data found  (period=2y) (Yahoo error = "No data found, symbol may be delisted")
+  [ok] (499 rows)
+  Batch 14/15: SHRIPISTON.NS ... ABB.NS  [ok] (499 rows)
+  Batch 15/15: CERA.NS ... FINPIPE.NS  [ok] (499 rows)
+
+Total distinct trading dates: 499 (2024-08-12 -> 2026-08-11)
+
+Writing MILT_N750_updated.xlsx ...
+Done.
+
+1 tickers had no Close data:
+   AKZOINDIA

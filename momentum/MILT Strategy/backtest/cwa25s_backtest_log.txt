@@ -1,0 +1,39 @@
+Loading C:\Users\ameet\Documents\Github\code\momentum\MILT Strategy\backtest\MILT_N750_backtest.xlsx ...
+  750 tickers | 1239 daily bars (2021-08-11 -> 2026-08-11)
+
+Screening for unadjusted split/bonus artifacts ...
+  12 ticker(s) excluded
+
+Building weekly OHLC + CWA 2.5-Sigma indicators (BB50/2.5sigma, EMA100, ATR14) ...
+  705 tickers with usable weekly history (need 100+ weeks for EMA100 to warm up)
+
+Running walk-forward weekly backtest ...
+  Simulated 161 weeks (2023-07-14 -> 2026-08-07)
+  228 closed trades
+
+Saved cwa25s_backtest_equity.csv, cwa25s_backtest_trades.csv
+
+======================================================================
+CWA 2.5-SIGMA -- BACKTEST RESULTS
+======================================================================
+  Period            : 2023-07-14 -> 2026-08-07 (3.07 yrs)
+  Start NAV         : Rs 1,500,000
+  End NAV           : Rs 3,817,014
+  Total return      : +154.47%
+  CAGR              : +35.61%
+  Annualised vol    : 18.51%
+  Sharpe (rf 7%)   : 1.36
+  Max drawdown      : -18.25%
+
+  Trades executed   : 228
+  Win rate          : 44.7%
+  Avg win / loss    : +43.68% / -11.22%
+  Best / worst trade: +937.16% / -28.43%
+  Avg hold period   : 15.8 weeks
+  Exit reasons      : {'atr_ratchet_stop': 193, 'open_at_backtest_end': 22, 'hard_stop_20pct': 12, 'ema100_break': 1}
+
+  --- NIFTY500 buy & hold, same period ---
+  CAGR              : +11.97%
+  Max drawdown      : -18.84%
+======================================================================
+Saved cwa25s_backtest_equity.png

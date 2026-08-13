@@ -1,0 +1,300 @@
+MILT STRATEGY -- IMPLEMENTATION SUMMARY
+As-built specification of the current codebase (milt_strategy.py, milt_gui.py,
+momentum_lib.py, and the backtest/ suite).
+(Companion to CWA_MILT_25_Momentum_Strategy_Summary.txt, the source rule
+writeup from the podcast, and "CWA 2.5 Sigma - original.txt", an alternative
+rule set that was backtested against MILT for comparison -- see section 8.
+NOTE: the file originally named "CWA 2.5 Sigma.txt" was renamed to
+"CWA 2.5 Sigma.ps" and then had its content replaced with MILT's own Pine
+Script implementation -- see section 9. The original CWA 2.5-Sigma content
+is preserved unchanged at "CWA 2.5 Sigma - original.txt" so section 8's
+backtest still has a source reference.)
+Last updated after: tuning BB_WINDOW via a parameter sweep, adding
+compounding equity tracking, fixing a stale-week evaluation bug, adding the
+CWA 2.5-Sigma comparison backtests, adding the desktop GUI, and adding a
+Pine Script export of MILT for TradingView.
+================================================================================
+
+OVERVIEW
+--------------------------------------------------------------------------------
+Live engine   : milt_strategy.py   -- weekly signal engine + paper ledger
+Desktop GUI   : milt_gui.py        -- Tkinter dashboard wrapping milt_strategy.py
+Shared library: momentum_lib.py    -- indicator + data-loading code, used by
+                                       every script below
+Data fetcher  : milt_update_prices.py -- yfinance OHLCV fetch
+
+backtest/ (historical simulation + strategy comparison, all against the same
+           5-year MILT_N750_backtest.xlsx dataset):
+  milt_backtest.py          -- MILT's own walk-forward simulator
+  milt_variant_backtest.py  -- MILT with a configurable --bb-window (used
+                                for the parameter sweep in section 2)
+  cwa25s_backtest.py        -- CWA 2.5-Sigma rules, weekly bars
+  cwa25s_daily_backtest.py  -- CWA 2.5-Sigma rules, daily bars
+  compare_strategies.py     -- MILT vs CWA25S side-by-side table generator
+
+No EMA is used for MILT's own trend/entry signals. The 23-week trend filter
+and the Bollinger Band basis are both plain SMAs (simple moving averages).
+The one place an exponential calculation appears in MILT is inside ATR's
+own smoothing (Wilder's method) -- see section 3. (The CWA 2.5-Sigma
+comparison variant in backtest/ does use a real EMA(100) trend filter --
+see section 8 -- but that is not part of MILT itself.)
+
+1. UNIVERSE & DATA
+--------------------------------------------------------------------------------
+* Universe      : N750.xlsx ticker list (top 750 NSE stocks), read from the
+                  DATA sheet column A. No separate market-cap filter is
+                  applied in code -- N750 membership is treated as already
+                  enforcing the doc's ~2000 Cr floor.
+* Data source   : yfinance, via milt_update_prices.py
+                    - History window (live)      : 2 years  (--period 2y default)
+                    - History window (backtest)   : 5 years (backtest/ copy)
+                    - Fields fetched              : Open, High, Low, Close, Volume
+                    - auto_adjust                 : True (splits/dividends --
+                      known to occasionally fail on real splits; see the
+                      data-quality screen in section 7)
+                    - Batch size / sleep          : 50 tickers/batch, 2s between batches
+                  Output: MILT_N750_updated.xlsx (live, in MILT Strategy/)
+                  with 5 sheets (DATA=Close, OPEN, HIGH, LOW, VOLUME),
+                  tickers x dates. The backtest copy is
+                  backtest/MILT_N750_backtest.xlsx (5-year history).
+* Bars traded on: Weekly, resampled from daily via pandas resample("W-FRI")
+                    open  = first daily Open of the week
+                    high  = max daily High of the week
+                    low   = min daily Low of the week
+                    close = last daily Close of the week (=Friday's close)
+
+2. ENTRY RULE
+--------------------------------------------------------------------------------
+* Indicator     : Bollinger Band, upper band only
+                    BB_WINDOW (basis SMA period)  = 30 weeks   <- see note below
+                    BB_STD (multiplier)           = 3.7   (population stdev, ddof=0)
+                    upper_band = SMA(close, 30) + 3.7 * stdev(close, 30)
+* Signal        : weekly close > upper_band, evaluated on the most recently
+                  COMPLETED Friday bar (see section 6 on the as-of-date logic)
+* Execution     : buy at the next available daily Open after the signal
+                  Friday (normally the following Monday)
+* Tie-break     : if candidate signals exceed available portfolio slots,
+                  rank by ROC_LOOKBACK_DAYS = 252 trading days (~12-month)
+                  price rate-of-change, keep the top N by descending ROC.
+                  (Doc allows RS-or-ROC; only ROC is implemented.)
+
+  >>> TUNED PARAMETER (was an assumption, now backtest-validated): the
+      source video only ever stated the 3.7 SD multiplier, never the
+      Bollinger basis period. This was originally defaulted to the
+      textbook 20 weeks as a guess. It was then swept across
+      20/30/40/50/60/70 weeks in backtest/milt_variant_backtest.py (same
+      5-year dataset, same portfolio engine, only BB_WINDOW changed):
+
+        BB_WINDOW   CAGR      Ann.Vol   Sharpe   MaxDD     Trades  WinRate
+        20 (orig.)  +17.42%   10.85%    0.89     -9.05%    76      56.6%
+        30          +31.97%   15.10%    1.45     -12.02%   168     60.1%
+        40          +31.20%   16.22%    1.32     -14.39%   190     53.7%
+        50          +29.76%   16.26%    1.25     -16.00%   195     54.4%
+        60          +27.68%   16.75%    1.12     -17.71%   198     48.5%
+        70          +27.19%   15.30%    1.19     -13.37%   172     49.4%
+        (all on the same 2022-01-21 -> 2026-08-07 window)
+
+      30 gave the best result on every metric shown, and it sits on a
+      smooth peak (sharp rise from 20->30, then a gentle decline through
+      40/50/60/70) rather than an isolated spike -- a reassuring
+      robustness signature, though this is still evaluated against a
+      single 5-year historical window, so it is a tuned choice, not a
+      proven-forever one. milt_strategy.py now uses BB_WINDOW = 30.
+
+3. EXIT RULES (checked in this order; first match wins, evaluated on the
+   same completed-Friday bar as entries)
+--------------------------------------------------------------------------------
+  1. STOP_LOSS_PCT = 0.20
+     Exit if close <= entry_price * (1 - 0.20)   [20% drop from entry]
+
+  2. MA_PERIOD = 23 weeks (SMA, not EMA)
+     Exit if close < SMA(close, 23)
+
+  3. ATR_PERIOD = 14 weeks, ATR_MULT = 1.8
+     ATR computed with Wilder's smoothing:
+       True Range = max(high-low, |high-prev_close|, |low-prev_close|)
+       ATR        = EMA(True Range, alpha = 1/14)      <- the one EMA in MILT
+     Exit if close < (highest weekly close since entry - 1.8 * ATR)
+  >>> ASSUMPTION (unchanged, not re-tuned): this is implemented as a
+      chandelier-style trailing stop (peak close since entry, minus
+      1.8x ATR, recomputed fresh each week using the CURRENT ATR). The
+      source doc describes the intent ("lock in gains before a vertical
+      move gives it all back") but not the exact formula. Note this
+      differs from the CWA 2.5-Sigma variant's chandelier (section 8),
+      which instead RATCHETS (running max, never loosens even if ATR
+      later expands) -- the two are different, both-legitimate variants
+      of the classic "chandelier exit."
+
+4. POSITION SIZING & PORTFOLIO RULES
+--------------------------------------------------------------------------------
+* MAX_POSITIONS = 25
+* POSITION_PCT  = 0.04   (4% per new entry)
+* Sizing base   : 4% of CURRENT mark-to-market equity (cash + open positions,
+                  marked at each ticker's latest available close) -- NOT a
+                  fixed starting-capital figure. This compounds the same way
+                  in both the live script and the backtest. Live tracking is
+                  via MILT_portfolio_state.json (cash balance) -- see section 5.
+* No rebalancing: winning positions are never trimmed; they float above 4%
+                  as they appreciate (matches "do not rebalance winners").
+* FIFO          : existing holdings are never displaced by new signals --
+                  only removed via the exit rules in section 3. Available
+                  entry slots = MAX_POSITIONS - currently held.
+* Starting capital (config default): CAPITAL = Rs 1,500,000
+* Optional Gold/T-Bill cash park during drawdowns (mentioned in the source
+  doc as optional): NOT implemented. Idle cash currently earns 0% in both
+  the live script and the backtest.
+
+5. LIVE PORTFOLIO STATE (milt_strategy.py)
+--------------------------------------------------------------------------------
+Persistent JSON files, all in the MILT Strategy/ folder:
+  MILT_positions_ledger.json  -- open positions (entry price, shares, peak close)
+  MILT_portfolio_state.json   -- cash balance (drives compounding position sizing)
+  MILT_tradelog.json          -- closed-trade history (append-only)
+  MILT_equity_history.json    -- one NAV snapshot per calendar day the script is run
+No real broker integration -- these are paper-tracking records only. Every
+number here is also what milt_gui.py reads to render its dashboard (see
+section 9) -- the GUI does not maintain any state of its own.
+
+6. OPERATIONAL CADENCE
+--------------------------------------------------------------------------------
+* Signals are evaluated against the most recently COMPLETED Friday bar as of
+  the date the script is run (latest_completed_bar() in milt_strategy.py) --
+  NOT simply "the last row of data," which would pick up an in-progress
+  partial week if run Mon-Thu after that day's daily bar has already been
+  fetched. This was a real bug, fixed during development -- see git history
+  / conversation log if you need the before/after detail.
+* Recommended two-step weekly run (via CLI or the GUI's two buttons):
+    Fri, after 4pm  : python milt_strategy.py --update --dry-run
+                       (or GUI: "Preview (Friday) - dry run")
+                       preview only; nothing saved -- Monday's Open doesn't
+                       exist in the data yet, so nothing CAN be executed yet
+    Mon, ~10am+     : python milt_strategy.py --update
+                       (or GUI: "Update & Commit (Monday)")
+                       Monday's Open is now in the data; commits any
+                       triggered entries/exits to the ledger at that price
+* Running mid-week is harmless (falls back to the same last-Friday signal)
+  but produces nothing new.
+* The GUI's "Update & Commit" button asks for a confirmation dialog before
+  running, since it's the state-changing action; "Preview" and "Refresh"
+  do not.
+
+7. BACKTEST DATA-QUALITY NOTES (apply to every script in backtest/)
+--------------------------------------------------------------------------------
+* Data-quality screen: excludes any ticker with a single-day daily Close
+  ratio outside [0.56, 1.8] (screen_split_artifacts() in milt_backtest.py,
+  reused by every other backtest script) -- catches unadjusted stock
+  splits/bonuses that yfinance's auto_adjust missed (confirmed on 12 of 750
+  tickers in the 5-year dataset, e.g. GPIL's 5:1 split on 2024-01-01
+  showing as a fake -80% single-day crash).
+* Benchmark comparison: NIFTY500 (^CRSLDX) buy-and-hold over the same window.
+* Known caveats (apply to every backtest result quoted anywhere in this
+  document):
+    - Survivorship bias: today's N750 list is used for the whole backtest
+      window, so stocks later dropped from it never appear as losers.
+    - No transaction costs, slippage, or STT/brokerage modeled -- this
+      matters more for strategies with more trades (see section 8).
+    - Data window (5 years fetched) is shorter than, and does not overlap
+      with, the "27% CAGR over 3 years" the source video cites -- these
+      backtest results are not a replication of that number.
+    - Parameters (BB_WINDOW=30) were selected by testing against this same
+      historical window -- smoothness across the sweep reduces but does not
+      eliminate the risk that this is fit to one period of history.
+
+* MILT's own result, current parameters (BB_WINDOW=30, full 5-year window,
+  2022-01-21 -> 2026-08-07, after the split-artifact screen):
+    CAGR +31.97% | Ann. vol 15.10% | Sharpe 1.45 | Max drawdown -12.02%
+    168 trades | 60.1% win rate
+    vs NIFTY500 buy-and-hold over the same window: CAGR +10.32% / MaxDD -18.84%
+  See backtest/milt_variant_bbw30_equity.csv / milt_variant_bbw30_trades.csv
+  for the full run (re-run `python milt_variant_backtest.py --bb-window 30`
+  to regenerate). The original BB=20 baseline run is preserved separately as
+  backtest/milt_backtest_equity.csv / milt_backtest_trades.csv for reference,
+  and the full 20/30/40/50/60/70 sweep outputs (milt_variant_bbw*_equity.csv
+  / _trades.csv) are all still in backtest/ if you want to inspect any of
+  the other tested windows.
+
+8. ALTERNATIVE STRATEGY COMPARISON: CWA 2.5-SIGMA
+--------------------------------------------------------------------------------
+"CWA 2.5 Sigma - original.txt" (preserved copy; the original filename/file
+was repurposed for MILT's own Pine Script -- see section 9) is a
+TradingView Pine Script indicator with different entry/exit rules. It was
+implemented in backtest/cwa25s_backtest.py (weekly)
+and backtest/cwa25s_daily_backtest.py (daily), wrapped in the SAME portfolio
+engine as MILT (N750 universe, 4% of current equity, max 25 positions, 12M
+ROC tie-break) so the comparison isolates just the entry/exit rule
+differences, not portfolio-construction differences.
+
+CWA 2.5-Sigma rules (differ from MILT in every one of these ways):
+  - BB(50, 2.5 sigma) instead of BB(30, 3.7 sigma)
+  - Requires close > EMA(100) as an entry trend filter (MILT has none)
+  - Entry is a fresh crossover(close, bb_upper) (fires once); MILT re-flags
+    every week close > bb_upper (a level check, not a crossover)
+  - Exit's ATR stop RATCHETS (running max of close-1.8*ATR, never loosens);
+    MILT's recomputes fresh each week against the current ATR (can loosen
+    if ATR later expands)
+  - Exit's trend-break uses EMA(100), not a 23-week SMA
+
+Time-matched results (2023-07-14 -> 2026-08-07, the overlapping window):
+  Strategy                    CAGR      Vol      Sharpe   MaxDD     Trades  WinRate
+  MILT (BB=30)                +37.84%   16.30%   1.62     -13.86%   132     53.0%
+  CWA 2.5-Sigma (weekly)      +35.61%   18.51%   1.36     -18.25%   206     41.7%
+  CWA 2.5-Sigma (daily bars)  +32.55%   17.47%   1.33     -23.75%   953     42.1%
+
+Verdict: MILT (BB=30) beats CWA 2.5-Sigma on every metric in this backtest
+-- higher CAGR, higher Sharpe, lower volatility, shallower drawdown, and
+about a third as many trades (fewer trades = less real-world cost drag,
+which none of these numbers account for). Running the SAME CWA 2.5-Sigma
+logic on daily bars instead of weekly was tested and is NOT recommended:
+it did not improve Sharpe or CAGR, but it did produce the worst drawdown of
+the three (-23.75%) and ~4.6x more trades than the weekly version for that
+same window -- more risk and far more effort for no better return.
+See backtest/compare_strategies.py to regenerate this table.
+
+9. DESKTOP GUI (milt_gui.py)
+--------------------------------------------------------------------------------
+Pure Tkinter (Python stdlib, no extra install). A thin wrapper only -- it
+runs milt_strategy.py as a subprocess and reads its JSON state files; no
+strategy logic is duplicated in the GUI.
+  Run: python milt_gui.py
+  Shows: cash / open positions / mark-to-market equity / return vs starting
+         capital (status bar); Open Positions tab (entry date/price, shares,
+         current price, live P&L%); Trade History tab (from MILT_tradelog.json)
+  Buttons:
+    Refresh                    -- re-reads local files only, instant, no fetch
+    Preview (Friday) dry run   -- python milt_strategy.py --update --dry-run
+    Update & Commit (Monday)   -- python milt_strategy.py --update (asks for
+                                   confirmation first -- this is the
+                                   state-changing action)
+  A live log pane streams the subprocess's stdout while a run is in progress.
+
+10. TRADINGVIEW PINE SCRIPT EXPORT ("CWA 2.5 Sigma.ps")
+--------------------------------------------------------------------------------
+"CWA 2.5 Sigma.ps" (same folder) is a Pine Script v6 implementation of MILT
+itself -- BB(30, 3.7-sigma), 23-week SMA trend-break exit, ATR(14, 1.8x)
+non-ratcheting chandelier, 20% hard stop, no entry trend filter -- for
+charting/monitoring MILT on TradingView. It mirrors milt_strategy.py's exit
+priority order (hard stop > trend break > ATR chandelier) and its
+level-check (not crossover) entry condition.
+
+  >>> MUST be applied to a WEEKLY chart in TradingView. All periods in the
+      script (30/23/14) are weeks, matching milt_strategy.py -- applying it
+      to a daily or other intraday chart will not reproduce the backtested
+      behaviour (see section 8's daily-bar test for why that materially
+      changes the results even with identical rule logic).
+
+This is a monitoring/charting aid only -- it does not place orders, and it
+has no awareness of your actual N750 portfolio, position sizing, or the
+25-position cap; those live only in milt_strategy.py / milt_gui.py.
+
+CONCLUSION
+--------------------------------------------------------------------------------
+Every numeric rule the source video stated explicitly (3.7 SD, 23-week MA,
+ATR 14/1.8x, 20% stop, 4% sizing, max 25 positions) is implemented verbatim.
+Two points were never stated explicitly and required a judgment call: the
+Bollinger basis period (originally a 20-week guess, since tuned to 30 weeks
+via backtest sweep -- section 2) and the exact form of the ATR exit
+(implemented as a non-ratcheting chandelier trailing stop -- section 3). An
+alternative rule set (CWA 2.5-Sigma) was implemented and backtested
+head-to-head under an identical portfolio engine; MILT (BB=30) outperformed
+it on every measured metric (section 8), so it remains the live strategy in
+milt_strategy.py / milt_gui.py.

@@ -1,0 +1,28 @@
+Loading C:\Users\ameet\Documents\Github\code\momentum\MILT Strategy\backtest\MILT_N750_backtest.xlsx ...
+  750 tickers | 1239 daily bars
+
+Excluded 12 split-artifact ticker(s)
+
+Building weekly indicators with BB_WINDOW=30 BB_STD=2.5 (MA=23w, ATR=14w) ...
+  735 tickers with usable weekly history
+
+Running walk-forward weekly backtest ...
+  Simulated 238 weeks (2022-01-21 -> 2026-08-07)
+  335 closed trades
+
+Saved milt_variant_bbw30_std2p5_equity.csv, milt_variant_bbw30_std2p5_trades.csv
+
+======================================================================
+MILT (BB_WINDOW=30, BB_STD=2.5) -- BACKTEST RESULTS
+======================================================================
+  Period            : 2022-01-21 -> 2026-08-07 (4.54 yrs)
+  CAGR              : +31.97%
+  Annualised vol    : 21.47%
+  Sharpe (rf 7%)    : 1.07
+  Max drawdown      : -21.48%
+  Trades            : 335
+  Win rate          : 46.3%
+  Avg win / loss    : +39.78% / -11.93%
+  Best / worst trade: +415.92% / -49.75%
+  NIFTY500 CAGR (same window): +10.32%
+======================================================================

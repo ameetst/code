@@ -1,0 +1,105 @@
+//@version=6
+indicator("CWA 2.5-Sigma (With Performance Labels)", overlay=true)
+
+// ==========================================
+// 1. INPUT PARAMETERS
+// ==========================================
+bbGroup   = "Bollinger Bands Settings"
+bbPeriod  = input.int(50, title="BB Period", minval=1, group=bbGroup)
+bbSigma   = input.float(2.5, title="BB Standard Deviation (Sigma)", step=0.1, group=bbGroup)
+
+trendGroup = "Trend Filter Settings"
+emaPeriod  = input.int(100, title="Trend EMA Period", minval=1, group=trendGroup)
+
+riskGroup  = "Volatility & Risk Settings"
+atrPeriod  = input.int(14, title="ATR Period", minval=1, group=riskGroup)
+atrFactor  = input.float(1.8, title="ATR Trailing Factor", step=0.1, group=riskGroup)
+maxSLPerc  = input.float(20.0, title="Maximum Stop Loss (%)", step=0.5, group=riskGroup)
+
+// ==========================================
+// 2. INDICATOR CALCULATIONS
+// ==========================================
+trendEma = ta.ema(close, emaPeriod)
+
+bbBasis = ta.sma(close, bbPeriod)
+bbDev   = bbSigma * ta.stdev(close, bbPeriod)
+bbUpper = bbBasis + bbDev
+bbLower = bbBasis - bbDev
+
+atrVal = ta.atr(atrPeriod)
+
+// ==========================================
+// 3. LOGIC & SIGNALS
+// ==========================================
+var bool inPosition = false
+var float entryPrice = na
+var float trailingStop = na
+var float hardMaxStop = na
+
+bool trendIsBullish = close > trendEma
+bool bbBreakout     = ta.crossover(close, bbUpper)
+bool buyCondition   = trendIsBullish and bbBreakout and not inPosition
+
+if buyCondition
+    inPosition := true
+    entryPrice := close
+    trailingStop := close - (atrFactor * atrVal)
+    hardMaxStop  := close * (1.0 - (maxSLPerc / 100.0))
+else if inPosition
+    float currentAtrStop = close - (atrFactor * atrVal)
+    if currentAtrStop > trailingStop
+        trailingStop := currentAtrStop
+
+bool hitAtrStop = inPosition and (close < trailingStop)
+bool hitEmaStop = inPosition and (close < trendEma)
+bool hitTslStop = inPosition and (close < hardMaxStop)
+
+bool sellCondition = hitAtrStop or hitEmaStop or hitTslStop
+
+string exitReasonText = ""
+float tradeReturnPerc = na
+
+if sellCondition
+    if hitTslStop
+        exitReasonText := "TSL"
+    else if hitEmaStop
+        exitReasonText := "EMA"
+    else if hitAtrStop
+        exitReasonText := "ATR"
+    
+    // Calculate the percentage difference between the closing exit price and entry price
+    tradeReturnPerc := ((close - entryPrice) / entryPrice) * 100.0
+        
+    inPosition   := false
+    entryPrice   := na
+    trailingStop := na
+    hardMaxStop  := na
+
+// ==========================================
+// 4. CHART PLOTTING & VISUALS
+// ==========================================
+plot(trendEma, title="100 EMA", color=color.blue, linewidth=2)
+plot(bbBasis, title="BB Basis (50 SMA)", color=color.gray, style=plot.style_line, linewidth=1)
+pUpper = plot(bbUpper, title="BB Upper (2.5-Sigma)", color=color.green, linewidth=1)
+pLower = plot(bbLower, title="BB Lower (2.5-Sigma)", color=color.red, linewidth=1)
+fill(pUpper, pLower, color=color.new(color.purple, 95), title="BB Channel Background")
+
+plot(inPosition ? trailingStop : na, title="Trailing Stop Loss", color=color.orange, style=plot.style_linebr, linewidth=2)
+
+plotshape(buyCondition, title="Buy Signal", style=shape.triangleup, location=location.belowbar, color=color.green, size=size.small, text="BUY")
+
+// Draw Dynamic Exit Labels with specific trade returns formatted to 1 decimal place
+if sellCondition
+    // Add '+' sign visually if it's a profitable trade
+    string prefixStr = tradeReturnPerc >= 0 ? "+" : ""
+    string labelText = "EXIT (" + exitReasonText + ")\n" + prefixStr + str.tostring(tradeReturnPerc, "#.#") + "%"
+    
+    label.new(
+       x=bar_index, 
+       y=high, 
+       text=labelText, 
+       style=label.style_label_down, 
+       color=tradeReturnPerc >= 0 ? color.teal : color.maroon, 
+       textcolor=color.white, 
+       size=size.small
+     )

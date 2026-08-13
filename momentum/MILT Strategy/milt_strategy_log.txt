@@ -1,0 +1,25 @@
+Loading MILT_N750_updated.xlsx ...
+  750 tickers | 499 daily date columns (2024-08-12 -> 2026-08-11)
+
+Building weekly OHLC + indicators (Bollinger/ATR/23W MA) ...
+  Weekly indicators built for 747 tickers (3 skipped -- insufficient OHLC history)
+
+Loading position ledger ...
+  Ledger not found at 'MILT_positions_ledger.json' -- starting with empty ledger.
+
+Evaluating exit rules on held positions ...
+  No exits triggered.
+
+Scanning for entry signals (25 slot(s) available) ...
+  0 candidate breakout(s) found
+
+[DRY RUN] Ledger changes NOT saved.
+
+======================================================================
+SUMMARY
+======================================================================
+  Exits executed   : 0
+  Entries executed : 0
+  Open positions   : 0 / 25
+  Capital deployed : Rs 0 / Rs 1,500,000 (0.0%)
+  Cash / liquid    : Rs 1,500,000 (100.0%)

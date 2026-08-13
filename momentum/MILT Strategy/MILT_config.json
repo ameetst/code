@@ -1,0 +1,9 @@
+{
+  "capital": 1500000.0,
+  "max_positions": 25,
+  "bb_window": 30,
+  "bb_std": 3.7,
+  "stop_loss_pct": 0.2,
+  "atr_period": 14,
+  "atr_mult": 1.8
+}

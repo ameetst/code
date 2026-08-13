@@ -1,0 +1,25 @@
+Loading C:\Users\ameet\Documents\Github\code\momentum\MILT Strategy\backtest\MILT_N750_backtest.xlsx ...
+Excluded 12 split-artifact ticker(s)
+Building weekly indicators -- WITH EMA(100w) trend filter ...
+  660 tickers with usable weekly history
+
+Running walk-forward weekly backtest ...
+  Simulated 238 weeks (2022-01-21 -> 2026-08-07)
+  164 closed trades
+
+Saved milt_trendfilter_ema100_equity.csv, milt_trendfilter_ema100_trades.csv
+
+======================================================================
+MILT WITH EMA(100w) trend filter -- BACKTEST RESULTS
+======================================================================
+  Period            : 2022-01-21 -> 2026-08-07 (4.54 yrs)
+  CAGR              : +32.37%
+  Annualised vol    : 15.03%
+  Sharpe (rf 7%)    : 1.47
+  Max drawdown      : -12.02%
+  Trades            : 164
+  Win rate          : 61.0%
+  Avg win / loss    : +50.21% / -12.03%
+  Best / worst trade: +1138.98% / -26.20%
+  NIFTY500 CAGR (same window): +10.32%
+======================================================================

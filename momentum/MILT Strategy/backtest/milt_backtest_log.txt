@@ -1,0 +1,42 @@
+Loading MILT_N750_backtest.xlsx ...
+  750 tickers | 1239 daily bars (2021-08-11 -> 2026-08-11)
+
+Screening for unadjusted split/bonus artifacts (single-day close ratio outside [0.56, 1.8]) ...
+  12 ticker(s) excluded: ['ABFRL', 'CGCL', 'DIACABS', 'GPIL', 'JSLL', 'MOTILALOFS', 'PARAS', 'QUESS', 'REDTAPE', 'SKFINDIA', 'STAR', 'VEDL']
+
+Building weekly OHLC + indicators for every ticker ...
+  735 tickers with usable weekly history
+
+Running walk-forward weekly backtest ...
+  Simulated 238 weeks (2022-01-21 -> 2026-08-07)
+  76 closed trades
+
+Saved milt_backtest_equity.csv, milt_backtest_trades.csv
+
+======================================================================
+MILT STRATEGY -- BACKTEST RESULTS
+======================================================================
+  Period            : 2022-01-21 -> 2026-08-07 (4.54 yrs)
+  Start NAV         : Rs 1,500,000
+  End NAV           : Rs 3,110,224
+  Total return      : +107.35%
+  CAGR              : +17.42%
+  Annualised vol    : 10.85%
+  Sharpe (rf 7%)   : 0.89
+  Max drawdown      : -9.05%
+
+  Trades executed   : 76
+  Win rate          : 56.6%
+  Avg win / loss    : +66.25% / -14.71%
+  Best / worst trade: +1051.80% / -25.31%
+  Avg hold period   : 16.8 weeks
+  Exit reasons      : {'atr_chandelier_stop': 52, 'trend_reversal_23wma': 16, 'stop_loss_20pct': 5, 'open_at_backtest_end': 3}
+
+  --- NIFTY500 buy & hold, same period ---
+  Total return      : +56.20%
+  CAGR              : +10.32%
+  Annualised vol    : 14.62%
+  Max drawdown      : -18.84%
+======================================================================
+CAVEATS: survivorship bias (today's N750 list used for the whole backtest window), no transaction costs/slippage modeled, short data window vs. the strategy's claimed 3-year track record. See the module docstring for details.
+Saved milt_backtest_equity.png
