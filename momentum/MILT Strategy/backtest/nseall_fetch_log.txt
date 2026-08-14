@@ -1,0 +1,76 @@
+Reading universe from: ../Sharpe/NSEAll.xlsx
+  2078 tickers
+
+Downloading 1 index ticker(s): ['^CRSLDX']
+  ^CRSLDX (NIFTY500)  [ok] (1229 rows)
+
+Downloading 2076 equities (OHLCV) in 42 batches of <=50...
+  Batch 1/42: 20MICRONS.NS ... ADROITINFO.NS  [ok] (1239 rows)
+  Batch 2/42: ADSL.NS ... ALKYLAMINE.NS$AKZOINDIA.NS: possibly delisted; no price data found  (period=5y) (Yahoo error = "No data found, symbol may be delisted")
+
+1 Failed download:
+['AKZOINDIA.NS']: possibly delisted; no price data found  (period=5y) (Yahoo error = "No data found, symbol may be delisted")
+  [ok] (1239 rows)
+  Batch 3/42: ALLCARGO.NS ... ARIHANTSUP.NS  [ok] (1239 rows)
+  Batch 4/42: ARIS.NS ... AUTOAXLES.NS  [ok] (1239 rows)
+  Batch 5/42: AUTOIND.NS ... BANSWRAS.NS  [ok] (1239 rows)
+  Batch 6/42: BASF.NS ... BLKASHYAP.NS  [ok] (1239 rows)
+  Batch 7/42: BLS.NS ... CASTROLIND.NS  [ok] (1239 rows)
+  Batch 8/42: CCAVENUE.NS ... CONCOR.NS  [ok] (1239 rows)
+  Batch 9/42: CONCORDBIO.NS ... DCI.NS  [ok] (1239 rows)
+  Batch 10/42: DCM.NS ... DODLA.NS  [ok] (1239 rows)
+  Batch 11/42: DOLATALGO.NS ... EMMBI.NS  [ok] (1239 rows)
+  Batch 12/42: EMMVEE.NS ... FINPIPE.NS$EXCEL.NS: possibly delisted; no price data found  (period=5y) (Yahoo error = "No data found, symbol may be delisted")
+
+1 Failed download:
+['EXCEL.NS']: possibly delisted; no price data found  (period=5y) (Yahoo error = "No data found, symbol may be delisted")
+  [ok] (1239 rows)
+  Batch 13/42: FIRSTCRY.NS ... GILLETTE.NS  [ok] (1239 rows)
+  Batch 14/42: GINNIFILA.NS ... GREENPLY.NS  [ok] (1239 rows)
+  Batch 15/42: GREENPOWER.NS ... HEIDELBERG.NS  [ok] (1239 rows)
+  Batch 16/42: HEMIPROP.NS ... ICICIBANK.NS  [ok] (1239 rows)
+  Batch 17/42: ICICIGI.NS ... INDOUS.NS  [ok] (1239 rows)
+  Batch 18/42: INDOWIND.NS ... JAGRAN.NS  [ok] (1239 rows)
+  Batch 19/42: JAGSNPHARM.NS ... JTLIND.NS  [ok] (1239 rows)
+  Batch 20/42: JUBLCPL.NS ... KINGFA.NS  [ok] (1239 rows)
+  Batch 21/42: KIOCL.NS ... LAMBODHARA.NS  [ok] (1239 rows)
+  Batch 22/42: LANDMARK.NS ... M&MFIN.NS$LTIM.NS: possibly delisted; no price data found  (period=5y) (Yahoo error = "No data found, symbol may be delisted")
+
+1 Failed download:
+['LTIM.NS']: possibly delisted; no price data found  (period=5y) (Yahoo error = "No data found, symbol may be delisted")
+  [ok] (1239 rows)
+  Batch 23/42: MACPOWER.NS ... MAXIND.NS  [ok] (1239 rows)
+  Batch 24/42: MAYURUNIQ.NS ... MOLDTKPAC.NS  [ok] (1239 rows)
+  Batch 25/42: MONARCH.NS ... NAZARA.NS  [ok] (1239 rows)
+  Batch 26/42: NBCC.NS ... NRAIL.NS  [ok] (1239 rows)
+  Batch 27/42: NRBBEARING.NS ... OSWALSEEDS.NS  [ok] (1239 rows)
+  Batch 28/42: PACEDIGITK.NS ... PILITA.NS  [ok] (1239 rows)
+  Batch 29/42: PINELABS.NS ... PROTEAN.NS  [ok] (1239 rows)
+  Batch 30/42: PRSMJOHNSN.NS ... RAYMONDREL.NS  [ok] (1239 rows)
+  Batch 31/42: RBA.NS ... RPPINFRA.NS  [ok] (1239 rows)
+  Batch 32/42: RPPL.NS ... SANGINITA.NS  [ok] (1239 rows)
+  Batch 33/42: SANOFI.NS ... SHALPAINTS.NS$SASTASUNDR.NS: possibly delisted; no price data found  (period=5y) (Yahoo error = "No data found, symbol may be delisted")
+
+1 Failed download:
+['SASTASUNDR.NS']: possibly delisted; no price data found  (period=5y) (Yahoo error = "No data found, symbol may be delisted")
+  [ok] (1239 rows)
+  Batch 34/42: SHANKARA.NS ... SJVN.NS  [ok] (1239 rows)
+  Batch 35/42: SKFINDIA.NS ... STARTECK.NS  [ok] (1239 rows)
+  Batch 36/42: STCINDIA.NS ... SUTLEJTEX.NS  [ok] (1239 rows)
+  Batch 37/42: SUVEN.NS ... TEMBO.NS  [ok] (1239 rows)
+  Batch 38/42: TENNIND.NS ... TREEHOUSE.NS  [ok] (1239 rows)
+  Batch 39/42: TREL.NS ... URAVIDEF.NS  [ok] (1239 rows)
+  Batch 40/42: URBANCO.NS ... VIPIND.NS  [ok] (1239 rows)
+  Batch 41/42: VIRINCHI.NS ... WSI.NS  [ok] (1239 rows)
+  Batch 42/42: WSTCSTPAPR.NS ... ZYDUSWELL.NS  [ok] (1239 rows)
+
+Total distinct trading dates: 1239 (2021-08-16 -> 2026-08-14)
+
+Writing backtest/NSEAll_backtest.xlsx ...
+Done.
+
+4 tickers had no Close data:
+   AKZOINDIA
+   EXCEL
+   LTIM
+   SASTASUNDR

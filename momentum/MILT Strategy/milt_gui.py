@@ -15,6 +15,9 @@ What it does
   MILT_portfolio_state.json, marked to market against the latest prices in
   MILT_N750_updated.xlsx.
 - Open Positions tab: entry date/price, shares, current price, P&L%.
+  Double-click the Entry ₹ cell to correct it (e.g. your actual Monday fill
+  differed from the theoretical open milt_strategy.py recorded) -- writes
+  straight back to MILT_positions_ledger.json.
 - Trade History tab: closed trades from MILT_tradelog.json.
 - Configuration tab: edit Cash, Max Positions, BB Period, BB Std Dev (Sigma),
   Stop Loss %, ATR Period, ATR Multiplier -- saved to MILT_config.json.
@@ -50,6 +53,7 @@ import momentum_lib as ml
 from milt_strategy import (
     DEFAULT_FILE, LEDGER_FILE, STATE_FILE, TRADELOG_FILE, EQUITY_HISTORY_FILE,
     CONFIG_DEFAULTS, load_milt_config, save_milt_config,
+    load_ledger, save_ledger,
 )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -167,16 +171,21 @@ class MiltDashboard:
 
         pos_tab = ttk.Frame(nb)
         nb.add(pos_tab, text="Open Positions")
+        ttk.Label(pos_tab, text="Double-click Entry ₹ to correct the fill price "
+                                "(e.g. actual Monday fill differed from the theoretical open).",
+                  foreground="#666").pack(anchor="w", padx=6, pady=(6, 0))
         pos_cols = ("ticker", "entry_date", "entry_price", "shares",
                     "current_price", "value", "pnl_pct", "entry_week")
         self.pos_tree = ttk.Treeview(pos_tab, columns=pos_cols, show="headings", height=8)
-        headers = {"ticker": "Ticker", "entry_date": "Entry Date", "entry_price": "Entry ₹",
+        headers = {"ticker": "Ticker", "entry_date": "Entry Date", "entry_price": "Entry ₹ (dbl-click)",
                    "shares": "Shares", "current_price": "Current ₹", "value": "Value ₹",
                    "pnl_pct": "P&L %", "entry_week": "Entry Week"}
         for c in pos_cols:
             self.pos_tree.heading(c, text=headers[c])
             self.pos_tree.column(c, width=110, anchor="center")
         self.pos_tree.pack(fill="both", expand=True, padx=4, pady=4)
+        self.pos_tree.bind("<Double-1>", self._on_pos_tree_double_click)
+        self._edit_entry_widget = None
 
         trade_tab = ttk.Frame(nb)
         nb.add(trade_tab, text="Trade History")
@@ -283,6 +292,83 @@ class MiltDashboard:
         save_milt_config(cfg)
         self.config_status_var.set(
             f"Saved to MILT_config.json at {datetime.datetime.now().strftime('%H:%M:%S')}.")
+        self.refresh()
+
+    # ── editable Entry ₹ cell in the Open Positions tab ─────────────────────────
+
+    def _on_pos_tree_double_click(self, event):
+        if self._edit_entry_widget is not None:
+            return  # an edit is already in progress
+        row_id = self.pos_tree.identify_row(event.y)
+        col_id = self.pos_tree.identify_column(event.x)  # e.g. "#3"
+        if not row_id or not col_id:
+            return
+        col_index = int(col_id.replace("#", "")) - 1
+        pos_cols = self.pos_tree["columns"]
+        if pos_cols[col_index] != "entry_price":
+            return  # only the Entry ₹ column is editable
+
+        ticker = self.pos_tree.set(row_id, "ticker")
+        current_value = self.pos_tree.set(row_id, "entry_price")
+        x, y, width, height = self.pos_tree.bbox(row_id, col_id)
+
+        edit_var = tk.StringVar(value=current_value)
+        entry = ttk.Entry(self.pos_tree, textvariable=edit_var, justify="center",
+                          font=("Segoe UI", 10))
+        entry.place(x=x, y=y, width=width, height=height)
+        entry.focus_set()
+        entry.select_range(0, tk.END)
+        self._edit_entry_widget = entry
+
+        def commit(_event=None):
+            new_val = edit_var.get().strip()
+            self._close_price_editor()
+            self._apply_entry_price_edit(ticker, new_val)
+
+        def cancel(_event=None):
+            self._close_price_editor()
+
+        entry.bind("<Return>", commit)
+        entry.bind("<KP_Enter>", commit)
+        entry.bind("<Escape>", cancel)
+        entry.bind("<FocusOut>", commit)
+
+    def _close_price_editor(self):
+        if self._edit_entry_widget is not None:
+            self._edit_entry_widget.destroy()
+            self._edit_entry_widget = None
+
+    def _apply_entry_price_edit(self, ticker: str, new_val: str):
+        try:
+            new_price = float(new_val)
+            if new_price <= 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Invalid price",
+                                 f"'{new_val}' is not a valid positive price for {ticker}.")
+            return
+
+        ledger_path = SCRIPT_DIR / LEDGER_FILE
+        ledger = load_ledger(str(ledger_path))
+        if ticker not in ledger:
+            messagebox.showerror("Not found", f"{ticker} is no longer in the open ledger "
+                                              "(it may have just been closed) -- not saved.")
+            self.refresh()
+            return
+
+        pos = ledger[ticker]
+        old_price = pos["entry_price"]
+        # If no weekly re-evaluation has touched peak_close yet (still equal
+        # to the old entry price), rebase it to the corrected entry too --
+        # otherwise leave it alone, since it already reflects real
+        # subsequent price action that shouldn't be overwritten.
+        if pos["peak_close"] == old_price:
+            pos["peak_close"] = new_price
+        pos["entry_price"] = new_price
+
+        save_ledger(ledger, str(ledger_path))
+        self.run_status_var.set(
+            f"{ticker} entry price corrected: {old_price:.2f} -> {new_price:.2f}")
         self.refresh()
 
     # ── data refresh (no subprocess -- just reads local files) ─────────────────

@@ -228,7 +228,7 @@
     ]
   },
   "2026-W32": {
-    "run_date": "2026-08-07 09:10",
+    "run_date": "2026-08-09 19:06",
     "regime": "BULL",
     "active_slots": 5,
     "allocation": [
@@ -240,7 +240,7 @@
         "weight": 0.2,
         "inv_rank": "3",
         "entry_price": 50.61,
-        "peak": 51.66
+        "peak": 52.1
       },
       {
         "slot": 2,
@@ -248,9 +248,9 @@
         "etf_name": "HDFC NIFTY Smallcap 250 ETF",
         "sector": "SMALLCAP",
         "weight": 0.2,
-        "inv_rank": "8",
+        "inv_rank": "10",
         "entry_price": 180.12,
-        "peak": 185.1
+        "peak": 184.89
       },
       {
         "slot": 3,
@@ -258,9 +258,66 @@
         "etf_name": "Motilal Oswal Nifty SC 250 ETF",
         "sector": "OTHER",
         "weight": 0.2,
-        "inv_rank": "15",
+        "inv_rank": "11",
         "entry_price": 17.97,
-        "peak": 18.42
+        "peak": 18.47
+      },
+      {
+        "slot": 4,
+        "ticker": "PHARMABEES",
+        "etf_name": "Nippon India Nifty Pharma ETF",
+        "sector": "NIFTY PHARMA",
+        "weight": 0.2,
+        "inv_rank": "2",
+        "entry_price": 27.27,
+        "peak": 27.32
+      },
+      {
+        "slot": 5,
+        "ticker": "MIDSELIETF",
+        "etf_name": "ICICI Pru BSE MC Sel ETF",
+        "sector": "MIDCAP",
+        "weight": 0.2,
+        "inv_rank": "16",
+        "entry_price": 19.6,
+        "peak": 19.79
+      }
+    ]
+  },
+  "2026-W33": {
+    "run_date": "2026-08-14 09:15",
+    "regime": "BULL",
+    "active_slots": 5,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "MOHEALTH",
+        "etf_name": "Motilal Oswal BSE HC ETF",
+        "sector": "HEALTHCARE",
+        "weight": 0.2,
+        "inv_rank": "2",
+        "entry_price": 50.61,
+        "peak": 52.1
+      },
+      {
+        "slot": 2,
+        "ticker": "HDFCSML250",
+        "etf_name": "HDFC NIFTY Smallcap 250 ETF",
+        "sector": "SMALLCAP",
+        "weight": 0.2,
+        "inv_rank": "11",
+        "entry_price": 180.12,
+        "peak": 184.89
+      },
+      {
+        "slot": 3,
+        "ticker": "MOSMALL250",
+        "etf_name": "Motilal Oswal Nifty SC 250 ETF",
+        "sector": "OTHER",
+        "weight": 0.2,
+        "inv_rank": "9",
+        "entry_price": 17.97,
+        "peak": 18.48
       },
       {
         "slot": 4,
@@ -270,7 +327,7 @@
         "weight": 0.2,
         "inv_rank": "1",
         "entry_price": 27.27,
-        "peak": 27.29
+        "peak": 27.45
       },
       {
         "slot": 5,
@@ -278,9 +335,9 @@
         "etf_name": "ICICI Pru BSE MC Sel ETF",
         "sector": "MIDCAP",
         "weight": 0.2,
-        "inv_rank": "17",
+        "inv_rank": "20",
         "entry_price": 19.6,
-        "peak": 19.75
+        "peak": 19.87
       }
     ]
   }

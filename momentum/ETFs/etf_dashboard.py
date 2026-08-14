@@ -6,9 +6,10 @@ Run:  streamlit run etf_dashboard.py
 
 Layout:
   - Regime banner (always visible at top)
-  - Tab 1: Current Allocation  (allocation + TSL + rebalance diff + actions)
+  - Tab 1: Current Recommendation  (allocation + rebalance diff + actions)
   - Tab 2: Full Rankings        (filterable ranking table)
   - Tab 3: Configuration        (editable strategy params + data source)
+  - Tab 4: Tradelog & MTM       (active holdings with exit-rule alerts, transaction log)
 """
 
 import streamlit as st
@@ -166,11 +167,6 @@ def compute_rankings(_meta, _prices):
     ranking = emr.build_ranking(_meta, _prices)
     allocation = emr.build_allocation(ranking, regime)
     return regime, ranking, allocation
-
-
-def load_log():
-    """Load holdings log from disk."""
-    return emr.load_holdings_log(SCRIPT_DIR)
 
 
 # =========================================================
@@ -478,7 +474,7 @@ if "etf_live_prices" in st.session_state:
 tradelog = load_tradelog()
 tl_result = calculate_holdings_and_pnl(tradelog, latest_etf_prices)
 active_holdings   = tl_result["active_holdings"]
-holdings_metrics  = tl_result["holdings_metrics"]
+holdings_metrics  = emr.evaluate_holdings_exit_rules(tl_result["holdings_metrics"], ranking, prices)
 realized_pnl      = tl_result["realized_pnl"]
 unrealized_pnl    = tl_result["unrealized_pnl"]
 
@@ -490,15 +486,15 @@ sync_to_positions_ledger(active_holdings)
 # TABS
 # =========================================================
 tab_alloc, tab_rankings, tab_config, tab_tradelog = st.tabs([
-    "📊 Current Allocation", "📋 Full Rankings", "⚙️ Configuration", "📝 Tradelog & MTM"
+    "📊 Current Recommendation", "📋 Full Rankings", "⚙️ Configuration", "📝 Tradelog & MTM"
 ])
 
 
 # =========================================================
-# TAB 1: CURRENT ALLOCATION
+# TAB 1: CURRENT RECOMMENDATION
 # =========================================================
 with tab_alloc:
-    # ── Current Allocation Table ───────────────────────────
+    # ── Current Recommendation Table ───────────────────────
     st.markdown("## 📊 Top 5 Ranking")
 
     alloc_display = allocation[["SLOT", "TICKER", "ETF_NAME", "SECTOR", "WEIGHT", "INV_RANK"]].copy()
@@ -521,72 +517,6 @@ with tab_alloc:
     )
     apply_ticker_selection_to_tradelog(alloc_event, alloc_display, "alloc_last_selected_row")
     st.caption("💡 Select a row above to auto-fill it in **Log New Transaction** (Tradelog & MTM tab).")
-
-    st.divider()
-
-    # ── TSL Monitor ────────────────────────────────────────
-    st.markdown("## 🛡️ Trailing Stop Loss Monitor")
-
-    log = load_log()
-    _today = datetime.datetime.today()
-    _iso = _today.isocalendar()
-    month_key = f"{_iso.year}-W{_iso.week:02d}"   # weekly key
-
-    if month_key in log:
-        current_entry = log[month_key]
-        holdings = current_entry.get("allocation", [])
-
-        has_positions = any(s["ticker"] != "CASH" for s in holdings)
-
-        if has_positions:
-            if st.button("🔄 Check TSL (Fetch Live NAVs)", use_container_width=True, key="tsl_btn"):
-                with st.spinner("Fetching live NAVs via yfinance..."):
-                    tsl_result = emr.check_tsl(SCRIPT_DIR)
-
-                if tsl_result and tsl_result["rows"]:
-                    tsl_df = pd.DataFrame(tsl_result["rows"])
-
-                    # Check for breaches
-                    if tsl_result["breaches"]:
-                        n_breach = len(tsl_result["breaches"])
-                        st.error(f"🚨 **{n_breach} TSL BREACH(ES) DETECTED!**")
-                        for b in tsl_result["breaches"]:
-                            st.markdown(
-                                f"<div style='background:#FFEBEE; border-left:4px solid #C62828; "
-                                f"padding:12px; border-radius:6px; margin:8px 0;'>"
-                                f"<b>SELL {b['Ticker']}</b> ({b['ETF Name']}) — "
-                                f"Drawdown {b['DD%']:.1f}% exceeds {emr.CONFIG.TSL_THRESHOLD:.0%} TSL"
-                                f"</div>",
-                                unsafe_allow_html=True,
-                            )
-                    else:
-                        st.success("✅ All positions within TSL threshold. No action needed.")
-
-                    # Display table
-                    st.dataframe(
-                        tsl_df.style.apply(
-                            lambda row: [
-                                "background-color: #FFEBEE;" if row["Status"] == "⚠️ BREACH"
-                                else "background-color: #F9FAFB;" if row["Ticker"] == "CASH"
-                                else ""
-                            ] * len(row),
-                            axis=1,
-                        ),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-
-                    st.caption(f"Last checked: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  |  Peaks saved to holdings_log.json")
-                elif tsl_result:
-                    st.warning(tsl_result["message"])
-            else:
-                st.info("Click the button above to fetch live NAVs and check trailing stop loss levels.")
-        else:
-            st.info("No active positions (all cash). Nothing to check.")
-    else:
-        st.warning("No holdings found for current week. Run the weekly rebalance first.")
-
-    st.divider()
 
     st.divider()
 
@@ -992,13 +922,30 @@ with tab_tradelog:
     if not holdings_metrics:
         st.info("No active holdings. Log a BUY trade below to open a position.")
     else:
+        breached = [h for h in holdings_metrics if h["Exit Reason"] != "OK"]
+        if breached:
+            st.error(f"🚨 **{len(breached)} holding(s) breaching exit criteria!**")
+            for h in breached:
+                st.markdown(
+                    f"<div style='background:#FFEBEE; border-left:4px solid #C62828; "
+                    f"padding:12px; border-radius:6px; margin:8px 0;'>"
+                    f"<b>⚠️ {h['Ticker']}</b> — {h['Exit Reason']}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.success("✅ All active holdings within exit thresholds (52wk-high DD, rank, TSL).")
+
         holdings_df = pd.DataFrame(holdings_metrics)
         cols_order  = ["Ticker", "Qty", "Avg Price", "Current Price",
                        "Cost Value", "Market Value",
-                       "Unrealized PnL", "Unrealized PnL %", "First Buy Date"]
+                       "Unrealized PnL", "Unrealized PnL %", "First Buy Date",
+                       "Exit Reason"]
         holdings_df = holdings_df[cols_order].sort_values("Unrealized PnL", ascending=False)
 
         def _style_holdings(row):
+            if row["Exit Reason"] != "OK":
+                return ["background-color:#FFCDD2; color:#7F0000; font-weight:600;"] * len(row)
             pnl = row["Unrealized PnL"]
             if pnl > 0:  return ["background-color:#E8F5E9;"] * len(row)
             if pnl < 0:  return ["background-color:#FFEBEE;"] * len(row)

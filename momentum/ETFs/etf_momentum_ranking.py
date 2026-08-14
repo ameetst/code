@@ -710,6 +710,50 @@ def should_exit(ticker: str, ranking_df: pd.DataFrame, peak: float,
     return False, ""
 
 
+def compute_holding_peak(ticker: str, first_buy_date, prices_df: pd.DataFrame,
+                          current_price: float) -> float:
+    """
+    Highest observed price for `ticker` since `first_buy_date` (inclusive) —
+    the TSL reference peak for an actual (tradelog) holding, as opposed to the
+    model-slot peak tracked in holdings_log.json. Falls back to `current_price`
+    when no price history is available.
+    """
+    peak = current_price
+    if first_buy_date and ticker in prices_df.columns:
+        try:
+            fbd = pd.Timestamp(first_buy_date)
+        except (TypeError, ValueError):
+            fbd = None
+        if fbd is not None:
+            series = prices_df[ticker].dropna()
+            series = series[series.index >= fbd]
+            if not series.empty:
+                peak = max(peak, float(series.max()))
+    return peak
+
+
+def evaluate_holdings_exit_rules(holdings_metrics: list, ranking_df: pd.DataFrame,
+                                  prices_df: pd.DataFrame) -> list:
+    """
+    Attach exit-rule evaluation to each tradelog holding, reusing should_exit()
+    (52wk-high drawdown, investable rank degradation, TSL from peak-since-entry).
+
+    Returns a new list of dicts: each input dict plus "Peak Price", "Exit Flag",
+    and "Exit Reason" ("OK" when no rule is breached).
+    """
+    enriched = []
+    for h in holdings_metrics:
+        peak = compute_holding_peak(h["Ticker"], h.get("First Buy Date"),
+                                     prices_df, h["Current Price"])
+        exit_flag, exit_reason = should_exit(h["Ticker"], ranking_df, peak, h["Current Price"])
+        row = dict(h)
+        row["Peak Price"]  = peak
+        row["Exit Flag"]   = exit_flag
+        row["Exit Reason"] = exit_reason if exit_flag else "OK"
+        enriched.append(row)
+    return enriched
+
+
 def build_allocation(df: pd.DataFrame, regime: dict,
                      prev_allocation: list | None = None,
                      prices: pd.DataFrame | None = None) -> pd.DataFrame:

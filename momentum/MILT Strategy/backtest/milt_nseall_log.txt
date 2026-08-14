@@ -1,0 +1,32 @@
+Loading C:\Users\ameet\Documents\Github\code\momentum\MILT Strategy\backtest\NSEAll_backtest.xlsx ...
+  Warning: 1 duplicate ticker row(s) found — keeping first occurrence only.
+  2076 tickers | 1239 daily bars (2021-08-16 -> 2026-08-14)
+
+Loading SERIES data from C:\Users\ameet\Documents\Github\code\momentum\Sharpe\Price_Band_List.csv ...
+  3346 tickers mapped (2427 EQ); tickers not in this list default to EQ
+
+Excluded 41 split-artifact ticker(s)
+
+Building weekly indicators (BB30/3.7sigma, MA23w, ATR14w) + 90d rolling ADTV ...
+  2025 tickers with usable weekly history
+
+Running walk-forward weekly backtest (SERIES=EQ, ADTV>Rs10,000,000, price>Rs100) ...
+  Simulated 237 weeks (2022-01-28 -> 2026-08-07)
+  211 closed trades
+
+Saved milt_nseall_equity.csv, milt_nseall_trades.csv
+
+======================================================================
+MILT on NSEAll (SERIES=EQ, ADTV>10,000,000, price>100) -- RESULTS
+======================================================================
+  Period            : 2022-01-28 -> 2026-08-07 (4.52 yrs)
+  CAGR              : +15.55%
+  Annualised vol    : 14.22%
+  Sharpe (rf 7%)    : 0.59
+  Max drawdown      : -16.79%
+  Trades            : 211
+  Win rate          : 46.9%
+  Avg win / loss    : +32.93% / -11.56%
+  Best / worst trade: +227.96% / -28.92%
+  NIFTY500 CAGR (same window): +11.11%
+======================================================================
