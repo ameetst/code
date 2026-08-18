@@ -43,5 +43,14 @@
     "action": "BUY",
     "quantity": 919,
     "price": 54.36
+  },
+  {
+    "id": "d0e15acf-b6ae-4f49-a1cc-06143354e67a",
+    "date": "2026-08-17",
+    "timestamp": "2026-08-18T09:26:51.616045",
+    "ticker": "MOALPHA50",
+    "action": "SELL",
+    "quantity": 919,
+    "price": 55.882
   }
 ]

@@ -1,0 +1,59 @@
+{
+  "2026-W34": {
+    "run_date": "2026-08-18 11:23",
+    "regime": "BULL",
+    "active_slots": 5,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "PHARMABEES",
+        "etf_name": "Nippon India Nifty Pharma ETF",
+        "sector": "NIFTY PHARMA",
+        "weight": 0.2,
+        "inv_rank": "1",
+        "entry_price": 27.18,
+        "peak": 27.18
+      },
+      {
+        "slot": 2,
+        "ticker": "MOHEALTH",
+        "etf_name": "Motilal Oswal BSE HC ETF",
+        "sector": "HEALTHCARE",
+        "weight": 0.2,
+        "inv_rank": "2",
+        "entry_price": 51.76,
+        "peak": 51.76
+      },
+      {
+        "slot": 3,
+        "ticker": "EVINDIA",
+        "etf_name": "Mirae Asst Nfty EV New Atm ETF",
+        "sector": "EV",
+        "weight": 0.2,
+        "inv_rank": "3",
+        "entry_price": 34.16,
+        "peak": 34.16
+      },
+      {
+        "slot": 4,
+        "ticker": "GROWWDEFNC",
+        "etf_name": "Groww Nifty India Defence ETF",
+        "sector": "DEFENCE",
+        "weight": 0.2,
+        "inv_rank": "5",
+        "entry_price": 98.09,
+        "peak": 98.09
+      },
+      {
+        "slot": 5,
+        "ticker": "MODEFENCE",
+        "etf_name": "Motilal Oswal Nft INR Dfnc ETF",
+        "sector": "NIFTY DEFENCE",
+        "weight": 0.2,
+        "inv_rank": "6",
+        "entry_price": 107.64,
+        "peak": 107.64
+      }
+    ]
+  }
+}
