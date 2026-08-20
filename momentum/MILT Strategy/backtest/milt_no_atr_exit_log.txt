@@ -1,0 +1,23 @@
+Loading C:\Users\ameet\Documents\Github\code\momentum\MILT Strategy\backtest\MILT_N750_backtest.xlsx ...
+Excluded 12 split-artifact ticker(s)
+735 tickers usable
+
+Running walk-forward backtest WITHOUT the ATR chandelier exit (only 20% stop + 23W MA trend reversal remain) ...
+  Simulated 238 weeks, 142 closed trades
+
+======================================================================
+MILT -- NO ATR CHANDELIER EXIT (20% stop + 23W MA only)
+======================================================================
+  Period            : 2022-01-21 -> 2026-08-07 (4.54 yrs)
+  CAGR              : +29.27%
+  Annualised vol    : 18.14%
+  Sharpe (rf 7%)    : 1.12
+  Max drawdown      : -13.64%
+  Trades            : 142
+  Win rate          : 54.2%
+  Avg win / loss    : +68.19% / -14.19%
+  Best / worst trade: +986.21% / -30.09%
+  Avg hold period   : 21.8 weeks
+  Exit reasons      : {'trend_reversal_23wma': 94, 'stop_loss_20pct': 29, 'open_at_backtest_end': 19}
+  NIFTY500 CAGR (same window): +10.32%
+======================================================================

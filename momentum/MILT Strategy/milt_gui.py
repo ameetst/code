@@ -25,8 +25,13 @@ What it does
   suite) picks up the new values on its next run -- no restart needed,
   since each is a fresh subprocess/import that reloads the config file.
 - Buttons:
-    Refresh          -- re-read the local files and re-mark positions
-                        (no subprocess, no data fetch -- instant)
+    Refresh          -- re-read the local ledger/config files, then fetch a
+                        LIVE quote from yfinance for just the tickers you
+                        currently hold (not the whole 750-ticker universe --
+                        that's what Preview/Commit are for) and mark
+                        positions against that. Falls back to the last
+                        cached price in MILT_N750_updated.xlsx for any
+                        ticker the live fetch fails on (e.g. no internet).
     Preview (Friday)  -- python milt_strategy.py --update --dry-run
                         (refreshes prices, shows signals, saves nothing)
     Update & Commit (Monday) -- python milt_strategy.py --update
@@ -49,12 +54,16 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
+import pandas as pd
+import yfinance as yf
+
 import momentum_lib as ml
 from milt_strategy import (
     DEFAULT_FILE, LEDGER_FILE, STATE_FILE, TRADELOG_FILE, EQUITY_HISTORY_FILE,
     CONFIG_DEFAULTS, load_milt_config, save_milt_config,
     load_ledger, save_ledger,
 )
+from milt_update_prices import ns
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PYTHON = sys.executable
@@ -69,6 +78,44 @@ def _read_json(path: Path, default):
             return json.load(f)
     except Exception:
         return default
+
+
+def fetch_live_prices(tickers: list[str]) -> dict[str, float]:
+    """
+    Fetch the latest available close for a small list of held tickers via
+    yfinance -- NOT the full 750-ticker universe, just what's actually in
+    the ledger, so this stays fast (a few seconds).
+
+    period="5d" (not "1d") so weekends/holidays where today has no bar yet
+    still resolve to the most recent trading day. Returns {ticker: price}
+    for whichever tickers succeeded; missing/failed ones are simply absent
+    -- callers should fall back to a cached price for those.
+    """
+    if not tickers:
+        return {}
+    symbols = [ns(t) for t in tickers]
+    try:
+        data = yf.download(symbols, period="5d", auto_adjust=True,
+                           progress=False, threads=True)
+    except Exception:
+        return {}
+    if data is None or data.empty:
+        return {}
+
+    if isinstance(data.columns, pd.MultiIndex):
+        close = data["Close"] if "Close" in data.columns.get_level_values(0) else pd.DataFrame()
+    else:
+        # yfinance collapses the MultiIndex when only one symbol is requested
+        close = data[["Close"]].rename(columns={"Close": symbols[0]}) if "Close" in data.columns else pd.DataFrame()
+
+    out = {}
+    for t, sym in zip(tickers, symbols):
+        if sym not in close.columns:
+            continue
+        s = close[sym].dropna()
+        if len(s):
+            out[t] = float(s.iloc[-1])
+    return out
 
 
 class MiltDashboard:
@@ -150,8 +197,9 @@ class MiltDashboard:
         btn_frame = ttk.Frame(self.root)
         btn_frame.pack(fill="x", **pad)
 
-        ttk.Button(btn_frame, text="🔄 Refresh", style="Refresh.TButton",
-                   command=self.refresh).pack(side="left", padx=4)
+        self.refresh_btn = ttk.Button(btn_frame, text="🔄 Refresh", style="Refresh.TButton",
+                                       command=self.refresh_live)
+        self.refresh_btn.pack(side="left", padx=4)
         self.preview_btn = ttk.Button(btn_frame, text="👀 Preview (Friday) — dry run",
                                        style="Preview.TButton",
                                        command=lambda: self.run_strategy(dry_run=True))
@@ -373,7 +421,15 @@ class MiltDashboard:
 
     # ── data refresh (no subprocess -- just reads local files) ─────────────────
 
-    def refresh(self):
+    def refresh(self, live_prices: dict = None):
+        """Fast, local-only re-render (reads ledger/state/config/cached xlsx
+        from disk). If `live_prices` ({ticker: price}) is given, those take
+        priority over the cached xlsx price for marking positions -- see
+        refresh_live() below, which fetches this dict from yfinance before
+        calling here. Internal callers (after saving config, editing a
+        price, or a Preview/Commit run finishing) call this directly without
+        live_prices, since a network round-trip isn't needed for those."""
+        live_prices = live_prices or {}
         cfg = load_milt_config()
         capital = cfg["capital"]
         max_positions = cfg["max_positions"]
@@ -397,7 +453,9 @@ class MiltDashboard:
             entry_price = float(pos.get("entry_price", 0))
             shares = int(pos.get("shares", 0))
             current_price = entry_price
-            if prices_df is not None and ticker in prices_df.index:
+            if ticker in live_prices:
+                current_price = live_prices[ticker]
+            elif prices_df is not None and ticker in prices_df.index:
                 px = prices_df.loc[ticker].dropna()
                 if len(px):
                     current_price = float(px.iloc[-1])
@@ -418,7 +476,13 @@ class MiltDashboard:
         self.status_vars["positions_value"].set(f"₹ {positions_value:,.0f}")
         self.status_vars["equity"].set(f"₹ {equity:,.0f}")
         self.status_vars["return"].set(f"{ret_pct:+.2f}%")
-        self.status_vars["asof"].set(asof or "no data file yet")
+        if live_prices:
+            n_live = sum(1 for t in ledger if t in live_prices)
+            self.status_vars["asof"].set(
+                f"LIVE ({n_live}/{len(ledger)} held tickers) as of "
+                f"{datetime.datetime.now().strftime('%H:%M:%S')}, rest cached {asof or '?'}")
+        else:
+            self.status_vars["asof"].set(asof or "no data file yet")
 
         self.trade_tree.delete(*self.trade_tree.get_children())
         trades = _read_json(SCRIPT_DIR / TRADELOG_FILE, [])
@@ -428,6 +492,33 @@ class MiltDashboard:
                 t.get("exit_date", ""), f"{t.get('exit_price', 0):.2f}", t.get("shares", ""),
                 f"{t.get('pnl_pct', 0):+.2f}%", t.get("reason", ""),
             ))
+
+    # ── Refresh button: fetch live yfinance quotes for held tickers only ───────
+
+    def refresh_live(self):
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        ledger = _read_json(SCRIPT_DIR / LEDGER_FILE, {})
+        tickers = list(ledger.keys())
+        if not tickers:
+            self._log(f"[{ts}] Refresh: no open positions -- re-reading local files only, "
+                      f"nothing to fetch from yfinance.\n")
+            self.refresh()
+            return
+
+        self._log(f"\n[{ts}] Refresh: fetching live yfinance quote(s) for "
+                  f"{len(tickers)} held ticker(s): {', '.join(tickers)}\n")
+        self.refresh_btn.config(state="disabled")
+        self.run_status_var.set(f"Fetching live price(s) for {len(tickers)} held ticker(s)...")
+        threading.Thread(target=self._fetch_live_prices_thread, args=(tickers,), daemon=True).start()
+
+    def _fetch_live_prices_thread(self, tickers: list[str]):
+        self.log_queue.put(("line", "  -> contacting yfinance...\n"))
+        try:
+            prices = fetch_live_prices(tickers)
+        except Exception as e:
+            prices = {}
+            self.log_queue.put(("line", f"  -> ERROR: live price fetch raised an exception: {e}\n"))
+        self.log_queue.put(("live_prices", (tickers, prices)))
 
     # ── run milt_strategy.py as a subprocess, streaming output live ────────────
 
@@ -489,6 +580,29 @@ class MiltDashboard:
                     self.preview_btn.config(state="normal")
                     self.commit_btn.config(state="normal")
                     self.refresh()
+                elif kind == "live_prices":
+                    tickers, prices = payload
+                    missing = [t for t in tickers if t not in prices]
+                    for t in tickers:
+                        if t in prices:
+                            self.log_text.insert(tk.END, f"  [ok]   {t:<14} Rs {prices[t]:,.2f}\n")
+                        else:
+                            self.log_text.insert(tk.END, f"  [fail] {t:<14} live fetch failed -- using cached price\n")
+                    self.log_text.see(tk.END)
+
+                    ts = datetime.datetime.now().strftime("%H:%M:%S")
+                    if not prices:
+                        msg = "Live fetch failed for all held tickers (check internet?) -- showing cached prices instead."
+                    elif missing:
+                        msg = f"Live prices OK for {len(prices)}/{len(tickers)} -- cached fallback for: {', '.join(missing)}"
+                    else:
+                        msg = f"Live prices refreshed for all {len(prices)} held ticker(s) at {ts}."
+                    self.run_status_var.set(msg)
+                    self.log_text.insert(tk.END, f"[{ts}] Refresh done: {msg}\n")
+                    self.log_text.see(tk.END)
+
+                    self.refresh_btn.config(state="normal")
+                    self.refresh(live_prices=prices)
         except queue.Empty:
             pass
         self.root.after(150, self._poll_log_queue)
