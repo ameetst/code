@@ -1485,6 +1485,62 @@ def compute_ema(series: pd.Series, period: int) -> pd.Series:
     return series.ewm(span=period, adjust=False).mean()
 
 
+# ── RSI RANGE / MOMENTUM SIGNALS (Hill 2019 methodology) ─────────────────────
+# "Finding Consistent Trends with Strong Momentum" (Arthur Hill, SSRN 3412429,
+# Feb 2019). RSI treated as a trend-consistency + momentum-strength gauge
+# rather than a reversal oscillator: a "Bull Range" signal (RSI hasn't dipped
+# below a floor, default 40, over a trailing N-day window) combined with a
+# "Bull Momentum" signal (RSI has tagged a ceiling, default 70, at some point
+# in that same window). Pure indicator functions -- no signal-instance /
+# execution bookkeeping here (see backtest/rsi_range_momentum_signal_test.py
+# for that).
+
+def compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    """
+    Wilder's RSI (matches Wilder's original smoothing, same alpha=1/period
+    EWM convention already used by compute_atr above).
+
+    RSI = 100 - 100 / (1 + RS), RS = Avg Gain / Avg Loss over `period` bars.
+    """
+    delta = close.diff()
+    gain  = delta.clip(lower=0.0)
+    loss  = -delta.clip(upper=0.0)
+    avg_gain = gain.ewm(alpha=1.0 / period, adjust=False, min_periods=period).mean()
+    avg_loss = loss.ewm(alpha=1.0 / period, adjust=False, min_periods=period).mean()
+
+    rs  = avg_gain / avg_loss.replace(0.0, np.nan)
+    rsi = 100.0 - (100.0 / (1.0 + rs))
+    rsi = rsi.where(~((avg_loss == 0.0) & (avg_gain > 0.0)), 100.0)
+    return rsi
+
+
+def rsi_range_active(rsi: pd.Series, n: int, floor: float = 40.0) -> pd.Series:
+    """
+    Hill's "RSI Bull Range" signal: True on days where RSI has not dipped
+    below `floor` at any point in the trailing n-day window -- i.e. the
+    uptrend hasn't lost consistency.
+    """
+    return rsi.rolling(n).min() >= floor
+
+
+def rsi_momentum_active(rsi: pd.Series, n: int, ceiling: float = 70.0) -> pd.Series:
+    """
+    Hill's "RSI Bull Momentum" signal: True on days where RSI has reached
+    at least `ceiling` at some point in the trailing n-day window -- i.e.
+    upside thrust strong enough to register as "overbought" regularly.
+    """
+    return rsi.rolling(n).max() >= ceiling
+
+
+def rsi_range_momentum_active(rsi: pd.Series, n: int,
+                               floor: float = 40.0, ceiling: float = 70.0) -> pd.Series:
+    """
+    Hill's combined "RSI Bull Range-Momentum" signal: both of the above
+    simultaneously (trend consistency AND momentum leadership).
+    """
+    return rsi_range_active(rsi, n, floor) & rsi_momentum_active(rsi, n, ceiling)
+
+
 def build_weekly_indicators(ohlc: dict, ticker: str,
                              bb_window: int = 20, bb_std: float = 3.7,
                              ma_period: int = 23, atr_period: int = 14) -> pd.DataFrame:
