@@ -23,7 +23,7 @@ from pathlib import Path
 # ─────────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────────
-EXCEL_FILE   = r"C:\Users\ameet\Documents\Github\code\momentum\ETFs\backtest results\N750 - Backtest.xlsx"
+EXCEL_FILE   = r"C:\Users\ameet\Documents\Github\code\momentum\ETFs\backtest results\ETF - Backtest  - Copy.xlsx"
 SHEET_NAME   = "DATA"
 START_DATE   = "2016-04-01"           # Fetch from this date
 END_DATE     = datetime.today().strftime("%Y-%m-%d")
