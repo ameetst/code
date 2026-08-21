@@ -52,5 +52,23 @@
     "action": "SELL",
     "quantity": 919,
     "price": 55.882
+  },
+  {
+    "id": "9c16da84-968a-4d21-a252-64e552727b47",
+    "date": "2026-08-19",
+    "timestamp": "2026-08-19T14:35:51.659773",
+    "ticker": "MIDSELIETF",
+    "action": "SELL",
+    "quantity": 2529,
+    "price": 19.82999999999999
+  },
+  {
+    "id": "a9910ce5-92ea-4525-98ec-471ce0cb703f",
+    "date": "2026-08-19",
+    "timestamp": "2026-08-19T14:36:15.925608",
+    "ticker": "MOHEALTH",
+    "action": "SELL",
+    "quantity": 968,
+    "price": 51.35000000000001
   }
 ]

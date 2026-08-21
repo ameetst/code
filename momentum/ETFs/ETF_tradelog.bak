@@ -43,5 +43,23 @@
     "action": "BUY",
     "quantity": 919,
     "price": 54.36
+  },
+  {
+    "id": "d0e15acf-b6ae-4f49-a1cc-06143354e67a",
+    "date": "2026-08-17",
+    "timestamp": "2026-08-18T09:26:51.616045",
+    "ticker": "MOALPHA50",
+    "action": "SELL",
+    "quantity": 919,
+    "price": 55.882
+  },
+  {
+    "id": "9c16da84-968a-4d21-a252-64e552727b47",
+    "date": "2026-08-19",
+    "timestamp": "2026-08-19T14:35:51.659773",
+    "ticker": "MIDSELIETF",
+    "action": "SELL",
+    "quantity": 2529,
+    "price": 19.82999999999999
   }
 ]

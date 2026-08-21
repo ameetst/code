@@ -15,9 +15,16 @@
   },
   {
     "date": "2026-08-02",
-    "Composite": 0.5462,
+    "Composite": 0.4318,
+    "Breadth": 0.432,
+    "Momentum": 0.244,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-08-19",
+    "Composite": 0.5313,
     "Breadth": 0.728,
-    "Momentum": 0.174,
+    "Momentum": 0.178,
     "Dynamic N": 19
   }
 ]

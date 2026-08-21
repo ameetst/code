@@ -342,7 +342,7 @@
     ]
   },
   "2026-W34": {
-    "run_date": "2026-08-18 09:25",
+    "run_date": "2026-08-20 12:18",
     "regime": "BULL",
     "active_slots": 5,
     "allocation": [
@@ -352,7 +352,7 @@
         "etf_name": "Motilal Oswal BSE HC ETF",
         "sector": "HEALTHCARE",
         "weight": 0.2,
-        "inv_rank": "2",
+        "inv_rank": "6",
         "entry_price": 50.61,
         "peak": 52.1
       },
@@ -362,7 +362,7 @@
         "etf_name": "HDFC NIFTY Smallcap 250 ETF",
         "sector": "SMALLCAP",
         "weight": 0.2,
-        "inv_rank": "11",
+        "inv_rank": "9",
         "entry_price": 180.12,
         "peak": 184.89
       },
@@ -372,7 +372,7 @@
         "etf_name": "Motilal Oswal Nifty SC 250 ETF",
         "sector": "OTHER",
         "weight": 0.2,
-        "inv_rank": "12",
+        "inv_rank": "17",
         "entry_price": 17.97,
         "peak": 18.48
       },
@@ -382,7 +382,7 @@
         "etf_name": "Nippon India Nifty Pharma ETF",
         "sector": "NIFTY PHARMA",
         "weight": 0.2,
-        "inv_rank": "1",
+        "inv_rank": "3",
         "entry_price": 27.27,
         "peak": 27.45
       },
@@ -392,9 +392,9 @@
         "etf_name": "ICICI Pru BSE MC Sel ETF",
         "sector": "MIDCAP",
         "weight": 0.2,
-        "inv_rank": "21",
+        "inv_rank": "20",
         "entry_price": 19.6,
-        "peak": 19.95
+        "peak": 19.87
       }
     ]
   }
