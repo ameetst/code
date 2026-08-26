@@ -15,10 +15,6 @@
     "entry_date": "2026-08-10",
     "entry_price": 3849.2
   },
-  "ACUTAAS": {
-    "entry_date": "2026-07-07",
-    "entry_price": 3516.0
-  },
   "WELCORP": {
     "entry_date": "2026-07-07",
     "entry_price": 1532.8
@@ -30,10 +26,6 @@
   "SYRMA": {
     "entry_date": "2026-06-23",
     "entry_price": 1377.0
-  },
-  "KIRLOSENG": {
-    "entry_date": "2026-06-29",
-    "entry_price": 2482.6
   },
   "RRKABEL": {
     "entry_date": "2026-06-29",
@@ -78,5 +70,9 @@
   "BHARATFORG": {
     "entry_date": "2026-08-10",
     "entry_price": 2262.9
+  },
+  "AETHER": {
+    "entry_date": "2026-08-24",
+    "entry_price": 1667.5
   }
 }

@@ -1,1 +1,70 @@
-{}
+{
+  "CUPID": {
+    "entry_date": "2026-08-22",
+    "entry_price": 284.03
+  },
+  "HAPPYFORGE": {
+    "entry_date": "2026-08-22",
+    "entry_price": 2260.6
+  },
+  "INDSWFTLAB": {
+    "entry_date": "2026-08-22",
+    "entry_price": 346.87
+  },
+  "WELCORP": {
+    "entry_date": "2026-08-22",
+    "entry_price": 1917.1
+  },
+  "HFCL": {
+    "entry_date": "2026-08-22",
+    "entry_price": 230.03
+  },
+  "YASHO": {
+    "entry_date": "2026-08-22",
+    "entry_price": 4915.8
+  },
+  "SANSERA": {
+    "entry_date": "2026-08-22",
+    "entry_price": 4003.2
+  },
+  "LAURUSLABS": {
+    "entry_date": "2026-08-22",
+    "entry_price": 1814.0
+  },
+  "RPTECH": {
+    "entry_date": "2026-08-22",
+    "entry_price": 861.1
+  },
+  "ATHERENERG": {
+    "entry_date": "2026-08-22",
+    "entry_price": 1465.8
+  },
+  "SHILPAMED": {
+    "entry_date": "2026-08-22",
+    "entry_price": 809.8
+  },
+  "CPPLUS": {
+    "entry_date": "2026-08-22",
+    "entry_price": 3342.0
+  },
+  "STYLAMIND": {
+    "entry_date": "2026-08-22",
+    "entry_price": 3736.4
+  },
+  "RRKABEL": {
+    "entry_date": "2026-08-22",
+    "entry_price": 2784.9
+  },
+  "SKYGOLD": {
+    "entry_date": "2026-08-22",
+    "entry_price": 795.05
+  },
+  "UFBL": {
+    "entry_date": "2026-08-22",
+    "entry_price": 780.35
+  },
+  "ANANDRATHI": {
+    "entry_date": "2026-08-22",
+    "entry_price": 2194.8
+  }
+}

@@ -1,21 +1,62 @@
 """
-sharpe_dashboard.py
-===================
+sharpe_dashboard_dhan.py
+========================
 Sharpe Momentum Strategy — Streamlit Dashboard (v3 — Dynamic Regime Engine)
-Run:  streamlit run sharpe_dashboard.py
+Dhan-integrated variant of sharpe_dashboard.py.
+
+This is a copy of sharpe_dashboard.py with its live/on-demand data calls
+(as opposed to the historical DATA/VOLUME sheet, which is already
+Dhan-sourced upstream by update_stock_price_dhan.py and needs no changes
+here) migrated from yfinance to the Dhan v2 Market Quote API where
+practical:
+
+  - Live Market Prices refresh (Tradelog & MTM tab): now tries Dhan's
+    batched /marketfeed/ltp via dhandata.resolve_and_get_ltp() first,
+    falling back to the original yfinance per-ticker thread pool if Dhan
+    is unavailable/unconfigured or the call fails for any reason.
+  - Live India VIX (Regime Score Breakdown expander): now tries Dhan's
+    IDX_I "INDIA VIX" index (confirmed present in api-scrip-master-detailed.csv,
+    SECURITY_ID 21, SEGMENT "I") via dhandata.get_index_ltp(), falling
+    back to yfinance's ^INDIAVIX on any failure. Confirmed working live
+    in production (2026-08-24) -- the source caption next to the metric
+    read "Dhan".
+  - Yahoo Finance Market Cap View (optional, opt-in expander): left on
+    yfinance intentionally -- Dhan (a broker API) doesn't expose
+    fundamental/market-cap data, so there's nothing to swap it to.
+
+Run:  streamlit run sharpe_dashboard_dhan.py
 """
 import sys, json, datetime, uuid, shutil, tempfile
 from pathlib import Path
 import streamlit as st
 import pandas as pd
 import numpy as np
-import altair as alt
 import yfinance as yf
 from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 import momentum_lib as ml
+
+# ── DHAN INTEGRATION ────────────────────────────────────────────────────────
+# dhan_datahq lives as a sibling checkout under the same Github root:
+#   Github/code/momentum/Sharpe/sharpe_dashboard_dhan.py   (this file)
+#   Github/dhan_datahq/dhandata/                           (shared library)
+# Falls back gracefully (DHAN_AVAILABLE = False) if dhandata isn't
+# installed/importable yet, or its token cache isn't set up -- every
+# call site below checks this flag and degrades to the original
+# yfinance path rather than crashing the dashboard.
+DHAN_DIR = SCRIPT_DIR.parent.parent.parent / "dhan_datahq"
+if str(DHAN_DIR) not in sys.path:
+    sys.path.insert(0, str(DHAN_DIR))
+try:
+    import dhandata as dh
+    DHAN_AVAILABLE = True
+    _dhan_import_error = None
+except Exception as _dhan_import_err:
+    dh = None
+    DHAN_AVAILABLE = False
+    _dhan_import_error = str(_dhan_import_err)
 
 # ── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Sharpe Momentum", page_icon="📊",
@@ -64,14 +105,34 @@ def safe_write_json(path, data):
 
 @st.cache_data(ttl=3600)
 def get_live_vix():
-    """Fetch live India VIX value, cached for 1 hour."""
+    """Fetch live India VIX value, cached for 1 hour.
+
+    Tries Dhan's IDX_I "INDIA VIX" index quote first (SECURITY_ID 21 in
+    api-scrip-master-detailed.csv, SEGMENT "I" -- confirmed present, and
+    confirmed working live in production 2026-08-24). Falls back to
+    yfinance's ^INDIAVIX on any failure (Dhan not configured, network
+    error, etc.) so this never blocks the dashboard over a live-quote
+    hiccup.
+
+    Returns (value, source) -- value is float or None; source is
+    "Dhan" / "Yahoo Finance" / None (both failed), so the UI can show
+    which one actually produced the number.
+    """
+    if DHAN_AVAILABLE:
+        try:
+            vix = dh.get_index_ltp("INDIA VIX")
+            if vix is not None:
+                return float(vix), "Dhan"
+        except Exception:
+            pass  # fall through to yfinance below
+
     try:
         data = yf.Ticker('^INDIAVIX').history(period='1d')
         if not data.empty:
-            return float(data['Close'].iloc[-1])
+            return float(data['Close'].iloc[-1]), "Yahoo Finance"
     except Exception:
         pass
-    return None
+    return None, None
 
 def compute_ad_ratio(prices_df):
     """Calculate 1-Day Advance/Decline ratio."""
@@ -867,19 +928,22 @@ with c5:
 
 # Signal breakdown + trend
 with st.expander("📡 Regime Score Breakdown", expanded=False):
-    live_vix = get_live_vix()
+    live_vix, vix_source = get_live_vix()
     vix_str = f"{live_vix:.2f}" if live_vix else "N/A"
-    
+    vix_help = f"Source: {vix_source}" if vix_source else "Live VIX unavailable (both Dhan and Yahoo Finance failed)"
+
     adv, dec, ad_ratio = compute_ad_ratio(prices_df)
     ad_str = f"{ad_ratio:.2f}" if ad_ratio is not None else "N/A"
-    
+
     sc1, sc2, sc3, sc4, sc5, sc6 = st.columns(6)
     with sc1: st.metric("EMA50 Breadth (35%)",      f"{regime_detail['ema50_score']:.3f}", help="% of stocks > own EMA50")
     with sc2: st.metric("EMA Trend Breadth (25%)",   f"{regime_detail['ema_trend_score']:.3f}", help="% of stocks with EMA50 > EMA200")
     with sc3: st.metric("52H Breadth (25%)",       f"{regime_detail['breadth_score']:.3f}")
     with sc4: st.metric("Momentum Breadth (15%)",  f"{regime_detail['momentum_score']:.3f}")
-    with sc5: st.metric("Live India VIX",          vix_str)
+    with sc5: st.metric("Live India VIX",          vix_str, help=vix_help)
     with sc6: st.metric("1D A/D Ratio",            ad_str, help=f"{adv} Advancers / {dec} Decliners")
+    if vix_source:
+        st.caption(f"💹 India VIX sourced from **{vix_source}**.")
     st.progress(regime_score, text=f"Composite Regime Score: {regime_score:.3f}")
 
     st.markdown("---")
@@ -1429,25 +1493,51 @@ with tab_tradelog:
     with hc2:
         if st.button("🔄 Refresh Live Market Prices", use_container_width=True):
             live_prices = {}
+            price_source = None
+            held_tickers_list = [h["Ticker"] for h in holdings_metrics]
+
             if holdings_metrics:
-                with st.spinner("Fetching latest prices from Yahoo Finance..."):
-                    def fetch_price(tkr):
-                        try:
-                            return tkr, yf.Ticker(f"{tkr}.NS").fast_info.last_price
-                        except:
+                # ── Primary: Dhan batched LTP (single /marketfeed/ltp call) ────
+                if DHAN_AVAILABLE:
+                    try:
+                        with st.spinner("Fetching latest prices from Dhan..."):
+                            live_prices, unmatched = dh.resolve_and_get_ltp(held_tickers_list)
+                        if live_prices:
+                            price_source = "Dhan"
+                        if unmatched:
+                            st.warning(
+                                f"Dhan couldn't resolve {len(unmatched)} ticker(s) to a "
+                                f"securityId (renamed/delisted?): {', '.join(unmatched)}")
+                    except Exception as e:
+                        st.warning(f"Dhan live price fetch failed ({e}) — falling back to Yahoo Finance.")
+                        live_prices = {}
+
+                # ── Fallback: yfinance per-ticker thread pool (original path) ──
+                if not live_prices:
+                    with st.spinner("Fetching latest prices from Yahoo Finance..."):
+                        def fetch_price(tkr):
                             try:
-                                return tkr, yf.Ticker(f"{tkr}.BO").fast_info.last_price
+                                return tkr, yf.Ticker(f"{tkr}.NS").fast_info.last_price
                             except:
-                                return tkr, None
-                    
-                    with ThreadPoolExecutor(max_workers=20) as exe:
-                        results = exe.map(fetch_price, [h["Ticker"] for h in holdings_metrics])
-                        for tkr, price in results:
-                            if price: live_prices[tkr] = price
-            
+                                try:
+                                    return tkr, yf.Ticker(f"{tkr}.BO").fast_info.last_price
+                                except:
+                                    return tkr, None
+
+                        with ThreadPoolExecutor(max_workers=20) as exe:
+                            results = exe.map(fetch_price, held_tickers_list)
+                            for tkr, price in results:
+                                if price: live_prices[tkr] = price
+                    if live_prices:
+                        price_source = "Yahoo Finance"
+
             if live_prices:
                 st.session_state.live_prices = live_prices
+                st.session_state.live_prices_source = price_source
                 st.rerun()
+
+    if st.session_state.get("live_prices_source"):
+        st.caption(f"💹 Live prices last refreshed from **{st.session_state['live_prices_source']}**.")
 
     # Initialize state keys for tracking row selection and dropdown state
     if "last_selected_row" not in st.session_state:
@@ -2158,40 +2248,15 @@ with tab_perf:
 
         st.markdown("")
 
-        # Equity Curve Chart — weekly (last value per week), true datetime index
-        # so the axis sorts chronologically instead of alphabetically by label.
-        # The true inception row is pinned in explicitly — otherwise the first
-        # visible point is the end of the first *partial* week, which can sit
-        # a point or two off 100 and look like the two series don't start together.
-        _eq_indexed = _eq_df.set_index("date")[["portfolio_nav", "benchmark_nav"]]
-        _weekly = _eq_indexed.resample("W").last().dropna(how="all")
-        _inception = _eq_indexed.iloc[[0]]
-        _chart_df = pd.concat(
-            [_inception, _weekly[_weekly.index > _inception.index[0]]]
-        ).sort_index()
+        # Equity Curve Chart
+        _chart_df = _eq_df[["date", "portfolio_nav", "benchmark_nav"]].copy()
+        _chart_df["date"] = _chart_df["date"].dt.strftime("%d-%b-%Y")
         _chart_df = _chart_df.rename(columns={
             "portfolio_nav": "Portfolio",
             "benchmark_nav": "Benchmark (NIFTY 500)"
         })
-        # st.line_chart can't customise axis tick format, so use Altair directly
-        # to show full date labels (e.g. "July 19") instead of the default
-        # abbreviated/auto ticks.
-        _chart_long = _chart_df.reset_index().melt(
-            id_vars="date", var_name="Series", value_name="NAV")
-        _nav_chart = (
-            alt.Chart(_chart_long)
-            .mark_line()
-            .encode(
-                x=alt.X("date:T", title=None,
-                        axis=alt.Axis(format="%B %d", labelAngle=-45)),
-                y=alt.Y("NAV:Q", title=None, scale=alt.Scale(zero=False)),
-                color=alt.Color("Series:N", title=None),
-                tooltip=[alt.Tooltip("date:T", format="%B %d, %Y"),
-                         "Series:N", alt.Tooltip("NAV:Q", format=".2f")],
-            )
-            .properties(height=400)
-        )
-        st.altair_chart(_nav_chart, use_container_width=True)
+        _chart_df = _chart_df.set_index("date")
+        st.line_chart(_chart_df, height=400, use_container_width=True)
 
         st.caption(
             f"📊 Tracking since {_start_date}  |  {_n_days} day(s) recorded  |  "

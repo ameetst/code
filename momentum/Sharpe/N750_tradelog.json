@@ -628,5 +628,32 @@
     "action": "BUY",
     "quantity": 26,
     "price": 2262.9
+  },
+  {
+    "id": "03ce5a7b-e254-4eec-89da-2374f1610424",
+    "date": "2026-08-24",
+    "timestamp": "2026-08-24T15:23:08.578826",
+    "ticker": "KIRLOSENG",
+    "action": "SELL",
+    "quantity": 30,
+    "price": 2077.49
+  },
+  {
+    "id": "f7fc028b-d38e-48f5-95b3-387ef5c88f09",
+    "date": "2026-08-24",
+    "timestamp": "2026-08-24T15:23:29.349664",
+    "ticker": "ACUTAAS",
+    "action": "SELL",
+    "quantity": 21,
+    "price": 3174.0
+  },
+  {
+    "id": "38713e93-1e58-4196-a17e-2238db8b64ec",
+    "date": "2026-08-24",
+    "timestamp": "2026-08-24T15:24:05.768585",
+    "ticker": "AETHER",
+    "action": "BUY",
+    "quantity": 13,
+    "price": 1667.5
   }
 ]

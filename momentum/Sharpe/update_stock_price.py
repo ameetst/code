@@ -31,7 +31,8 @@ import openpyxl
 # ── Config ────────────────────────────────────────────────────────────────────
 BATCH_SIZE  = 50          # tickers per yfinance batch download
 SLEEP_SEC   = 2           # pause between batches (avoid rate-limiting)
-PERIOD      = "1y"        # history period for date columns
+# Fetch window is derived from the template's own date headers (see main()) —
+# whatever range of dates the DATA sheet's row 1 spans is what gets downloaded.
 
 # Tickers whose Yahoo Finance symbol differs from the value stored in the sheet.
 # Key = value as it appears in column A  →  Value = correct Yahoo Finance symbol.
@@ -109,14 +110,19 @@ def ns(ticker: str) -> str:
     if not t.endswith(".NS") and not t.endswith(".BO") and not t.startswith("^"):
         return t + ".NS"
     return t
-def batch_download(tickers_ns: list[str]):
-    """Download 1-year daily Close AND Volume for a batch.
+def batch_download(tickers_ns: list[str], start: datetime.date, end: datetime.date):
+    """Download daily Close AND Volume for a batch, spanning [start, end).
+
+    `start`/`end` are taken from the template's own date headers (see main());
+    `end` must already be one day past the last date wanted — yfinance treats
+    `end` as exclusive.
 
     Returns (close_df, volume_df) — both indexed by date.
     """
     raw = yf.download(
         tickers_ns,
-        period=PERIOD,
+        start=start,
+        end=end,
         auto_adjust=True,
         progress=False,
         threads=True,
@@ -144,8 +150,13 @@ def main(input_file: str, output_file: str, extra_copy_dir: str = None):
      vol_ticker_rows, vol_date_cols) = load_template(input_file)
 
     total = len(tickers)
+    fetch_start     = min(date_cols)
+    fetch_end_incl  = max(date_cols)                                  # last date to include
+    fetch_end       = fetch_end_incl + datetime.timedelta(days=1)     # yfinance end is exclusive
     print(f"  {total} tickers | {len(date_cols)} date columns "
-          f"({min(date_cols)} → {max(date_cols)})")
+          f"({fetch_start} → {fetch_end_incl})")
+    print(f"  Fetch window (from template headers): {fetch_start} → {fetch_end_incl} "
+          f"({(fetch_end_incl - fetch_start).days} calendar days)")
     if ws_vol is not None:
         print(f"  VOLUME sheet: {len(vol_ticker_rows)} tickers | "
               f"{len(vol_date_cols)} date columns")
@@ -171,7 +182,7 @@ def main(input_file: str, output_file: str, extra_copy_dir: str = None):
             orig = ns_to_original[sym]
             print(f"  {sym} ({orig})", end="", flush=True)
             try:
-                close_df, vol_df = batch_download([sym])
+                close_df, vol_df = batch_download([sym], fetch_start, fetch_end)
                 if not close_df.empty:
                     col_name = close_df.columns[0] if isinstance(close_df.columns[0], str) else sym
                     series = close_df.iloc[:, 0].dropna()
@@ -193,7 +204,7 @@ def main(input_file: str, output_file: str, extra_copy_dir: str = None):
     for idx, batch in enumerate(batches, 1):
         print(f"  Batch {idx}/{len(batches)}: {batch[0]} … {batch[-1]}", end="", flush=True)
         try:
-            close_df, vol_df = batch_download(batch)
+            close_df, vol_df = batch_download(batch, fetch_start, fetch_end)
             if not close_df.empty:
                 for col in close_df.columns:
                     orig = ns_to_original.get(col, col.replace(".NS", ""))
