@@ -655,5 +655,32 @@
     "action": "BUY",
     "quantity": 13,
     "price": 1667.5
+  },
+  {
+    "id": "cd40002d-8b6c-4415-9e76-b97510fd7784",
+    "date": "2026-08-28",
+    "timestamp": "2026-08-28T15:08:00.408330",
+    "ticker": "WELCORP",
+    "action": "SELL",
+    "quantity": 48,
+    "price": 2380.0
+  },
+  {
+    "id": "776b15c9-5689-4512-8e81-b9186d52e152",
+    "date": "2026-08-28",
+    "timestamp": "2026-08-28T15:13:52.729555",
+    "ticker": "LAURUSLABS",
+    "action": "SELL",
+    "quantity": 53,
+    "price": 1932.0
+  },
+  {
+    "id": "ddd654e7-e7b6-486b-8eb5-cdb8d5151fff",
+    "date": "2026-08-28",
+    "timestamp": "2026-08-28T15:16:11.222090",
+    "ticker": "AETHER",
+    "action": "SELL",
+    "quantity": 13,
+    "price": 1698.0
   }
 ]

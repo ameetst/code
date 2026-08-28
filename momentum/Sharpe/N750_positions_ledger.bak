@@ -7,17 +7,9 @@
     "entry_date": "2026-05-25",
     "entry_price": 188.87779521003722
   },
-  "LAURUSLABS": {
-    "entry_date": "2026-05-25",
-    "entry_price": 1360.0754716981132
-  },
   "SANSERA": {
     "entry_date": "2026-08-10",
     "entry_price": 3849.2
-  },
-  "WELCORP": {
-    "entry_date": "2026-07-07",
-    "entry_price": 1532.8
   },
   "CPPLUS": {
     "entry_date": "2026-06-23",
@@ -70,9 +62,5 @@
   "BHARATFORG": {
     "entry_date": "2026-08-10",
     "entry_price": 2262.9
-  },
-  "AETHER": {
-    "entry_date": "2026-08-24",
-    "entry_price": 1667.5
   }
 }
