@@ -556,7 +556,7 @@ params = {
         "ADTV Filter":      f">= {min_turnover_cr} Cr (12M or 6M median)",
         "Series EQ Filter": "Enabled" if eq_series_filter else "Disabled",
         "Circuit Filter":   f"Enabled (>= {circuit_threshold} days)" if circuit_filter_enabled else "Disabled",
-        "Rank Buffer":      "50",
+        "Rank Buffer":      str(round(2 * MAX_N)),   # scales with MAX_N — must match Sharpe.py's HOLD_RANK_BUFFER
         "Cash Yield":       "6% p.a.",
         "Ledger File":      Path(LEDGER_FILE).name,
     }
@@ -1112,24 +1112,27 @@ with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
 st.divider()
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
-tab_top, tab_exits, tab_tradelog, tab_cash, tab_calcs, tab_early, tab_config, tab_perf = st.tabs([
-    "📊 Top 25 Rankings",
-    "🚨 Actions Monitor",
-    "📝 Tradelog & MTM",
-    "💰 Cash Ledger",
-    "📋 Full Rankings",
-    "📈 Early Movers",
-    "⚙️ Configuration",
-    "📈 Performance Tracker"])
+SHOW_CASH_LEDGER_TAB = False  # toggle to re-enable the Cash Ledger tab
 
-# ── TAB 1: TOP 25 RANKINGS ────────────────────────────────────────────────────
+_tab_labels = [f"📊 Top {MAX_N} Rankings", "🚨 Actions Monitor", "📝 Tradelog & MTM"]
+if SHOW_CASH_LEDGER_TAB:
+    _tab_labels.append("💰 Cash Ledger")
+_tab_labels += ["📋 Full Rankings", "📈 Early Movers", "⚙️ Configuration", "📈 Performance Tracker"]
+
+_tabs = iter(st.tabs(_tab_labels))
+tab_top, tab_exits, tab_tradelog = next(_tabs), next(_tabs), next(_tabs)
+if SHOW_CASH_LEDGER_TAB:
+    tab_cash = next(_tabs)
+tab_calcs, tab_early, tab_config, tab_perf = next(_tabs), next(_tabs), next(_tabs), next(_tabs)
+
+# ── TAB 1: TOP N RANKINGS ─────────────────────────────────────────────────────
 with tab_top:
     st.markdown(
-        f"## 📊 Top 25 Rankings  —  "
+        f"## 📊 Top {MAX_N} Rankings  —  "
         f"Regime Score: **{regime_score:.2f}**  |  "
         f"Dynamic N (Strategy): **{dynamic_n}**")
 
-    DISPLAY_N = 25
+    DISPLAY_N = MAX_N
     held_tickers = set(active_holdings.keys())
     rows = []
 
@@ -1800,220 +1803,221 @@ with tab_tradelog:
                     st.rerun()
 
 # ── TAB: CASH LEDGER ──────────────────────────────────────────────────────────
-with tab_cash:
-    st.markdown("## 💰 Cash Ledger")
-    st.caption("Track every deposit, withdrawal, dividend, interest credit and fee moving "
-               "into or out of the portfolio — independent of stock trades.")
+if SHOW_CASH_LEDGER_TAB:
+    with tab_cash:
+        st.markdown("## 💰 Cash Ledger")
+        st.caption("Track every deposit, withdrawal, dividend, interest credit and fee moving "
+                   "into or out of the portfolio — independent of stock trades.")
 
-    # 1. Metric Cards
-    cc1, cc2, cc3, cc4 = st.columns(4)
-    with cc1:
-        st.metric("Total Deposits", f"Rs {cash_summary['by_type']['Deposit']:,.2f}")
-    with cc2:
-        st.metric("Total Withdrawals", f"Rs {cash_summary['by_type']['Withdrawal']:,.2f}")
-    with cc3:
-        _other_in = cash_summary['by_type']['Dividend'] + cash_summary['by_type']['Interest']
-        _other_out = cash_summary['by_type']['Fees/Charges']
-        st.metric("Dividends + Interest", f"Rs {_other_in:,.2f}")
-    with cc4:
-        st.metric("Net Cash Contributed", f"Rs {cash_summary['net']:,.2f}")
+        # 1. Metric Cards
+        cc1, cc2, cc3, cc4 = st.columns(4)
+        with cc1:
+            st.metric("Total Deposits", f"Rs {cash_summary['by_type']['Deposit']:,.2f}")
+        with cc2:
+            st.metric("Total Withdrawals", f"Rs {cash_summary['by_type']['Withdrawal']:,.2f}")
+        with cc3:
+            _other_in = cash_summary['by_type']['Dividend'] + cash_summary['by_type']['Interest']
+            _other_out = cash_summary['by_type']['Fees/Charges']
+            st.metric("Dividends + Interest", f"Rs {_other_in:,.2f}")
+        with cc4:
+            st.metric("Net Cash Contributed", f"Rs {cash_summary['net']:,.2f}")
 
-    st.caption(f"Fees/Charges paid to date: Rs {cash_summary['by_type']['Fees/Charges']:,.2f}")
-
-    st.divider()
-
-    # 2. Reconciliation against configured Portfolio Capital
-    st.markdown("### 🔄 Reconcile with Portfolio Capital")
-    rc1, rc2 = st.columns([0.7, 0.3])
-    with rc1:
-        _diff = cash_summary['net'] - capital
-        st.markdown(
-            f"Configured **Portfolio Capital** (Config tab): **Rs {capital:,.0f}**  \n"
-            f"Ledger **Net Cash Contributed**: **Rs {cash_summary['net']:,.2f}**  \n"
-            f"Difference: **Rs {_diff:,.2f}**")
-    with rc2:
-        if st.button("↔️ Sync Net Contributed → Capital", use_container_width=True,
-                      help="Sets Portfolio Capital (used for position sizing) to the ledger's "
-                           "net cash contributed, and saves it to dashboard_config.json."):
-            if cash_summary['net'] <= 0:
-                st.error("❌ Net cash contributed must be positive to set as capital.")
-            else:
-                st.session_state.cfg_capital = int(round(cash_summary['net']))
-                _sync_cfg = {
-                    "file":                   st.session_state.cfg_file,
-                    "capital":                st.session_state.cfg_capital,
-                    "min_n":                  int(st.session_state.cfg_min_n),
-                    "max_n":                  int(st.session_state.cfg_max_n),
-                    "min_turnover":           float(st.session_state.cfg_min_turnover),
-                    "eq_series_filter":       st.session_state.cfg_eq_series_filter,
-                    "circuit_filter_enabled": st.session_state.cfg_circuit_filter_enabled,
-                    "circuit_threshold":      int(st.session_state.cfg_circuit_threshold),
-                    "rel_dd_breach_threshold": int(st.session_state.cfg_rel_dd_breach_threshold),
-                }
-                try:
-                    ml.save_config(_sync_cfg, str(SCRIPT_DIR))
-                    st.success(f"✅ Portfolio Capital set to Rs {cash_summary['net']:,.0f} and saved.")
-                    st.rerun()
-                except Exception as _e:
-                    st.error(f"❌ Failed to save: {_e}")
-
-    st.divider()
-
-    # 3. Log New Entry
-    st.markdown("### ➕ Log New Cash Entry")
-
-    if st.session_state.get("_pending_cash_reset"):
-        st.session_state.cash_amount = 0.0
-        st.session_state.cash_note = ""
-        del st.session_state["_pending_cash_reset"]
-
-    with st.form(key="add_cash_form", clear_on_submit=True):
-        col_type, col_dt, col_amt = st.columns([1, 1, 1])
-        with col_type:
-            cash_type = st.selectbox("Type", options=CASH_ENTRY_TYPES, key="cash_type")
-        with col_dt:
-            cash_date = st.date_input("Date", datetime.date.today(), key="cash_date")
-        with col_amt:
-            cash_amount = st.number_input("Amount (INR)", min_value=0.0, step=1000.0,
-                                           format="%.2f", key="cash_amount")
-
-        cash_note = st.text_input("Note (optional)", key="cash_note",
-                                   placeholder="e.g. Salary top-up, broker payout, AMC fee")
-
-        submit_cash = st.form_submit_button("💾 Record Cash Entry", use_container_width=True)
-
-        if submit_cash:
-            if cash_amount <= 0:
-                st.error("❌ Amount must be greater than zero. Entry not recorded.")
-            else:
-                if cash_type in CASH_OUTFLOW_TYPES and cash_amount > cash_summary['net'] + 1e-9:
-                    st.warning(
-                        f"⚠️ This {cash_type.lower()} of Rs {cash_amount:,.2f} exceeds the "
-                        f"current net cash contributed (Rs {cash_summary['net']:,.2f}). "
-                        f"Recorded anyway — investment gains/proceeds outside the ledger "
-                        f"may cover the difference.")
-                new_entry = {
-                    "id": str(uuid.uuid4()),
-                    "date": cash_date.isoformat(),
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "type": cash_type,
-                    "amount": float(cash_amount),
-                    "note": cash_note.strip(),
-                }
-                updated_ledger = cash_ledger + [new_entry]
-                save_cash_ledger(universe, updated_ledger)
-                st.session_state._pending_cash_reset = True
-                st.success(f"Successfully recorded {cash_type} of Rs {cash_amount:,.2f}!")
-                st.rerun()
-
-    st.divider()
-
-    # 4. Transaction History, Edit & Delete
-    st.markdown("### 🕒 Cash Transaction History")
-    if not cash_ledger:
-        st.info("No cash transactions logged yet.")
-    else:
-        with_balance = compute_cash_ledger_running_balance(cash_ledger)
-        display_cash = [{
-            "Date":    e["date"],
-            "Type":    e["type"],
-            "Amount":  e["amount"],
-            "Balance": e["balance"],
-            "Note":    e.get("note", ""),
-        } for e in reversed(with_balance)]
-
-        display_cash_df = pd.DataFrame(display_cash)
-
-        def style_cash(row):
-            if row["Type"] in CASH_INFLOW_TYPES:
-                return ["background-color:#E8F5E9;"] * len(row)
-            return ["background-color:#FFEBEE;"] * len(row)
-
-        st.dataframe(
-            display_cash_df.style.apply(style_cash, axis=1).format(
-                {"Amount": "Rs {:,.2f}", "Balance": "Rs {:,.2f}"}
-            ),
-            use_container_width=True, hide_index=True
-        )
-
-        st.markdown("#### ✏️ Edit Existing Entry")
-        cash_options_edit = [
-            f"{e['date']} | {e['type']} Rs{e['amount']:,.2f} (ID: {e['id']})"
-            for e in reversed(cash_ledger)
-        ]
-        selected_cash_choice = st.selectbox(
-            "Select entry to edit",
-            options=["-- Select Entry to Edit --"] + cash_options_edit,
-            key="edit_cash_selectbox"
-        )
-
-        if selected_cash_choice != "-- Select Entry to Edit --":
-            parts = selected_cash_choice.split("(ID: ")
-            edit_cash_id = parts[1].rstrip(")") if len(parts) > 1 else None
-            target_cash = next((e for e in cash_ledger if e["id"] == edit_cash_id), None)
-
-            if target_cash:
-                st.info(f"Editing entry ID: {target_cash['id']}")
-                with st.form(key="edit_cash_form", clear_on_submit=False):
-                    col_ec_type, col_ec_dt, col_ec_amt = st.columns(3)
-                    with col_ec_type:
-                        edit_cash_type = st.selectbox(
-                            "Type", options=CASH_ENTRY_TYPES,
-                            index=CASH_ENTRY_TYPES.index(target_cash["type"])
-                                if target_cash["type"] in CASH_ENTRY_TYPES else 0)
-                    with col_ec_dt:
-                        try:
-                            ec_dt_val = datetime.date.fromisoformat(target_cash["date"])
-                        except ValueError:
-                            ec_dt_val = datetime.date.today()
-                        edit_cash_date = st.date_input("Date", ec_dt_val)
-                    with col_ec_amt:
-                        edit_cash_amount = st.number_input(
-                            "Amount (INR)", min_value=0.01, step=1000.0, format="%.2f",
-                            value=float(target_cash["amount"]))
-
-                    edit_cash_note = st.text_input("Note", value=target_cash.get("note", ""))
-
-                    submit_cash_edit = st.form_submit_button("💾 Save Changes", use_container_width=True)
-
-                    if submit_cash_edit:
-                        idx_to_update = next((i for i, e in enumerate(cash_ledger) if e["id"] == edit_cash_id), None)
-                        if idx_to_update is not None:
-                            candidate_ledger = [e.copy() for e in cash_ledger]
-                            candidate_ledger[idx_to_update]["type"] = edit_cash_type
-                            candidate_ledger[idx_to_update]["date"] = edit_cash_date.isoformat()
-                            candidate_ledger[idx_to_update]["amount"] = float(edit_cash_amount)
-                            candidate_ledger[idx_to_update]["note"] = edit_cash_note.strip()
-
-                            save_cash_ledger(universe, candidate_ledger)
-                            st.success("Successfully updated cash entry!")
-                            st.rerun()
+        st.caption(f"Fees/Charges paid to date: Rs {cash_summary['by_type']['Fees/Charges']:,.2f}")
 
         st.divider()
 
-        st.markdown("#### 🗑️ Delete Entries")
-        cash_options_delete = [
-            f"{e['date']} | {e['type']} Rs{e['amount']:,.2f} (ID: {e['id']})"
-            for e in reversed(cash_ledger)
-        ]
-        selected_cash_to_delete = st.multiselect(
-            "Select entries to delete",
-            options=cash_options_delete,
-            help="Select one or more cash entries to permanently delete"
-        )
+        # 2. Reconciliation against configured Portfolio Capital
+        st.markdown("### 🔄 Reconcile with Portfolio Capital")
+        rc1, rc2 = st.columns([0.7, 0.3])
+        with rc1:
+            _diff = cash_summary['net'] - capital
+            st.markdown(
+                f"Configured **Portfolio Capital** (Config tab): **Rs {capital:,.0f}**  \n"
+                f"Ledger **Net Cash Contributed**: **Rs {cash_summary['net']:,.2f}**  \n"
+                f"Difference: **Rs {_diff:,.2f}**")
+        with rc2:
+            if st.button("↔️ Sync Net Contributed → Capital", use_container_width=True,
+                          help="Sets Portfolio Capital (used for position sizing) to the ledger's "
+                               "net cash contributed, and saves it to dashboard_config.json."):
+                if cash_summary['net'] <= 0:
+                    st.error("❌ Net cash contributed must be positive to set as capital.")
+                else:
+                    st.session_state.cfg_capital = int(round(cash_summary['net']))
+                    _sync_cfg = {
+                        "file":                   st.session_state.cfg_file,
+                        "capital":                st.session_state.cfg_capital,
+                        "min_n":                  int(st.session_state.cfg_min_n),
+                        "max_n":                  int(st.session_state.cfg_max_n),
+                        "min_turnover":           float(st.session_state.cfg_min_turnover),
+                        "eq_series_filter":       st.session_state.cfg_eq_series_filter,
+                        "circuit_filter_enabled": st.session_state.cfg_circuit_filter_enabled,
+                        "circuit_threshold":      int(st.session_state.cfg_circuit_threshold),
+                        "rel_dd_breach_threshold": int(st.session_state.cfg_rel_dd_breach_threshold),
+                    }
+                    try:
+                        ml.save_config(_sync_cfg, str(SCRIPT_DIR))
+                        st.success(f"✅ Portfolio Capital set to Rs {cash_summary['net']:,.0f} and saved.")
+                        st.rerun()
+                    except Exception as _e:
+                        st.error(f"❌ Failed to save: {_e}")
 
-        if selected_cash_to_delete:
-            if st.button("🗑️ Delete Selected Cash Entries", type="secondary", use_container_width=True):
-                cash_ids_to_delete = []
-                for choice in selected_cash_to_delete:
-                    parts = choice.split("(ID: ")
-                    if len(parts) > 1:
-                        cash_ids_to_delete.append(parts[1].rstrip(")"))
+        st.divider()
 
-                candidate_ledger = [e for e in cash_ledger if e["id"] not in cash_ids_to_delete]
-                save_cash_ledger(universe, candidate_ledger)
-                st.success(f"Deleted {len(cash_ids_to_delete)} cash entry(ies)!")
-                st.rerun()
+        # 3. Log New Entry
+        st.markdown("### ➕ Log New Cash Entry")
+
+        if st.session_state.get("_pending_cash_reset"):
+            st.session_state.cash_amount = 0.0
+            st.session_state.cash_note = ""
+            del st.session_state["_pending_cash_reset"]
+
+        with st.form(key="add_cash_form", clear_on_submit=True):
+            col_type, col_dt, col_amt = st.columns([1, 1, 1])
+            with col_type:
+                cash_type = st.selectbox("Type", options=CASH_ENTRY_TYPES, key="cash_type")
+            with col_dt:
+                cash_date = st.date_input("Date", datetime.date.today(), key="cash_date")
+            with col_amt:
+                cash_amount = st.number_input("Amount (INR)", min_value=0.0, step=1000.0,
+                                               format="%.2f", key="cash_amount")
+
+            cash_note = st.text_input("Note (optional)", key="cash_note",
+                                       placeholder="e.g. Salary top-up, broker payout, AMC fee")
+
+            submit_cash = st.form_submit_button("💾 Record Cash Entry", use_container_width=True)
+
+            if submit_cash:
+                if cash_amount <= 0:
+                    st.error("❌ Amount must be greater than zero. Entry not recorded.")
+                else:
+                    if cash_type in CASH_OUTFLOW_TYPES and cash_amount > cash_summary['net'] + 1e-9:
+                        st.warning(
+                            f"⚠️ This {cash_type.lower()} of Rs {cash_amount:,.2f} exceeds the "
+                            f"current net cash contributed (Rs {cash_summary['net']:,.2f}). "
+                            f"Recorded anyway — investment gains/proceeds outside the ledger "
+                            f"may cover the difference.")
+                    new_entry = {
+                        "id": str(uuid.uuid4()),
+                        "date": cash_date.isoformat(),
+                        "timestamp": datetime.datetime.now().isoformat(),
+                        "type": cash_type,
+                        "amount": float(cash_amount),
+                        "note": cash_note.strip(),
+                    }
+                    updated_ledger = cash_ledger + [new_entry]
+                    save_cash_ledger(universe, updated_ledger)
+                    st.session_state._pending_cash_reset = True
+                    st.success(f"Successfully recorded {cash_type} of Rs {cash_amount:,.2f}!")
+                    st.rerun()
+
+        st.divider()
+
+        # 4. Transaction History, Edit & Delete
+        st.markdown("### 🕒 Cash Transaction History")
+        if not cash_ledger:
+            st.info("No cash transactions logged yet.")
+        else:
+            with_balance = compute_cash_ledger_running_balance(cash_ledger)
+            display_cash = [{
+                "Date":    e["date"],
+                "Type":    e["type"],
+                "Amount":  e["amount"],
+                "Balance": e["balance"],
+                "Note":    e.get("note", ""),
+            } for e in reversed(with_balance)]
+
+            display_cash_df = pd.DataFrame(display_cash)
+
+            def style_cash(row):
+                if row["Type"] in CASH_INFLOW_TYPES:
+                    return ["background-color:#E8F5E9;"] * len(row)
+                return ["background-color:#FFEBEE;"] * len(row)
+
+            st.dataframe(
+                display_cash_df.style.apply(style_cash, axis=1).format(
+                    {"Amount": "Rs {:,.2f}", "Balance": "Rs {:,.2f}"}
+                ),
+                use_container_width=True, hide_index=True
+            )
+
+            st.markdown("#### ✏️ Edit Existing Entry")
+            cash_options_edit = [
+                f"{e['date']} | {e['type']} Rs{e['amount']:,.2f} (ID: {e['id']})"
+                for e in reversed(cash_ledger)
+            ]
+            selected_cash_choice = st.selectbox(
+                "Select entry to edit",
+                options=["-- Select Entry to Edit --"] + cash_options_edit,
+                key="edit_cash_selectbox"
+            )
+
+            if selected_cash_choice != "-- Select Entry to Edit --":
+                parts = selected_cash_choice.split("(ID: ")
+                edit_cash_id = parts[1].rstrip(")") if len(parts) > 1 else None
+                target_cash = next((e for e in cash_ledger if e["id"] == edit_cash_id), None)
+
+                if target_cash:
+                    st.info(f"Editing entry ID: {target_cash['id']}")
+                    with st.form(key="edit_cash_form", clear_on_submit=False):
+                        col_ec_type, col_ec_dt, col_ec_amt = st.columns(3)
+                        with col_ec_type:
+                            edit_cash_type = st.selectbox(
+                                "Type", options=CASH_ENTRY_TYPES,
+                                index=CASH_ENTRY_TYPES.index(target_cash["type"])
+                                    if target_cash["type"] in CASH_ENTRY_TYPES else 0)
+                        with col_ec_dt:
+                            try:
+                                ec_dt_val = datetime.date.fromisoformat(target_cash["date"])
+                            except ValueError:
+                                ec_dt_val = datetime.date.today()
+                            edit_cash_date = st.date_input("Date", ec_dt_val)
+                        with col_ec_amt:
+                            edit_cash_amount = st.number_input(
+                                "Amount (INR)", min_value=0.01, step=1000.0, format="%.2f",
+                                value=float(target_cash["amount"]))
+
+                        edit_cash_note = st.text_input("Note", value=target_cash.get("note", ""))
+
+                        submit_cash_edit = st.form_submit_button("💾 Save Changes", use_container_width=True)
+
+                        if submit_cash_edit:
+                            idx_to_update = next((i for i, e in enumerate(cash_ledger) if e["id"] == edit_cash_id), None)
+                            if idx_to_update is not None:
+                                candidate_ledger = [e.copy() for e in cash_ledger]
+                                candidate_ledger[idx_to_update]["type"] = edit_cash_type
+                                candidate_ledger[idx_to_update]["date"] = edit_cash_date.isoformat()
+                                candidate_ledger[idx_to_update]["amount"] = float(edit_cash_amount)
+                                candidate_ledger[idx_to_update]["note"] = edit_cash_note.strip()
+
+                                save_cash_ledger(universe, candidate_ledger)
+                                st.success("Successfully updated cash entry!")
+                                st.rerun()
+
+            st.divider()
+
+            st.markdown("#### 🗑️ Delete Entries")
+            cash_options_delete = [
+                f"{e['date']} | {e['type']} Rs{e['amount']:,.2f} (ID: {e['id']})"
+                for e in reversed(cash_ledger)
+            ]
+            selected_cash_to_delete = st.multiselect(
+                "Select entries to delete",
+                options=cash_options_delete,
+                help="Select one or more cash entries to permanently delete"
+            )
+
+            if selected_cash_to_delete:
+                if st.button("🗑️ Delete Selected Cash Entries", type="secondary", use_container_width=True):
+                    cash_ids_to_delete = []
+                    for choice in selected_cash_to_delete:
+                        parts = choice.split("(ID: ")
+                        if len(parts) > 1:
+                            cash_ids_to_delete.append(parts[1].rstrip(")"))
+
+                    candidate_ledger = [e for e in cash_ledger if e["id"] not in cash_ids_to_delete]
+                    save_cash_ledger(universe, candidate_ledger)
+                    st.success(f"Deleted {len(cash_ids_to_delete)} cash entry(ies)!")
+                    st.rerun()
 
 # ── TAB 4: FULL RANKINGS ──────────────────────────────────────────────────────
 with tab_calcs:
