@@ -652,10 +652,14 @@ def _residual_information_ratio(stock_series: pd.Series, mkt_rets: pd.Series,
     excess log-returns; return the annualised Information Ratio of the fit
     (alpha / residual volatility).
     """
-    px = stock_series.dropna()
-    if len(px) < 2:
+    if stock_series.notna().sum() < 2:
         return np.nan
-    s_rets = pd.Series(np.diff(np.log(px.values)), index=px.index[1:])
+    # Diff BEFORE dropping NaN so a stock-specific gap (trading halt / no-print
+    # day that isn't a shared market holiday) invalidates only the 1-2 return
+    # observations adjacent to it, instead of silently splicing a multi-day
+    # price move into a single "daily" return that then gets misaligned
+    # against NIFTY500's genuine single-day return for that date.
+    s_rets = np.log(stock_series).diff().dropna()
 
     aligned = pd.concat([s_rets, mkt_rets], axis=1, join="inner").dropna()
     if len(aligned) < max(window * 0.90, 10):
@@ -671,7 +675,7 @@ def _residual_information_ratio(stock_series: pd.Series, mkt_rets: pd.Series,
     except np.linalg.LinAlgError:
         return np.nan
     residuals = s - X @ coeffs
-    sd = residuals.std(ddof=1)
+    sd = residuals.std(ddof=2)   # 2 estimated params (alpha, beta)
     if sd < 1e-12:
         return np.nan
     alpha = coeffs[0]
@@ -695,8 +699,9 @@ def compute_residual_momentum(prices_df: pd.DataFrame,
     rs_z_df   : DataFrame  RZ_<label>  Z-scored + RES_MOM composite
     """
     print("\nComputing residual momentum scores ...")
-    nifty_px = nifty_series.dropna()
-    mkt_rets = pd.Series(np.diff(np.log(nifty_px.values)), index=nifty_px.index[1:])
+    # Diff BEFORE dropping NaN (see _residual_information_ratio) so any gap
+    # invalidates only its adjacent return(s) instead of silently splicing.
+    mkt_rets = np.log(nifty_series).diff().dropna()
 
     resmom_data = {}
     for label, window in windows.items():
