@@ -25,7 +25,9 @@ the rank exit respects it.
        is flagged EXIT_52H = True and must be sold immediately.
 
   2. RANK-BASED EXIT (respects 28-day hold lock)
-       If a held stock's rank drops to > HOLD_RANK_BUFFER (default 40)
+       If a held stock's rank drops to > HOLD_RANK_BUFFER (= round(2 * MAX_N),
+       scales with portfolio size so it stays correctly calibrated across
+       universes of different sizes)
        AND it has been held for >= MIN_HOLD_DAYS (default 28 calendar days),
        it is flagged EXIT_RANK = True.
 
@@ -98,7 +100,6 @@ PORTFOLIO_CAPITAL = _saved_cfg["capital"]    # INR — baseline for allocation d
 RFR_ANNUAL        = 0.07
 TRADING_DAYS      = 252
 TOP_N             = 20         # used for Excel sheet label only; actual N is dynamic
-HOLD_RANK_BUFFER  = 50          # exit rank threshold
 MIN_HOLD_DAYS     = 28          # calendar days before rank-based exit is permitted
 LIQUID_YIELD_PA   = 0.06        # 6% p.a. on idle cash
 # CLI --min-turnover overrides saved config; use saved config as default
@@ -116,12 +117,16 @@ BAND_CSV                = _SCRIPT_DIR / "Price_Band_List.csv"
 MIN_N               = _saved_cfg["min_n"]   # minimum holdings at lowest regime score
 MAX_N               = _saved_cfg["max_n"]   # maximum holdings at highest regime score
 
-# Max Position Weight (%) / Max Position Size (INR) are fully derived from
-# MAX_N — an equal-weight share of capital across the largest the portfolio
-# can ever grow to. Not an independent setting.
+# Max Position Weight (%) / Max Position Size (INR) / Hold Rank Buffer are all
+# derived from MAX_N — not independent settings. HOLD_RANK_BUFFER in particular
+# scales with portfolio size rather than sitting at a fixed rank, so it stays
+# correctly calibrated if the universe or MAX_N changes (a fixed absolute value
+# silently goes stale when the eligible pool's size changes — see N750->NSEAll
+# migration notes).
 MAX_WT                = 1.0 / MAX_N
 MAX_WT_PCT            = MAX_WT * 100.0
 MAX_POSITION_SIZE_INR = PORTFOLIO_CAPITAL / MAX_N
+HOLD_RANK_BUFFER       = round(2 * MAX_N)   # exit rank threshold
 
 NEW_ENTRY_THRESHOLD = 0.40   # regime score below this — no new buys
 SIGNAL_WEIGHTS      = {      # must sum to 1.0
@@ -436,7 +441,7 @@ print(f"  Dynamic N     : {dynamic_n}  "
 #   EXIT_RANK.
 #
 # EXIT_RANK — Rank-based exit.
-#   The stock's rank has fallen beyond HOLD_RANK_BUFFER (40)
+#   The stock's rank has fallen beyond HOLD_RANK_BUFFER (= round(2 * MAX_N))
 #   AND the stock has been held for at least MIN_HOLD_DAYS (28 days).
 #   The hold lock protects against rank whipsaw for recently bought stocks.
 #
