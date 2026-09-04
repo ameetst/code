@@ -70,5 +70,68 @@
     "action": "SELL",
     "quantity": 968,
     "price": 51.35000000000001
+  },
+  {
+    "id": "3ad627f4-0542-44a0-b1f2-45c59d15be46",
+    "date": "2026-08-31",
+    "timestamp": "2026-09-01T14:19:37.929540",
+    "ticker": "SML100CASE",
+    "action": "SELL",
+    "quantity": 4484,
+    "price": 11.28
+  },
+  {
+    "id": "828899f9-858d-42a4-ae38-3c202077a53b",
+    "date": "2026-08-31",
+    "timestamp": "2026-09-01T14:19:54.333038",
+    "ticker": "PHARMABEES",
+    "action": "SELL",
+    "quantity": 1836,
+    "price": 27.54
+  },
+  {
+    "id": "86def98d-f238-4769-9473-3e1c39f6aec1",
+    "date": "2026-09-01",
+    "timestamp": "2026-09-01T14:20:34.703016",
+    "ticker": "PHARMABEES",
+    "action": "BUY",
+    "quantity": 1817,
+    "price": 27.51
+  },
+  {
+    "id": "fbfe9e73-673f-41f8-83f3-6722e8d2d9a7",
+    "date": "2026-09-01",
+    "timestamp": "2026-09-01T14:20:52.915839",
+    "ticker": "HEALTHCARE",
+    "action": "BUY",
+    "quantity": 2305,
+    "price": 21.89
+  },
+  {
+    "id": "72660975-16a6-4211-830d-2b43238e3199",
+    "date": "2026-09-01",
+    "timestamp": "2026-09-01T14:21:19.683227",
+    "ticker": "INTERNET",
+    "action": "BUY",
+    "quantity": 3436,
+    "price": 14.55
+  },
+  {
+    "id": "d3339fc3-ecf6-4f27-b4f7-62bc9ed91a3f",
+    "date": "2026-09-01",
+    "timestamp": "2026-09-01T14:21:55.156461",
+    "ticker": "SML100CASE",
+    "action": "BUY",
+    "quantity": 4436,
+    "price": 11.27
+  },
+  {
+    "id": "f15f5e6e-e6ab-4937-a49b-7b36ce4e568b",
+    "date": "2026-09-01",
+    "timestamp": "2026-09-01T14:23:12.294360",
+    "ticker": "SELECTIPO",
+    "action": "BUY",
+    "quantity": 1030,
+    "price": 48.54
   }
 ]

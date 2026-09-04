@@ -14,7 +14,7 @@ from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 # Append the Sharpe Score folder to sys.path to load momentum_lib
-LIB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Sharpe Score"))
+LIB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Sharpe"))
 if LIB_PATH not in sys.path:
     sys.path.insert(0, LIB_PATH)
 

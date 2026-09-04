@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 import momentum_lib as ml
+import equity_chart
 
 # ── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Sharpe Momentum", page_icon="📊",
@@ -460,7 +461,8 @@ def sync_to_positions_ledger(ledger_path, active_holdings):
             
             serialisable[ticker] = {
                 "entry_date": entry_date_str,
-                "entry_price": float(h["avg_price"])
+                "entry_price": float(h["avg_price"]),
+                "qty": float(h["qty"])
             }
     
     try:
@@ -1112,7 +1114,7 @@ with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
 st.divider()
 
 # ── TABS ──────────────────────────────────────────────────────────────────────
-SHOW_CASH_LEDGER_TAB = False  # toggle to re-enable the Cash Ledger tab
+SHOW_CASH_LEDGER_TAB = True  # toggle to re-enable the Cash Ledger tab
 
 _tab_labels = [f"📊 Top {MAX_N} Rankings", "🚨 Actions Monitor", "📝 Tradelog & MTM"]
 if SHOW_CASH_LEDGER_TAB:
@@ -1826,43 +1828,6 @@ if SHOW_CASH_LEDGER_TAB:
 
         st.divider()
 
-        # 2. Reconciliation against configured Portfolio Capital
-        st.markdown("### 🔄 Reconcile with Portfolio Capital")
-        rc1, rc2 = st.columns([0.7, 0.3])
-        with rc1:
-            _diff = cash_summary['net'] - capital
-            st.markdown(
-                f"Configured **Portfolio Capital** (Config tab): **Rs {capital:,.0f}**  \n"
-                f"Ledger **Net Cash Contributed**: **Rs {cash_summary['net']:,.2f}**  \n"
-                f"Difference: **Rs {_diff:,.2f}**")
-        with rc2:
-            if st.button("↔️ Sync Net Contributed → Capital", use_container_width=True,
-                          help="Sets Portfolio Capital (used for position sizing) to the ledger's "
-                               "net cash contributed, and saves it to dashboard_config.json."):
-                if cash_summary['net'] <= 0:
-                    st.error("❌ Net cash contributed must be positive to set as capital.")
-                else:
-                    st.session_state.cfg_capital = int(round(cash_summary['net']))
-                    _sync_cfg = {
-                        "file":                   st.session_state.cfg_file,
-                        "capital":                st.session_state.cfg_capital,
-                        "min_n":                  int(st.session_state.cfg_min_n),
-                        "max_n":                  int(st.session_state.cfg_max_n),
-                        "min_turnover":           float(st.session_state.cfg_min_turnover),
-                        "eq_series_filter":       st.session_state.cfg_eq_series_filter,
-                        "circuit_filter_enabled": st.session_state.cfg_circuit_filter_enabled,
-                        "circuit_threshold":      int(st.session_state.cfg_circuit_threshold),
-                        "rel_dd_breach_threshold": int(st.session_state.cfg_rel_dd_breach_threshold),
-                    }
-                    try:
-                        ml.save_config(_sync_cfg, str(SCRIPT_DIR))
-                        st.success(f"✅ Portfolio Capital set to Rs {cash_summary['net']:,.0f} and saved.")
-                        st.rerun()
-                    except Exception as _e:
-                        st.error(f"❌ Failed to save: {_e}")
-
-        st.divider()
-
         # 3. Log New Entry
         st.markdown("### ➕ Log New Cash Entry")
 
@@ -2446,40 +2411,12 @@ with tab_perf:
 
         st.markdown("")
 
-        # Equity Curve Chart — weekly (last value per week), true datetime index
-        # so the axis sorts chronologically instead of alphabetically by label.
-        # The true inception row is pinned in explicitly — otherwise the first
-        # visible point is the end of the first *partial* week, which can sit
-        # a point or two off 100 and look like the two series don't start together.
-        _eq_indexed = _eq_df.set_index("date")[["portfolio_nav", "benchmark_nav"]]
-        _weekly = _eq_indexed.resample("W").last().dropna(how="all")
-        _inception = _eq_indexed.iloc[[0]]
-        _chart_df = pd.concat(
-            [_inception, _weekly[_weekly.index > _inception.index[0]]]
-        ).sort_index()
-        _chart_df = _chart_df.rename(columns={
-            "portfolio_nav": "Portfolio",
-            "benchmark_nav": "Benchmark (NIFTY 500)"
-        })
-        # st.line_chart can't customise axis tick format, so use Altair directly
-        # to show full date labels (e.g. "July 19") instead of the default
-        # abbreviated/auto ticks.
-        _chart_long = _chart_df.reset_index().melt(
-            id_vars="date", var_name="Series", value_name="NAV")
-        _nav_chart = (
-            alt.Chart(_chart_long)
-            .mark_line()
-            .encode(
-                x=alt.X("date:T", title=None,
-                        axis=alt.Axis(format="%B %d", labelAngle=-45)),
-                y=alt.Y("NAV:Q", title=None, scale=alt.Scale(zero=False)),
-                color=alt.Color("Series:N", title=None),
-                tooltip=[alt.Tooltip("date:T", format="%B %d, %Y"),
-                         "Series:N", alt.Tooltip("NAV:Q", format=".2f")],
-            )
-            .properties(height=400)
-        )
-        st.altair_chart(_nav_chart, use_container_width=True)
+        # Equity Curve Chart — custom HTML/SVG component (equity_chart.py),
+        # daily resolution with a hover crosshair + per-series tooltip.
+        # Days computed via the equal-weight fallback (a held ticker was
+        # missing a synced qty) or recorded before the qty-weighting fix
+        # are flagged with a small dot on the portfolio line.
+        equity_chart.render_equity_curve(_eq_df)
 
         st.caption(
             f"📊 Tracking since {_start_date}  |  {_n_days} day(s) recorded  |  "

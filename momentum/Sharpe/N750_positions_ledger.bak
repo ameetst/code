@@ -1,66 +1,147 @@
 {
   "CUPID": {
     "entry_date": "2026-08-10",
-    "entry_price": 261.24
+    "entry_price": 261.24,
+    "qty": 225.0
   },
   "HFCL": {
     "entry_date": "2026-05-25",
-    "entry_price": 188.87779521003722
+    "entry_price": 188.87779521003722,
+    "qty": 415.0
+  },
+  "LAURUSLABS": {
+    "entry_date": "2026-08-31",
+    "entry_price": 1882.1,
+    "qty": 52.0
   },
   "SANSERA": {
     "entry_date": "2026-08-10",
-    "entry_price": 3849.2
+    "entry_price": 3849.2,
+    "qty": 15.0
+  },
+  "WELCORP": {
+    "entry_date": "2026-08-31",
+    "entry_price": 2387.0,
+    "qty": 42.0
   },
   "CPPLUS": {
     "entry_date": "2026-06-23",
-    "entry_price": 3616.0100000000007
+    "entry_price": 3616.0100000000007,
+    "qty": 20.0
   },
   "SYRMA": {
     "entry_date": "2026-06-23",
-    "entry_price": 1377.0
+    "entry_price": 1377.0,
+    "qty": 56.0
   },
   "RRKABEL": {
     "entry_date": "2026-06-29",
-    "entry_price": 2481.7
+    "entry_price": 2481.7,
+    "qty": 30.0
   },
   "ANANDRATHI": {
     "entry_date": "2026-07-13",
-    "entry_price": 2117.5
+    "entry_price": 2117.5,
+    "qty": 35.0
   },
   "ASTRAMICRO": {
     "entry_date": "2026-07-13",
-    "entry_price": 1708.1000000000001
+    "entry_price": 1708.1000000000001,
+    "qty": 43.0
   },
   "GRANULES": {
     "entry_date": "2026-07-13",
-    "entry_price": 897.95
+    "entry_price": 897.95,
+    "qty": 83.0
   },
   "ATHERENERG": {
     "entry_date": "2026-07-13",
-    "entry_price": 1191.4
+    "entry_price": 1191.4,
+    "qty": 62.0
   },
   "GRWRHITECH": {
     "entry_date": "2026-07-13",
-    "entry_price": 7047.0
+    "entry_price": 7047.0,
+    "qty": 10.0
   },
   "HONASA": {
     "entry_date": "2026-08-03",
-    "entry_price": 456.35
+    "entry_price": 456.35,
+    "qty": 165.0
   },
   "SHILPAMED": {
     "entry_date": "2026-08-10",
-    "entry_price": 803.35
+    "entry_price": 803.35,
+    "qty": 70.0
   },
   "SONACOMS": {
     "entry_date": "2026-08-10",
-    "entry_price": 818.25
+    "entry_price": 818.25,
+    "qty": 70.0
   },
   "SKYGOLD": {
     "entry_date": "2026-08-10",
-    "entry_price": 759.5
+    "entry_price": 759.5,
+    "qty": 75.0
   },
   "BHARATFORG": {
     "entry_date": "2026-08-10",
-    "entry_price": 2262.9
+    "entry_price": 2262.9,
+    "qty": 26.0
+  },
+  "AETHER": {
+    "entry_date": "2026-08-31",
+    "entry_price": 1684.4,
+    "qty": 59.0
+  },
+  "DIVISLAB": {
+    "entry_date": "2026-08-31",
+    "entry_price": 9217.0,
+    "qty": 11.0
+  },
+  "SAILIFE": {
+    "entry_date": "2026-09-04",
+    "entry_price": 1574.8,
+    "qty": null
+  },
+  "ENTERO": {
+    "entry_date": "2026-09-04",
+    "entry_price": 1848.0,
+    "qty": null
+  },
+  "AKUMS": {
+    "entry_date": "2026-09-04",
+    "entry_price": 780.55,
+    "qty": null
+  },
+  "RADICO": {
+    "entry_date": "2026-09-04",
+    "entry_price": 4559.0,
+    "qty": null
+  },
+  "KTKBANK": {
+    "entry_date": "2026-09-04",
+    "entry_price": 339.75,
+    "qty": null
+  },
+  "AVALON": {
+    "entry_date": "2026-09-04",
+    "entry_price": 2248.6,
+    "qty": null
+  },
+  "QUESS": {
+    "entry_date": "2026-09-04",
+    "entry_price": 366.55,
+    "qty": null
+  },
+  "RUBICON": {
+    "entry_date": "2026-09-04",
+    "entry_price": 1775.7,
+    "qty": null
+  },
+  "ALIVUS": {
+    "entry_date": "2026-09-04",
+    "entry_price": 1418.8,
+    "qty": null
   }
 }

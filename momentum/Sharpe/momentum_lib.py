@@ -971,17 +971,15 @@ def compute_market_regime(nifty_series: pd.Series) -> str:
 def normalise_composite(v: float) -> float:
     """
     Non-linear rescale so all composite values are positive and spread out:
-      v > 1  →  v + 1
-      v < 0  →  1 / (1 - v)   maps to (0, 1]
-      0 ≤ v ≤ 1  →  unchanged
+      v >= 0  →  v + 1
+      v < 0   →  1 / (1 - v)   maps to (0, 1)
+    Continuous at v=0 (both branches -> 1.0 as v -> 0).
     """
     if pd.isna(v):
         return np.nan
-    if v > 1:
+    if v >= 0:
         return v + 1.0
-    if v < 0:
-        return 1.0 / (1.0 - v)
-    return v
+    return 1.0 / (1.0 - v)
 
 
 # ── CIRCUIT CLOSE HIGHLIGHTER & COUNTER ─────────────────────────────────────────

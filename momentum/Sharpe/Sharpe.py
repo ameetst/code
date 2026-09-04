@@ -42,10 +42,16 @@ Positions are tracked in a JSON file (LEDGER_FILE) with the structure:
   {
     "TICKER": {
       "entry_date": "YYYY-MM-DD",
-      "entry_price": float
+      "entry_price": float,
+      "qty": float | null
     },
     ...
   }
+`qty` is the real share count (synced from the dashboard's trade log) and is
+optional — a notional entry added by this script's own ranking recommendations
+(not yet confirmed via a real trade) has qty = null. The equity curve uses
+qty-weighted returns when every held ticker has a known qty, and falls back
+to equal-weighting for the day otherwise (see EQUITY CURVE TRACKING below).
 
 The ledger is loaded at the start of each run, used to evaluate exit
 conditions, and updated with new entries / removals at the end of the run.
@@ -150,7 +156,9 @@ TODAY = datetime.date.today()
 def load_ledger(path: str) -> dict:
     """
     Load the position ledger from JSON.
-    Returns a dict of { ticker: { entry_date, entry_price } }.
+    Returns a dict of { ticker: { entry_date, entry_price, qty } }.
+    `qty` is optional — legacy/notional entries may have it as None, in
+    which case the equity curve falls back to equal-weighting for the day.
     Creates an empty ledger if the file does not exist.
     """
     p = Path(path)
@@ -163,9 +171,11 @@ def load_ledger(path: str) -> dict:
     ledger = {}
     for ticker, rec in raw.items():
         try:
+            qty = rec.get("qty")
             ledger[ticker] = {
                 "entry_date":  datetime.date.fromisoformat(rec["entry_date"]),
                 "entry_price": float(rec["entry_price"]),
+                "qty":         float(qty) if qty is not None else None,
             }
         except (KeyError, ValueError) as e:
             print(f"  Warning: skipping malformed ledger entry for {ticker}: {e}")
@@ -179,6 +189,7 @@ def save_ledger(ledger: dict, path: str):
         ticker: {
             "entry_date":  rec["entry_date"].isoformat(),
             "entry_price": rec["entry_price"],
+            "qty":         rec.get("qty"),
         }
         for ticker, rec in ledger.items()
     }
@@ -275,12 +286,28 @@ def _load_equity_history(path: str) -> list:
     p = Path(path)
     if not p.exists():
         return []
-    with open(p, "r") as f:
-        return json.load(f)
+    try:
+        with open(p, "r") as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        bak_path = p.with_suffix(".bak")
+        if bak_path.exists():
+            print(f"  Warning: '{path}' is corrupted ({e}) — recovering from '{bak_path}'.")
+            with open(bak_path, "r") as f:
+                return json.load(f)
+        raise
 
 def _save_equity_history(data: list, path: str):
-    with open(path, "w") as f:
+    """Persist equity history using an atomic replace (same pattern as
+    save_ledger) so a crash mid-write can't leave a truncated JSON file."""
+    p = Path(path)
+    tmp_path = p.with_suffix(".tmp")
+    bak_path = p.with_suffix(".bak")
+    with open(tmp_path, "w") as f:
         json.dump(data, f, indent=2)
+    if p.exists():
+        shutil.copy2(p, bak_path)
+    shutil.move(str(tmp_path), str(p))
 
 print(f"Updating equity curve ...")
 eq_history = _load_equity_history(EQUITY_FILE)
@@ -315,16 +342,39 @@ if not any(e["date"] == today_str for e in eq_history):
     latest_date = date_cols[-1].date() if hasattr(date_cols[-1], 'date') else date_cols[-1]
     gap_calendar_days = max((latest_date - ref_date).days, 1)
 
-    # Portfolio multi-day return (weighted equally across held positions)
+    # Portfolio multi-day return — qty-weighted (real position size from the
+    # ledger, synced from the trade log) when every held ticker has a known
+    # qty; falls back to the old equal-weighted mean otherwise (e.g. a
+    # notional entry from this script's own ranking recommendations that
+    # hasn't been confirmed via a real trade yet).
+    used_qty_weighting = False
     if n_held > 0 and len(prices_df.columns) >= 2:
-        port_rets = []
-        for t in held_tickers:
-            if t in prices_df.index:
-                px_now = prices_df.loc[t].iloc[-1]
-                px_ref = prices_df.loc[t].iloc[ref_col_idx]
-                if pd.notna(px_now) and pd.notna(px_ref) and px_ref > 0:
-                    port_rets.append(px_now / px_ref - 1.0)
-        avg_stock_ret = float(np.mean(port_rets)) if port_rets else 0.0
+        qtys_known = all(ledger[t].get("qty") is not None for t in held_tickers)
+        if qtys_known:
+            val_ref = 0.0
+            val_now = 0.0
+            for t in held_tickers:
+                if t in prices_df.index:
+                    qty = ledger[t]["qty"]
+                    px_now = prices_df.loc[t].iloc[-1]
+                    px_ref = prices_df.loc[t].iloc[ref_col_idx]
+                    if pd.notna(px_now) and pd.notna(px_ref) and px_ref > 0:
+                        val_ref += qty * px_ref
+                        val_now += qty * px_now
+            avg_stock_ret = (val_now / val_ref - 1.0) if val_ref > 0 else 0.0
+            used_qty_weighting = bool(val_ref > 0)  # numpy.bool_ -> bool (else json.dump rejects it)
+        else:
+            port_rets = []
+            for t in held_tickers:
+                if t in prices_df.index:
+                    px_now = prices_df.loc[t].iloc[-1]
+                    px_ref = prices_df.loc[t].iloc[ref_col_idx]
+                    if pd.notna(px_now) and pd.notna(px_ref) and px_ref > 0:
+                        port_rets.append(px_now / px_ref - 1.0)
+            avg_stock_ret = float(np.mean(port_rets)) if port_rets else 0.0
+            print("  Note: qty missing for one or more held tickers — using "
+                  "equal-weight fallback for today's equity update. Open the "
+                  "dashboard once to sync real quantities from the trade log.")
     else:
         avg_stock_ret = 0.0
 
@@ -368,11 +418,13 @@ if not any(e["date"] == today_str for e in eq_history):
         "benchmark_ret": round(bench_ret, 6),
         "n_held":        n_held,
         "invested_frac": round(invested_frac, 3),
+        "qty_weighted":  used_qty_weighting,
     })
     _save_equity_history(eq_history, EQUITY_FILE)
     _gap_str = f"  (gap: {gap_calendar_days}d)" if gap_calendar_days > 1 else ""
+    _wt_str = "qty-weighted" if used_qty_weighting else "equal-weight fallback"
     print(f"  Portfolio NAV: {port_nav:.2f}  |  Benchmark NAV: {bench_nav:.2f}  "
-          f"|  Held: {n_held}/{MAX_N}  |  Invested: {invested_frac:.0%}{_gap_str}")
+          f"|  Held: {n_held}/{MAX_N}  |  Invested: {invested_frac:.0%}{_gap_str}  |  {_wt_str}")
 else:
     print(f"  Already recorded for {today_str} — skipping.")
 
@@ -677,6 +729,7 @@ else:
         ledger[ticker] = {
             "entry_date":  TODAY,
             "entry_price": last_px,
+            "qty":         None,  # notional entry — no real qty until a trade is logged
         }
 
     save_ledger(ledger, LEDGER_FILE)

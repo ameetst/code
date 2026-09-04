@@ -454,5 +454,62 @@
         "peak": 20.16
       }
     ]
+  },
+  "2026-W36": {
+    "run_date": "2026-09-04 10:38",
+    "regime": "PARTIAL",
+    "active_slots": 3,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "MOHEALTH",
+        "etf_name": "Motilal Oswal BSE HC ETF",
+        "sector": "HEALTHCARE",
+        "weight": 0.2,
+        "inv_rank": "7",
+        "entry_price": 50.61,
+        "peak": 52.1
+      },
+      {
+        "slot": 2,
+        "ticker": "HDFCSML250",
+        "etf_name": "HDFC NIFTY Smallcap 250 ETF",
+        "sector": "SMALLCAP",
+        "weight": 0.2,
+        "inv_rank": "12",
+        "entry_price": 180.12,
+        "peak": 185.21
+      },
+      {
+        "slot": 3,
+        "ticker": "MOSMALL250",
+        "etf_name": "Motilal Oswal Nifty SC 250 ETF",
+        "sector": "OTHER",
+        "weight": 0.2,
+        "inv_rank": "15",
+        "entry_price": 17.97,
+        "peak": 18.48
+      },
+      {
+        "slot": 4,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      },
+      {
+        "slot": 5,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      }
+    ]
   }
 }

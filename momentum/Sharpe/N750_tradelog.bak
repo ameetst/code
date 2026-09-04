@@ -673,5 +673,59 @@
     "action": "SELL",
     "quantity": 53,
     "price": 1932.0
+  },
+  {
+    "id": "ddd654e7-e7b6-486b-8eb5-cdb8d5151fff",
+    "date": "2026-08-28",
+    "timestamp": "2026-08-28T15:16:11.222090",
+    "ticker": "AETHER",
+    "action": "SELL",
+    "quantity": 13,
+    "price": 1698.0
+  },
+  {
+    "id": "6ca2a7c2-b9d0-4d59-83d6-25bea41c0614",
+    "date": "2026-08-31",
+    "timestamp": "2026-08-31T14:33:36.645394",
+    "ticker": "WELCORP",
+    "action": "BUY",
+    "quantity": 42,
+    "price": 2387.0
+  },
+  {
+    "id": "db8c1f9c-d379-457e-b274-cb4a9e2158e6",
+    "date": "2026-08-31",
+    "timestamp": "2026-08-31T14:34:29.649866",
+    "ticker": "WELCORP",
+    "action": "BUY",
+    "quantity": 10,
+    "price": 2373.8
+  },
+  {
+    "id": "aa403d95-7e0d-4161-b97b-ba3f564a4e8b",
+    "date": "2026-08-31",
+    "timestamp": "2026-08-31T14:35:37.055339",
+    "ticker": "AETHER",
+    "action": "BUY",
+    "quantity": 59,
+    "price": 1684.4
+  },
+  {
+    "id": "f62c142d-2a41-4429-946a-00733c808c1b",
+    "date": "2026-08-31",
+    "timestamp": "2026-08-31T14:40:30.897449",
+    "ticker": "LAURUSLABS",
+    "action": "BUY",
+    "quantity": 52,
+    "price": 1882.1
+  },
+  {
+    "id": "50363f6c-f860-45b6-808c-0bcd39f42de2",
+    "date": "2026-08-31",
+    "timestamp": "2026-08-31T14:40:51.213944",
+    "ticker": "DIVISLAB",
+    "action": "BUY",
+    "quantity": 11,
+    "price": 9217.0
   }
 ]

@@ -1,0 +1,25 @@
+trade_id,ticker,entry_date,entry_price,shares,entry_reason,exit_date,exit_price,exit_reason,holding_days,pnl_amount,pnl_pct,status
+AVALON-20260902,AVALON,2026-09-02,2252.4,22,Migrated from legacy holdings.csv,,,,,,,OPEN
+CARTRADE-20260902,CARTRADE,2026-09-02,2941.0,17,Migrated from legacy holdings.csv,2026-09-02,3014.6,Stopped out: close 3014.6 < chandelier stop 3102.3889,0,1251.2,2.5,CLOSED
+PGIL-20260902,PGIL,2026-09-02,2357.0,21,Migrated from legacy holdings.csv,2026-09-02,2314.3,Stopped out: close 2314.3 < chandelier stop 2363.8437,0,-896.7,-1.81,CLOSED
+QUESS-20260902,QUESS,2026-09-02,364.7,137,Migrated from legacy holdings.csv,,,,,,,OPEN
+REDINGTON-20260902,REDINGTON,2026-09-02,357.3,140,Migrated from legacy holdings.csv,,,,,,,OPEN
+STYL-20260902,STYL,2026-09-02,388.0,129,Migrated from legacy holdings.csv,2026-09-02,402.1,Stopped out: close 402.1 < chandelier stop 404.2173,0,1818.9,3.63,CLOSED
+SUDEEPPHRM-20260902,SUDEEPPHRM,2026-09-02,1268.1,39,Migrated from legacy holdings.csv,,,,,,,OPEN
+UTLSOLAR-20260902,UTLSOLAR,2026-09-02,441.4,113,Migrated from legacy holdings.csv,2026-09-02,449.55,Stopped out: close 449.55 < chandelier stop 457.2801,0,920.95,1.85,CLOSED
+HFCL-20260902,HFCL,2026-09-02,251.47,178,"New entry, rank 7 of 684",,,,,,,OPEN
+ATHERENERG-20260902,ATHERENERG,2026-09-02,1616.3,32,"New entry, rank 9 of 684",,,,,,,OPEN
+AEGISVOPAK-20260902,AEGISVOPAK,2026-09-02,269.9,178,"New entry, rank 24 of 684",,,,,,,OPEN
+RRKABEL-20260902,RRKABEL,2026-09-02,2905.2,22,"New entry, rank 11 of 684",,,,,,,OPEN
+SHILPAMED-20260902,SHILPAMED,2026-09-02,903.8,67,"New entry, rank 3 of 684",,,,,,,OPEN
+VARROC-20260902,VARROC,2026-09-02,821.85,102,"New entry, rank 22 of 684",,,,,,,OPEN
+GRWRHITECH-20260902,GRWRHITECH,2026-09-02,7224.5,10,"New entry, rank 21 of 684",,,,,,,OPEN
+LLOYDSENGG-20260902,LLOYDSENGG,2026-09-02,86.74,498,"New entry, rank 23 of 684",,,,,,,OPEN
+ASTRAMICRO-20260902,ASTRAMICRO,2026-09-02,1706.6,30,"New entry, rank 16 of 684",,,,,,,OPEN
+CUPID-20260902,CUPID,2026-09-02,282.33,167,"New entry, rank 1 of 684",,,,,,,OPEN
+LAURUSLABS-20260902,LAURUSLABS,2026-09-02,1938.5,44,"New entry, rank 15 of 684",,,,,,,OPEN
+DIACABS-20260902,DIACABS,2026-09-02,349.4,146,"New entry, rank 2 of 684",,,,,,,OPEN
+RATEGAIN-20260902,RATEGAIN,2026-09-02,933.95,51,"New entry, rank 19 of 684",,,,,,,OPEN
+STLTECH-20260902,STLTECH,2026-09-02,723.75,61,"New entry, rank 13 of 684",,,,,,,OPEN
+SANSERA-20260902,SANSERA,2026-09-02,3859.0,16,"New entry, rank 20 of 684",,,,,,,OPEN
+SKYGOLD-20260902,SKYGOLD,2026-09-02,811.4,56,"New entry, rank 5 of 684",,,,,,,OPEN

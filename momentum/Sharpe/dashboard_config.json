@@ -1,6 +1,6 @@
 {
   "file": "N750_updated.xlsx",
-  "capital": 1500000,
+  "capital": 3000000,
   "min_n": 5,
   "max_n": 30,
   "min_turnover": 1.0,
