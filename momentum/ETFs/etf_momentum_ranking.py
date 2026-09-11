@@ -798,7 +798,13 @@ def build_allocation(df: pd.DataFrame, regime: dict,
     sector_count: dict[str, int] = {}
 
     # ── Phase 1: evaluate holds from previous allocation ─────────────
+    # Rule-based exits (52wk DD / rank / TSL) are checked first and always
+    # remove a position. Survivors are then ranked by CURRENT investable
+    # rank so that, if the slot count has shrunk (e.g. BULL -> PARTIAL),
+    # the weakest-ranked holdings are trimmed rather than whichever
+    # happened to occupy the last slot(s) in last week's list.
     if prev_allocation:
+        survivors = []
         for prev_slot in prev_allocation:
             t = prev_slot.get("ticker", "")
             if t == "CASH" or not t:
@@ -811,27 +817,42 @@ def build_allocation(df: pd.DataFrame, regime: dict,
                     current_price = float(s.iloc[-1])
 
             exit_flag, exit_reason = should_exit(t, df, peak, current_price)
+            if exit_flag:
+                print(f"    EXIT {t}: {exit_reason}")
+                continue
 
-            if not exit_flag and len(held_tickers) < active:
-                sector = prev_slot.get("sector", "OTHER")
-                sc     = sector_count.get(sector, 0)
-                # Look up current rank
-                rk_row = df[df["TICKER"] == t]
-                inv_rk = int(rk_row.iloc[0]["RANK_INVESTABLE"]) if not rk_row.empty and pd.notna(rk_row.iloc[0].get("RANK_INVESTABLE")) else "-"
-                sector_count[sector] = sc + 1
-                held_tickers.add(t)
-                slots.append({
-                    "SLOT"    : len(slots) + 1,
-                    "TICKER"  : t,
-                    "ETF_NAME": prev_slot.get("etf_name", t),
-                    "SECTOR"  : sector,
-                    "WEIGHT"  : w,
-                    "INV_RANK": inv_rk,
-                    "REASON"  : "HOLD — no exit trigger",
-                })
-            else:
-                if exit_flag:
-                    print(f"    EXIT {t}: {exit_reason}")
+            rk_row = df[df["TICKER"] == t]
+            inv_rk = (int(rk_row.iloc[0]["RANK_INVESTABLE"])
+                      if not rk_row.empty and pd.notna(rk_row.iloc[0].get("RANK_INVESTABLE"))
+                      else None)
+            survivors.append({
+                "ticker"  : t,
+                "etf_name": prev_slot.get("etf_name", t),
+                "sector"  : prev_slot.get("sector", "OTHER"),
+                "inv_rank": inv_rk,
+            })
+
+        # Best current rank first; tickers that fell out of the ranked
+        # universe entirely (inv_rank is None) sort last.
+        survivors.sort(key=lambda c: c["inv_rank"] if c["inv_rank"] is not None else float("inf"))
+
+        for cand in survivors:
+            if len(held_tickers) >= active:
+                print(f"    TRIM {cand['ticker']}: cut for reduced slot count "
+                      f"(rank {cand['inv_rank']})")
+                continue
+            sector = cand["sector"]
+            sector_count[sector] = sector_count.get(sector, 0) + 1
+            held_tickers.add(cand["ticker"])
+            slots.append({
+                "SLOT"    : len(slots) + 1,
+                "TICKER"  : cand["ticker"],
+                "ETF_NAME": cand["etf_name"],
+                "SECTOR"  : sector,
+                "WEIGHT"  : w,
+                "INV_RANK": cand["inv_rank"] if cand["inv_rank"] is not None else "-",
+                "REASON"  : "HOLD — no exit trigger",
+            })
 
     # ── Phase 2: fill remaining active slots from ranking ────────────
     open_slots   = active - len(slots)
