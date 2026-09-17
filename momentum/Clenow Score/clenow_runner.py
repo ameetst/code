@@ -73,6 +73,7 @@ import json
 import sys
 from datetime import date, datetime
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -704,8 +705,33 @@ def _svg_trade_bar_chart(closed: pd.DataFrame, width=760, height=220, pad=36) ->
     return "".join(parts)
 
 
+def _build_open_positions_mtm(trade_log: pd.DataFrame, ranked: Optional[pd.DataFrame]) -> pd.DataFrame:
+    """
+    Open positions (from trade_log) marked to market against this run's
+    `last_close` (from Clenow.rank()'s output — real OHLC-CSV closes when
+    that's the input, same price used for this run's ranking/stops; not a
+    live intraday quote — see mtm.py for that). Returns a DataFrame with
+    one row per OPEN position, current_price/mtm_pnl/mtm_pnl_pct as NaN
+    for anything missing from `ranked` (e.g. delisted, or no ranked data
+    at all yet).
+    """
+    open_pos = trade_log[trade_log["status"] == "OPEN"].copy()
+    if not len(open_pos):
+        return open_pos.assign(current_price=[], mtm_pnl=[], mtm_pnl_pct=[])
+
+    last_close_map = (
+        ranked.set_index("ticker")["last_close"] if ranked is not None and len(ranked) else pd.Series(dtype=float)
+    )
+    open_pos["entry_price"] = open_pos["entry_price"].astype(float)
+    open_pos["shares"] = open_pos["shares"].astype(float)
+    open_pos["current_price"] = open_pos["ticker"].map(last_close_map)
+    open_pos["mtm_pnl"] = (open_pos["current_price"] - open_pos["entry_price"]) * open_pos["shares"]
+    open_pos["mtm_pnl_pct"] = (open_pos["current_price"] / open_pos["entry_price"] - 1) * 100
+    return open_pos
+
+
 def render_dashboard(trade_log: pd.DataFrame, equity_history: pd.DataFrame, stats: dict,
-                      run_date: str) -> Path:
+                      run_date: str, ranked: Optional[pd.DataFrame] = None) -> Path:
     eq = equity_history.copy()
     eq["ending_equity"] = pd.to_numeric(eq["ending_equity"], errors="coerce")
     idx_vals = pd.to_numeric(eq["nifty500_close"], errors="coerce") if len(eq) else pd.Series(dtype=float)
@@ -723,6 +749,8 @@ def render_dashboard(trade_log: pd.DataFrame, equity_history: pd.DataFrame, stat
     drawdown = ((eq["ending_equity"] - running_max) / running_max * 100).tolist() if len(eq) else []
 
     closed = trade_log[trade_log["status"] == "CLOSED"].copy()
+    open_pos = _build_open_positions_mtm(trade_log, ranked)
+    open_pos_priced = open_pos[open_pos["current_price"].notna()] if len(open_pos) else open_pos
 
     def stat_html(label, value, is_pct=False, good_if_positive=True):
         if value is None or (isinstance(value, float) and np.isnan(value)):
@@ -748,6 +776,48 @@ def render_dashboard(trade_log: pd.DataFrame, equity_history: pd.DataFrame, stat
         stat_html("Closed trades", stats.get("n_closed_trades")),
         stat_html("Open positions", stats.get("open_positions")),
     ])
+
+    def _pnl_cls(v):
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return ""
+        return "delta-good" if v > 0 else ("delta-bad" if v < 0 else "")
+
+    def _open_pos_row(r):
+        has_price = pd.notna(r.current_price)
+        current_disp = f"{r.current_price:,.2f}" if has_price else "—"
+        pnl_disp = f"{r.mtm_pnl:+,.2f}" if has_price else "—"
+        pnl_pct_disp = f"{r.mtm_pnl_pct:+.2f}%" if has_price else "—"
+        cls = _pnl_cls(r.mtm_pnl_pct) if has_price else ""
+        return (f"<tr><td>{r.ticker}</td><td>{r.entry_date}</td>"
+                f"<td>{r.entry_price:,.2f}</td><td>{current_disp}</td>"
+                f"<td>{int(r.shares)}</td>"
+                f"<td class='{cls}'>{pnl_disp}</td><td class='{cls}'>{pnl_pct_disp}</td></tr>")
+
+    open_positions_table = (
+        "<p class='empty'>No open positions.</p>" if not len(open_pos) else
+        "<table><tr><th>Ticker</th><th>Entry date</th><th>Buy price</th><th>Current price</th>"
+        "<th>Shares</th><th>MTM P&amp;L (₹)</th><th>MTM P&amp;L (%)</th></tr>"
+        + "".join(_open_pos_row(r) for r in open_pos.sort_values("mtm_pnl_pct", ascending=False, na_position="last").itertuples())
+        + "</table>"
+    )
+
+    if len(open_pos_priced):
+        total_cost = float(open_pos_priced["entry_price"].mul(open_pos_priced["shares"]).sum())
+        total_value = float(open_pos_priced["current_price"].mul(open_pos_priced["shares"]).sum())
+        total_mtm = total_value - total_cost
+        total_mtm_pct = (total_value / total_cost - 1) * 100 if total_cost else float("nan")
+        mtm_cls = _pnl_cls(total_mtm_pct)
+        unpriced_note = (f" &middot; {len(open_pos) - len(open_pos_priced)} position(s) have no current price"
+                          " (missing from this run's ranked data) and are excluded from the totals below"
+                          if len(open_pos) > len(open_pos_priced) else "")
+        open_positions_totals = (
+            f"<div class='mtm-total'>Total cost basis: ₹{total_cost:,.2f} &nbsp;·&nbsp; "
+            f"Market value: ₹{total_value:,.2f} &nbsp;·&nbsp; "
+            f"Unrealized P&amp;L: <span class='{mtm_cls}'>₹{total_mtm:+,.2f} ({total_mtm_pct:+.2f}%)</span>"
+            f"{unpriced_note}</div>"
+        )
+    else:
+        open_positions_totals = ""
 
     html = f"""<title>Clenow Momentum — Performance Dashboard</title>
 <style>
@@ -788,6 +858,8 @@ def render_dashboard(trade_log: pd.DataFrame, equity_history: pd.DataFrame, stat
   .viz-root table {{ width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }}
   .viz-root th, .viz-root td {{ text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); }}
   .viz-root th {{ color: var(--muted); font-weight: 500; }}
+  .viz-root .mtm-total {{ font-size: 12px; color: var(--text-secondary); margin-top: 10px; }}
+  .viz-root .mtm-total .delta-good, .viz-root .mtm-total .delta-bad {{ font-weight: 600; }}
 </style>
 <div class="viz-root">
   <h1>Clenow Momentum — Performance Dashboard</h1>
@@ -795,6 +867,13 @@ def render_dashboard(trade_log: pd.DataFrame, equity_history: pd.DataFrame, stat
 
   <h2>Headline stats</h2>
   <div class="stats-grid">{stats_html}</div>
+
+  <h2>Open positions — mark to market</h2>
+  <div class="card">
+    {open_positions_table}
+    {open_positions_totals}
+  </div>
+  <div class="subtitle" style="margin-top:4px;margin-bottom:0;">Current price is this run's <code>last_close</code> from the price file, not a live intraday quote — run <code>python mtm.py</code> for a live check.</div>
 
   <h2>Equity curve</h2>
   <div class="card">
@@ -901,6 +980,9 @@ def main():
     parser.add_argument("--run_date", default=None, help="Override today's date (YYYY-MM-DD) — mainly for testing")
     parser.add_argument("--dry_run", action="store_true", help="Show what would happen; write nothing")
     parser.add_argument("--force", action="store_true", help="Allow re-running for a date already in equity_history.csv")
+    parser.add_argument("--no_browser", action="store_true",
+                         help="Don't auto-open dashboard_latest.html in the browser when the run finishes "
+                              "(useful for scheduled/headless runs, e.g. Windows Task Scheduler)")
     parser.add_argument("--no_live_price", action="store_true",
                          help="Disable live-quote lookup; always use the xlsx's last_close for entries/exits")
     parser.add_argument("--price_provider", choices=["yfinance", "dhan"], default=None,
@@ -983,10 +1065,14 @@ def main():
     save_trade_log(trade_log)
     save_equity_history(equity_history_new)
     write_holdings_csv(trade_log)
-    dashboard_path = render_dashboard(trade_log, equity_history_new, stats, run_date)
+    dashboard_path = render_dashboard(trade_log, equity_history_new, stats, run_date, ranked)
     print_summary(run_date, closed_now, opened_now, trade_log, equity_row, stats,
                    missing_tickers, skipped_no_size, skipped_insufficient_cash,
                    dashboard_path, market_ok, price_provider)
+
+    if not args.no_browser:
+        import webbrowser
+        webbrowser.open(dashboard_path.resolve().as_uri())
 
 
 def save_trade_log(df: pd.DataFrame) -> None:

@@ -1,0 +1,79 @@
+<title>Clenow Momentum — Performance Dashboard</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface: #fcfcfb; --text-primary: #0b0b0b;
+    --text-secondary: #52514e; --muted: #898781;
+    --grid: #e1e0d9;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--surface); color: var(--text-primary);
+    padding: 24px; max-width: 820px; margin: 0 auto;
+  }
+  @media (prefers-color-scheme: dark) {
+    .viz-root {
+      color-scheme: dark;
+      --surface: #1a1a19; --text-primary: #ffffff;
+      --text-secondary: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a;
+    }
+  }
+  .viz-root h1 { font-size: 20px; margin-bottom: 2px; }
+  .viz-root .subtitle { color: var(--text-secondary); font-size: 13px; margin-bottom: 24px; }
+  .viz-root h2 { font-size: 14px; color: var(--text-secondary); margin: 28px 0 8px; font-weight: 600; }
+  .viz-root .card { border: 1px solid var(--grid); border-radius: 10px; padding: 12px; }
+  .viz-root .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .viz-root .stat { border: 1px solid var(--grid); border-radius: 8px; padding: 10px; }
+  .viz-root .stat-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .viz-root .stat-value { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .viz-root .delta-good { color: #0ca30c; }
+  .viz-root .delta-bad { color: #d03b3b; }
+  .viz-root .chart-svg { width: 100%; height: auto; }
+  .viz-root .grid { stroke: var(--grid); stroke-width: 1; }
+  .viz-root .baseline { stroke: var(--muted); stroke-width: 1; }
+  .viz-root .legend { display: flex; gap: 16px; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .viz-root .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .viz-root .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .viz-root .empty { color: var(--muted); font-size: 13px; padding: 30px 0; text-align: center; }
+  .viz-root table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  .viz-root th, .viz-root td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); }
+  .viz-root th { color: var(--muted); font-weight: 500; }
+  .viz-root .mtm-total { font-size: 12px; color: var(--text-secondary); margin-top: 10px; }
+  .viz-root .mtm-total .delta-good, .viz-root .mtm-total .delta-bad { font-weight: 600; }
+</style>
+<div class="viz-root">
+  <h1>Clenow Momentum — Performance Dashboard</h1>
+  <div class="subtitle">As of 2026-09-09 &middot; 4 closed trades &middot; 20 open positions</div>
+
+  <h2>Headline stats</h2>
+  <div class="stats-grid"><div class="stat"><div class="stat-label">Total return</div><div class="stat-value delta-good">+0.31%</div></div><div class="stat"><div class="stat-label">CAGR</div><div class="stat-value ">—</div></div><div class="stat"><div class="stat-label">vs NIFTY500 B&H</div><div class="stat-value delta-bad">-1.80%</div></div><div class="stat"><div class="stat-label">Win rate</div><div class="stat-value delta-good">+75.00%</div></div><div class="stat"><div class="stat-label">Avg win</div><div class="stat-value delta-good">+2.66%</div></div><div class="stat"><div class="stat-label">Avg loss</div><div class="stat-value delta-good">-1.81%</div></div><div class="stat"><div class="stat-label">Profit factor</div><div class="stat-value ">4.45</div></div><div class="stat"><div class="stat-label">Max drawdown</div><div class="stat-value ">+0.00%</div></div><div class="stat"><div class="stat-label">Closed trades</div><div class="stat-value ">4</div></div><div class="stat"><div class="stat-label">Open positions</div><div class="stat-value ">20</div></div></div>
+
+  <h2>Open positions — mark to market</h2>
+  <div class="card">
+    <table><tr><th>Ticker</th><th>Entry date</th><th>Buy price</th><th>Current price</th><th>Shares</th><th>MTM P&amp;L (₹)</th><th>MTM P&amp;L (%)</th></tr><tr><td>STLTECH</td><td>2026-09-02</td><td>723.75</td><td>824.70</td><td>61</td><td class='delta-good'>+6,157.95</td><td class='delta-good'>+13.95%</td></tr><tr><td>AEGISVOPAK</td><td>2026-09-02</td><td>269.90</td><td>290.65</td><td>178</td><td class='delta-good'>+3,693.50</td><td class='delta-good'>+7.69%</td></tr><tr><td>SHILPAMED</td><td>2026-09-02</td><td>903.80</td><td>959.90</td><td>67</td><td class='delta-good'>+3,758.70</td><td class='delta-good'>+6.21%</td></tr><tr><td>SUDEEPPHRM</td><td>2026-09-02</td><td>1,268.10</td><td>1,344.20</td><td>39</td><td class='delta-good'>+2,967.90</td><td class='delta-good'>+6.00%</td></tr><tr><td>REDINGTON</td><td>2026-09-02</td><td>357.30</td><td>373.55</td><td>140</td><td class='delta-good'>+2,275.00</td><td class='delta-good'>+4.55%</td></tr><tr><td>SANSERA</td><td>2026-09-02</td><td>3,859.00</td><td>4,033.60</td><td>16</td><td class='delta-good'>+2,793.60</td><td class='delta-good'>+4.52%</td></tr><tr><td>VARROC</td><td>2026-09-02</td><td>821.85</td><td>849.45</td><td>102</td><td class='delta-good'>+2,815.20</td><td class='delta-good'>+3.36%</td></tr><tr><td>ASTRAMICRO</td><td>2026-09-02</td><td>1,706.60</td><td>1,757.30</td><td>30</td><td class='delta-good'>+1,521.00</td><td class='delta-good'>+2.97%</td></tr><tr><td>AVALON</td><td>2026-09-02</td><td>2,252.40</td><td>2,290.30</td><td>22</td><td class='delta-good'>+833.80</td><td class='delta-good'>+1.68%</td></tr><tr><td>SKYGOLD</td><td>2026-09-02</td><td>811.40</td><td>820.00</td><td>56</td><td class='delta-good'>+481.60</td><td class='delta-good'>+1.06%</td></tr><tr><td>LAURUSLABS</td><td>2026-09-02</td><td>1,938.50</td><td>1,946.90</td><td>44</td><td class='delta-good'>+369.60</td><td class='delta-good'>+0.43%</td></tr><tr><td>HFCL</td><td>2026-09-02</td><td>251.47</td><td>250.76</td><td>178</td><td class='delta-bad'>-126.38</td><td class='delta-bad'>-0.28%</td></tr><tr><td>ATHERENERG</td><td>2026-09-02</td><td>1,616.30</td><td>1,578.00</td><td>32</td><td class='delta-bad'>-1,225.60</td><td class='delta-bad'>-2.37%</td></tr><tr><td>CUPID</td><td>2026-09-02</td><td>282.33</td><td>274.80</td><td>167</td><td class='delta-bad'>-1,257.51</td><td class='delta-bad'>-2.67%</td></tr><tr><td>GRWRHITECH</td><td>2026-09-02</td><td>7,224.50</td><td>6,975.50</td><td>10</td><td class='delta-bad'>-2,490.00</td><td class='delta-bad'>-3.45%</td></tr><tr><td>DIACABS</td><td>2026-09-02</td><td>349.40</td><td>336.25</td><td>146</td><td class='delta-bad'>-1,919.90</td><td class='delta-bad'>-3.76%</td></tr><tr><td>LLOYDSENGG</td><td>2026-09-02</td><td>86.74</td><td>81.81</td><td>498</td><td class='delta-bad'>-2,455.14</td><td class='delta-bad'>-5.68%</td></tr><tr><td>QUESS</td><td>2026-09-02</td><td>364.70</td><td>337.50</td><td>137</td><td class='delta-bad'>-3,726.40</td><td class='delta-bad'>-7.46%</td></tr><tr><td>RATEGAIN</td><td>2026-09-02</td><td>933.95</td><td>862.70</td><td>51</td><td class='delta-bad'>-3,633.75</td><td class='delta-bad'>-7.63%</td></tr><tr><td>RRKABEL</td><td>2026-09-02</td><td>2,905.20</td><td>2,448.50</td><td>22</td><td class='delta-bad'>-10,047.40</td><td class='delta-bad'>-15.72%</td></tr></table>
+    <div class='mtm-total'>Total cost basis: ₹1,100,875.39 &nbsp;·&nbsp; Market value: ₹1,101,661.16 &nbsp;·&nbsp; Unrealized P&amp;L: <span class='delta-good'>₹+785.77 (+0.07%)</span></div>
+  </div>
+  <div class="subtitle" style="margin-top:4px;margin-bottom:0;">Current price is this run's <code>last_close</code> from the price file, not a live intraday quote — run <code>python mtm.py</code> for a live check.</div>
+
+  <h2>Equity curve</h2>
+  <div class="card">
+    <div class="legend">
+      <span><span class="swatch" style="background:#2a78d6"></span>Strategy equity</span>
+      <span><span class="swatch" style="background:#eb6834"></span>NIFTY500 buy &amp; hold</span>
+    </div>
+    <svg viewBox="0 0 760 260" class="chart-svg" role="img"><line x1="36" y1="36.0" x2="724" y2="36.0" class="grid"/><line x1="36" y1="83.0" x2="724" y2="83.0" class="grid"/><line x1="36" y1="130.0" x2="724" y2="130.0" class="grid"/><line x1="36" y1="177.0" x2="724" y2="177.0" class="grid"/><line x1="36" y1="224.0" x2="724" y2="224.0" class="grid"/><path d="M 36.0,36.0 L 265.3,36.0 L 494.7,36.0 L 724.0,36.0" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"><title>Strategy equity</title></path><circle cx="724.0" cy="36.0" r="3.5" fill="#2a78d6"><title>Strategy equity: 1,003,094</title></circle><path d="M 36.0,63.6 L 265.3,224.0 L 494.7,224.0 L 724.0,224.0" fill="none" stroke="#eb6834" stroke-width="2" stroke-linejoin="round"><title>NIFTY500 buy & hold</title></path><circle cx="724.0" cy="224.0" r="3.5" fill="#eb6834"><title>NIFTY500 buy & hold: 982,045</title></circle></svg>
+  </div>
+
+  <h2>Drawdown</h2>
+  <div class="card"><svg viewBox="0 0 760 160" class="chart-svg" role="img"><line x1="36" y1="36.0" x2="724" y2="36.0" class="baseline"/><path d="M 36.0,36.0 36.0,36.0 L 265.3,36.0 L 494.7,36.0 L 724.0,36.0 L 724.0,36.0 Z" fill="#e34948" fill-opacity="0.15" stroke="none"/><path d="M 36.0,36.0 L 265.3,36.0 L 494.7,36.0 L 724.0,36.0" fill="none" stroke="#e34948" stroke-width="2"/></svg></div>
+
+  <h2>Closed trade P&amp;L (%)</h2>
+  <div class="card"><svg viewBox="0 0 760 220" class="chart-svg" role="img"><line x1="36" y1="134.8" x2="724" y2="134.8" class="baseline"/><rect x="70.4" y="66.7" width="103.2" height="68.0" fill="#0ca30c" rx="2"><title>CARTRADE: +2.50%</title></rect><rect x="242.4" y="134.8" width="103.2" height="49.2" fill="#d03b3b" rx="2"><title>PGIL: -1.81%</title></rect><rect x="414.4" y="36.0" width="103.2" height="98.8" fill="#0ca30c" rx="2"><title>STYL: +3.63%</title></rect><rect x="586.4" y="84.4" width="103.2" height="50.3" fill="#0ca30c" rx="2"><title>UTLSOLAR: +1.85%</title></rect></svg></div>
+
+  <h2>Recent closed trades</h2>
+  <div class="card">
+    <table>
+      <tr><th>Ticker</th><th>Entry</th><th>Exit</th><th>Days</th><th>P&amp;L %</th><th>Exit reason</th></tr>
+      <tr><td>CARTRADE</td><td>2026-09-02</td><td>2026-09-02</td><td>0</td><td class='delta-good'>+2.50%</td><td>Stopped out: close 3014.6 < chandelier stop 3102.3889</td></tr><tr><td>PGIL</td><td>2026-09-02</td><td>2026-09-02</td><td>0</td><td class='delta-bad'>-1.81%</td><td>Stopped out: close 2314.3 < chandelier stop 2363.8437</td></tr><tr><td>STYL</td><td>2026-09-02</td><td>2026-09-02</td><td>0</td><td class='delta-good'>+3.63%</td><td>Stopped out: close 402.1 < chandelier stop 404.2173</td></tr><tr><td>UTLSOLAR</td><td>2026-09-02</td><td>2026-09-02</td><td>0</td><td class='delta-good'>+1.85%</td><td>Stopped out: close 449.55 < chandelier stop 457.2801</td></tr>
+    </table>
+  </div>
+</div>

@@ -1,0 +1,22 @@
+Leg,Stat,Blitz,Practitioner_IR,Practitioner_IR_SkipMonth
+Long Leg,Ann. Return (%),44.34,45.88,45.08
+Long Leg,Ann. Volatility (%),22.51,20.75,20.8
+Long Leg,Sharpe Ratio,1.69,1.907,1.863
+Long Leg,Max Drawdown (%),-23.22,-23.92,-23.18
+Long Leg,Win Rate (%),77.92,77.92,75.32
+Long Leg,t-stat,4.991,5.602,5.489
+Long Leg,p-value,0.0,0.0,0.0
+Short Leg,Ann. Return (%),31.94,34.55,31.63
+Short Leg,Ann. Volatility (%),23.07,26.85,26.07
+Short Leg,Sharpe Ratio,1.111,1.052,0.971
+Short Leg,Max Drawdown (%),-23.54,-22.77,-22.22
+Short Leg,Win Rate (%),64.94,58.44,61.04
+Short Leg,t-stat,3.507,3.26,3.074
+Short Leg,p-value,0.0008,0.0017,0.0029
+L/S Portfolio,Ann. Return (%),12.4,11.33,13.44
+L/S Portfolio,Ann. Volatility (%),9.91,17.18,16.29
+L/S Portfolio,Sharpe Ratio,0.615,0.292,0.438
+L/S Portfolio,Max Drawdown (%),-10.45,-29.02,-22.68
+L/S Portfolio,Win Rate (%),70.13,68.83,72.73
+L/S Portfolio,t-stat,3.17,1.671,2.09
+L/S Portfolio,p-value,0.0022,0.0988,0.0399

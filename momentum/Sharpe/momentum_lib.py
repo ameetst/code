@@ -646,11 +646,22 @@ def compute_clenow(prices_df: pd.DataFrame,
 
 def _residual_information_ratio(stock_series: pd.Series, mkt_rets: pd.Series,
                      window: int, trading_days: int,
-                     rfr_daily: float = 0.0) -> float:
+                     rfr_daily: float = 0.0, skip_days: int = 21) -> float:
     """
     Date-aligned OLS regression of a stock's excess log-returns on NIFTY500's
     excess log-returns; return the annualised Information Ratio of the fit
     (alpha / residual volatility).
+
+    skip_days drops the most recent `skip_days` trading days from both the
+    regression fit and the score - the window covers [t-skip-window, t-skip)
+    instead of [t-window, t). Same reversal-avoidance rationale as classic
+    12-1 skip-month momentum, adapted to this IR-style signal (which has no
+    separate formation sub-period to apply a skip to on its own). Backtested
+    against a Blitz/Huij/Martens-style skip-month monthly residual-momentum
+    signal on dhan_datahq's History_updated.xlsx universe: raised the
+    long/short spread's Sharpe from 0.29 to 0.44 and its significance from
+    p=0.099 (not significant) to p=0.040, with negligible effect on the
+    long-only leg this signal is actually ranked by.
     """
     if stock_series.notna().sum() < 2:
         return np.nan
@@ -662,9 +673,10 @@ def _residual_information_ratio(stock_series: pd.Series, mkt_rets: pd.Series,
     s_rets = np.log(stock_series).diff().dropna()
 
     aligned = pd.concat([s_rets, mkt_rets], axis=1, join="inner").dropna()
-    if len(aligned) < max(window * 0.90, 10):
+    needed = window + skip_days
+    if len(aligned) < max(needed * 0.90, 10):
         return np.nan
-    aligned = aligned.iloc[-window:]
+    aligned = aligned.iloc[-needed:-skip_days] if skip_days > 0 else aligned.iloc[-window:]
 
     s = aligned.iloc[:, 0].values - rfr_daily
     m = aligned.iloc[:, 1].values - rfr_daily
@@ -687,11 +699,15 @@ def compute_residual_momentum(prices_df: pd.DataFrame,
                                nifty_series: pd.Series,
                                windows: dict,
                                trading_days: int = 252,
-                               rfr_daily: float = 0.0):
+                               rfr_daily: float = 0.0,
+                               skip_days: int = 21):
     """
     Compute residual Information Ratio (alpha / residual volatility) from a
     date-aligned OLS regression of each stock's excess returns against
     NIFTY500's excess returns.
+
+    skip_days (default 21, ~1 trading month) excludes the most recent month
+    from each window's fit and score - see _residual_information_ratio.
 
     Returns
     -------
@@ -706,7 +722,7 @@ def compute_residual_momentum(prices_df: pd.DataFrame,
     resmom_data = {}
     for label, window in windows.items():
         col = [_residual_information_ratio(prices_df.loc[t], mkt_rets,
-                                window, trading_days, rfr_daily)
+                                window, trading_days, rfr_daily, skip_days)
                for t in stock_tickers]
         valid = sum(1 for v in col if not np.isnan(v))
         resmom_data[f"RS_{label}"] = col
@@ -1086,6 +1102,7 @@ DEFAULT_SIGNAL_WEIGHTS = {
 DEFAULT_MIN_N               = 5
 DEFAULT_MAX_N               = 25
 DEFAULT_NEW_ENTRY_THRESHOLD = 0.40
+DEFAULT_DYN_N_FULL_SCORE    = 0.75   # regime score at which dynamic_n saturates at max_n
 
 
 def compute_regime_score(
@@ -1097,6 +1114,7 @@ def compute_regime_score(
     min_n: int = None,
     max_n: int = None,
     new_entry_threshold: float = None,
+    dyn_n_full_score: float = None,
 ) -> tuple:
     """
     Compute a continuous Regime Strength Score (0.0 to 1.0) from 4 signals.
@@ -1127,6 +1145,8 @@ def compute_regime_score(
         max_n = DEFAULT_MAX_N
     if new_entry_threshold is None:
         new_entry_threshold = DEFAULT_NEW_ENTRY_THRESHOLD
+    if dyn_n_full_score is None:
+        dyn_n_full_score = DEFAULT_DYN_N_FULL_SCORE
 
     px = nifty_s.dropna()
     if len(px) < 200:
@@ -1176,7 +1196,7 @@ def compute_regime_score(
         breadth_score   * signal_weights["breadth"]           +
         momentum_score  * signal_weights["momentum"]
     )
-    dyn_n = int(min_n + min(score / 0.75, 1.0) * (max_n - min_n))
+    dyn_n = int(min_n + min(score / dyn_n_full_score, 1.0) * (max_n - min_n))
 
     detail = {
         "ema50_score":     round(ema50_score, 3),

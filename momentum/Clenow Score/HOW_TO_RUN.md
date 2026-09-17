@@ -14,11 +14,17 @@ See `TRACKING_SYSTEM_PLAN.md` for the full design write-up behind this.
 ## 1. The one command
 
 ```
-python clenow_runner.py --file N750_updated.xlsx
+python clenow_runner.py --file N750_OHLC.csv
 ```
 
+(`N750_updated.xlsx` / `n500.xlsx` / `n750.xlsx` still work too — see §2a
+for the difference.)
+
 That's it. Every Wednesday: drop the refreshed price file into this
-folder, run that command, done. It prints a full summary and writes:
+folder, run that command, done. It prints a full summary, writes the
+files below, and opens `dashboard_latest.html` in your browser
+automatically once everything's saved (pass `--no_browser` to skip that,
+e.g. for a scheduled/headless run via Windows Task Scheduler).
 
 | File | What it is |
 |---|---|
@@ -68,6 +74,35 @@ The terminal summary tells you directly what to do:
 - **Performance-to-date**: total return, CAGR (once you have ~10 weeks
   of history), win rate, and max drawdown, computed from the full trade
   log — also all in `reports/dashboard_latest.html` with charts.
+- **Open positions — mark to market**: the dashboard also lists every
+  currently open position with entry date, buy price, this run's current
+  price, and unrealized P&L (₹ and %), plus a total line. "Current price"
+  here is this run's `last_close` from whatever price file you fed it
+  (real OHLC-CSV closes when using `N750_OHLC.csv` — see §2a below), not
+  a live intraday quote; for that, use `python mtm.py` (§6).
+
+## 3a. Input file: OHLC CSV vs. legacy xlsx
+
+`Clenow.py` auto-detects the input format from the file extension:
+
+- **`.csv`** (e.g. `N750_OHLC.csv`, from `update_ohlc_dhan.py`) — tidy
+  long-format OHLC data (`ticker, date, open, high, low, close, volume`).
+  This is now the preferred input: real Wilder True-Range ATR is computed
+  from actual high/low/close (`atr_method` in `clenow_ranked.csv` says
+  `true_range` for these), and 52-week-high is derived from the real
+  `high` column, not just close. Volume feeds the liquidity filter
+  directly, no separate sheet needed.
+- **`.xlsx`** (`N750_updated.xlsx`, `n500.xlsx`, `n750.xlsx`) — the
+  original close-only layouts. Still fully supported (same `rank()`
+  call), but ATR falls back to the close-to-close proxy described in
+  `Clenow.py`'s module docstring, since there's no real high/low to
+  compute True Range from.
+
+Just point `--file` at whichever one you have that week:
+
+```
+python clenow_runner.py --file N750_OHLC.csv
+```
 
 ## 4. Live entry/exit prices
 

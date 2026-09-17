@@ -693,15 +693,6 @@
     "price": 2387.0
   },
   {
-    "id": "db8c1f9c-d379-457e-b274-cb4a9e2158e6",
-    "date": "2026-08-31",
-    "timestamp": "2026-08-31T14:34:29.649866",
-    "ticker": "WELCORP",
-    "action": "BUY",
-    "quantity": 10,
-    "price": 2373.8
-  },
-  {
     "id": "aa403d95-7e0d-4161-b97b-ba3f564a4e8b",
     "date": "2026-08-31",
     "timestamp": "2026-08-31T14:35:37.055339",

@@ -718,5 +718,14 @@
     "action": "BUY",
     "quantity": 11,
     "price": 9217.0
+  },
+  {
+    "id": "2f62be5c-9450-4eb8-925c-de3915cd2b8c",
+    "date": "2026-09-07",
+    "timestamp": "2026-09-07T13:59:54.582302",
+    "ticker": "BHARATFORG",
+    "action": "SELL",
+    "quantity": 26,
+    "price": 1950.0
   }
 ]

@@ -161,12 +161,36 @@ def load_data(filepath):
 
 
 @st.cache_data(show_spinner="Computing rankings...")
-def compute_rankings(_meta, _prices):
-    """Run the full ranking pipeline."""
+def compute_regime_and_ranking(_meta, _prices):
+    """Regime + ranking are pure functions of meta/prices -- safe to cache.
+    Allocation is NOT cached here since it depends on real tradelog holdings
+    (session-mutable state), not just meta/prices -- see build_live_allocation()."""
     regime = emr.regime_status(_prices)
     ranking = emr.build_ranking(_meta, _prices)
-    allocation = emr.build_allocation(ranking, regime)
-    return regime, ranking, allocation
+    return regime, ranking
+
+
+def build_live_allocation(ranking, regime, active_holdings, prices):
+    """
+    Build the actual weekly hold-and-replace allocation using your REAL
+    tradelog holdings as the starting point, instead of a stateless
+    from-scratch top-N pick. Without this, the Current Recommendation tab
+    would show an all-CASH table during risk-off even while you're fully
+    invested in positions that pass every exit rule -- misleadingly
+    suggesting a liquidation that the live rules don't actually call for.
+    """
+    rank_by_ticker = {row["TICKER"]: row for _, row in ranking.iterrows()}
+    prev_alloc = []
+    for ticker, h in active_holdings.items():
+        if h.get("qty", 0) <= 0:
+            continue
+        row = rank_by_ticker.get(ticker)
+        etf_name = row["ETF_NAME"] if row is not None else ticker
+        sector = row["SECTOR"] if row is not None else "OTHER"
+        current_price = get_etf_latest_price(ticker, prices)
+        peak = emr.compute_holding_peak(ticker, h.get("first_buy_date"), prices, current_price)
+        prev_alloc.append({"ticker": ticker, "etf_name": etf_name, "sector": sector, "peak": peak})
+    return emr.build_allocation(ranking, regime, prev_allocation=prev_alloc, prices=prices)
 
 
 # =========================================================
@@ -419,46 +443,10 @@ except Exception as e:
     st.stop()
 
 try:
-    regime, ranking, allocation = compute_rankings(meta, prices)
+    regime, ranking = compute_regime_and_ranking(meta, prices)
 except Exception as e:
     st.error(f"Error computing rankings: {e}")
     st.stop()
-
-# ── Regime Banner ──────────────────────────────────────────
-regime_label = regime["label"]
-if regime_label == "BULL":
-    pill_class = "bull"
-    regime_emoji = "🟢"
-elif regime_label == "PARTIAL":
-    pill_class = "partial"
-    regime_emoji = "🟡"
-else:
-    pill_class = "bear"
-    regime_emoji = "🔴"
-
-data_range = f"{prices.index[0].strftime('%Y-%m-%d')} → {prices.index[-1].strftime('%Y-%m-%d')}"
-
-banner_cards = [
-    ("Regime",       f"<span class='regime-pill {pill_class}'>{regime_emoji} {regime_label}</span>"),
-    ("Price",        f"{regime['nifty_price']:.2f}"),
-    ("EMA 50",       f"{regime['nifty_ema_50']:.2f}"),
-    ("EMA 100",      f"{regime['nifty_ema_100']:.2f}"),
-    ("Active Slots", f"{regime['active_slots']} / {emr.CONFIG.TOP_N}"),
-    ("Trend Ticker", regime.get("trend_ticker", "N/A")),
-    ("Data Range",   data_range),
-]
-
-cards_html = "".join(
-    f"<div class='regime-card'>"
-    f"<div class='regime-card-label'>{label}</div>"
-    f"<div class='regime-card-value'>{value}</div>"
-    f"</div>"
-    for label, value in banner_cards
-)
-st.markdown(f"<div class='regime-row'>{cards_html}</div>", unsafe_allow_html=True)
-
-st.divider()
-
 
 # ── Build ETF ticker list + latest prices from loaded data ──
 etf_tickers = sorted(meta["TICKER"].tolist()) if meta is not None and "TICKER" in meta.columns else []
@@ -481,6 +469,42 @@ unrealized_pnl    = tl_result["unrealized_pnl"]
 # Sync to positions ledger on every page load
 sync_to_positions_ledger(active_holdings)
 
+# ── Allocation: real hold-and-replace, seeded from ACTUAL holdings ──
+allocation = build_live_allocation(ranking, regime, active_holdings, prices)
+
+# ── Regime Banner ──────────────────────────────────────────
+# Binary risk-on/risk-off regime: BULL = price > 50-EMA, BEAR = otherwise.
+regime_label = regime["label"]
+if regime_label == "BULL":
+    pill_class = "bull"
+    regime_emoji = "🟢"
+else:
+    pill_class = "bear"
+    regime_emoji = "🔴"
+
+data_range = f"{prices.index[0].strftime('%Y-%m-%d')} → {prices.index[-1].strftime('%Y-%m-%d')}"
+
+banner_cards = [
+    ("Regime",         f"<span class='regime-pill {pill_class}'>{regime_emoji} {regime_label}</span>"),
+    ("Price",          f"{regime['nifty_price']:.2f}"),
+    ("50 EMA (trend)", f"{regime['nifty_ema_50']:.2f}"),
+    ("New-Buy Slots",  f"{regime['active_slots']} / {emr.CONFIG.TOP_N}"),
+    ("Current Holdings", f"{(allocation['TICKER'] != 'CASH').sum()} / {emr.CONFIG.TOP_N}"),
+    ("Trend Ticker",   regime.get("trend_ticker", "N/A")),
+    ("Data Range",     data_range),
+]
+
+cards_html = "".join(
+    f"<div class='regime-card'>"
+    f"<div class='regime-card-label'>{label}</div>"
+    f"<div class='regime-card-value'>{value}</div>"
+    f"</div>"
+    for label, value in banner_cards
+)
+st.markdown(f"<div class='regime-row'>{cards_html}</div>", unsafe_allow_html=True)
+
+st.divider()
+
 
 # =========================================================
 # TABS
@@ -499,6 +523,7 @@ with tab_alloc:
 
     alloc_display = allocation[["SLOT", "TICKER", "ETF_NAME", "SECTOR", "WEIGHT", "INV_RANK"]].copy()
     alloc_display["WEIGHT"] = alloc_display["WEIGHT"].apply(lambda x: f"{x:.0%}")
+    alloc_display["INV_RANK"] = alloc_display["INV_RANK"].astype(str)
     alloc_display.columns = ["Slot", "Ticker", "ETF Name", "Sector", "Weight", "Inv Rank"]
 
     def style_allocation(row):
@@ -605,15 +630,13 @@ with tab_rankings:
     if "Inv Rank" in filtered.columns:
         filtered["Inv Rank"] = filtered["Inv Rank"].apply(lambda x: str(int(x)) if pd.notna(x) else "")
 
+    held_tickers_set = set(allocation.loc[allocation["TICKER"] != "CASH", "TICKER"])
+
     def style_rankings(row):
         if row.get("Screen") == False:
             return ["background-color: #FFF8F8; color: #B0B0B0;"] * len(row)
-        try:
-            rank = int(row.get("Inv Rank", 999))
-            if rank <= regime["active_slots"]:
-                return ["background-color: #E8F5E9;"] * len(row)
-        except (ValueError, TypeError):
-            pass
+        if row.get("Ticker") in held_tickers_set:
+            return ["background-color: #E8F5E9;"] * len(row)
         return [""] * len(row)
 
     rankings_event = st.dataframe(
@@ -649,7 +672,7 @@ with tab_config:
     st.markdown("### 📁 Data Source")
     data_source = st.radio(
         "NAV Input File",
-        ["Default (ETF.xlsx)", "Upload custom file"],
+        [f"Default ({current_cfg.get('INPUT_FILE', 'ETF_updated.xlsx')})", "Upload custom file"],
         index=0,
         label_visibility="collapsed",
         key="cfg_data_source",
@@ -666,11 +689,11 @@ with tab_config:
             st.session_state.uploaded_input_path = str(tmp_path)
             st.success("✅ Uploaded file saved. Click **Run Rebalance** to apply.")
     else:
-        default_path = SCRIPT_DIR / current_cfg.get("INPUT_FILE", "ETF.xlsx")
+        default_path = SCRIPT_DIR / current_cfg.get("INPUT_FILE", "ETF_updated.xlsx")
         if default_path.exists():
-            st.info(f"📄 {current_cfg.get('INPUT_FILE', 'ETF.xlsx')}")
+            st.info(f"📄 {current_cfg.get('INPUT_FILE', 'ETF_updated.xlsx')}")
         else:
-            st.error(f"❌ {current_cfg.get('INPUT_FILE', 'ETF.xlsx')} not found!")
+            st.error(f"❌ {current_cfg.get('INPUT_FILE', 'ETF_updated.xlsx')} not found!")
         # Clear any uploaded path
         st.session_state.uploaded_input_path = None
 
@@ -678,13 +701,12 @@ with tab_config:
 
     # ── Portfolio Parameters ───────────────────────────────
     st.markdown("### 📊 Portfolio Allocation")
-    cfg_col1, cfg_col2, cfg_col3 = st.columns(3)
+    cfg_col1, cfg_col3 = st.columns(2)
     with cfg_col1:
-        cfg_top_n = st.number_input("Top N (BULL)", min_value=1, max_value=20,
-                                     value=current_cfg["TOP_N"], step=1, key="cfg_top_n")
-    with cfg_col2:
-        cfg_top_n_partial = st.number_input("Top N (PARTIAL)", min_value=1, max_value=20,
-                                             value=current_cfg["TOP_N_PARTIAL"], step=1, key="cfg_top_n_partial")
+        cfg_top_n = st.number_input("Top N (risk-on)", min_value=1, max_value=20,
+                                     value=current_cfg["TOP_N"], step=1, key="cfg_top_n",
+                                     help="Number of ETF slots held while the regime is risk-on "
+                                          "(price above its 50-EMA). No separate partial tier anymore.")
     with cfg_col3:
         cfg_sector_cap = st.number_input("Sector Cap", min_value=1, max_value=10,
                                           value=current_cfg["SECTOR_CAP"], step=1, key="cfg_sector_cap")
@@ -720,6 +742,10 @@ with tab_config:
 
     # ── Regime Parameters ──────────────────────────────────
     st.markdown("### 🎯 Regime Filter")
+    st.caption("Binary risk-on/risk-off: **risk-on** while price is above its Fast EMA, "
+               "**risk-off** otherwise. Risk-off blocks new buys only — existing holdings "
+               "are left alone and close solely via their own exit rule (52wk-high DD, "
+               "rank cutoff, or TSL), not because of a regime flip.")
     cfg_index_ticker = st.text_input(
         "Index Ticker (Yahoo Finance)",
         value=current_cfg.get("REGIME_INDEX_TICKER", "^CRSLDX"),
@@ -733,10 +759,14 @@ with tab_config:
         cfg_regime_ticker = st.text_input("Regime Ticker (fallback)", value=current_cfg["REGIME_TICKER"], key="cfg_regime_ticker")
     with cfg_col7:
         cfg_fast_ema = st.number_input("Fast EMA Window", min_value=10, max_value=200,
-                                        value=current_cfg["TREND_FAST_EMA_WINDOW"], step=5, key="cfg_fast_ema")
+                                        value=current_cfg["TREND_FAST_EMA_WINDOW"], step=5, key="cfg_fast_ema",
+                                        help="This is the ONLY EMA that drives the risk-on/off decision "
+                                             "(price vs this EMA).")
     with cfg_col8:
-        cfg_slow_ema = st.number_input("Slow EMA Window", min_value=20, max_value=400,
-                                        value=current_cfg["TREND_EMA_WINDOW"], step=10, key="cfg_slow_ema")
+        cfg_slow_ema = st.number_input("Slow EMA Window (display only)", min_value=20, max_value=400,
+                                        value=current_cfg["TREND_EMA_WINDOW"], step=10, key="cfg_slow_ema",
+                                        help="No longer used in the regime decision — kept only for "
+                                             "reference/reporting.")
 
     cfg_fallbacks = st.text_input("Regime Fallbacks (comma-separated)",
                                    value=", ".join(current_cfg["REGIME_FALLBACKS"]),
@@ -789,7 +819,6 @@ with tab_config:
                 "WINDOW_3M": cfg_window_3m,
                 "ANNUALIZE": current_cfg["ANNUALIZE"],
                 "TOP_N": cfg_top_n,
-                "TOP_N_PARTIAL": cfg_top_n_partial,
                 "MAX_DRAWDOWN_FROM_HIGH": cfg_max_dd,
                 "SHARPE_W6M": cfg_sharpe_w6m,
                 "SHARPE_W3M": cfg_sharpe_w3m,
@@ -824,7 +853,6 @@ with tab_config:
                         "WINDOW_3M": cfg_window_3m,
                         "ANNUALIZE": current_cfg["ANNUALIZE"],
                         "TOP_N": cfg_top_n,
-                        "TOP_N_PARTIAL": cfg_top_n_partial,
                         "MAX_DRAWDOWN_FROM_HIGH": cfg_max_dd,
                         "SHARPE_W6M": cfg_sharpe_w6m,
                         "SHARPE_W3M": cfg_sharpe_w3m,

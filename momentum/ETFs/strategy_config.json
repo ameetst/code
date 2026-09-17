@@ -1,5 +1,5 @@
 {
-  "INPUT_FILE": "ETF.xlsx",
+  "INPUT_FILE": "ETF_updated.xlsx",
   "OUTPUT_FILE": "etf_rankings.xlsx",
   "WINDOW_6M": 126,
   "WINDOW_3M": 63,

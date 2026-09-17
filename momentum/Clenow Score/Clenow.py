@@ -2,8 +2,10 @@
 Clenow Momentum Ranking — NSE 500/750
 ======================================
 A like-for-like implementation of Andreas Clenow's "Stocks on the Move"
-trend-following momentum system, adapted to run on NSE universe files that
-contain DAILY CLOSING PRICES ONLY (no daily Open/High/Low, no volume).
+trend-following momentum system, originally adapted to run on NSE universe
+files that contain DAILY CLOSING PRICES ONLY (no daily Open/High/Low, no
+volume). Updated Sep 2026 to also accept a tidy OHLC CSV (see INPUT FILE
+FORMAT below) and use real Wilder True Range ATR when one is given.
 
     Momentum Score = Annualized Exponential Regression Slope × R²
 
@@ -15,14 +17,20 @@ WHERE THIS DIFFERS FROM THE BOOK, AND WHY (read this before trusting output)
 
        shares = floor((Account Value × Risk Factor) / ATR_20)
 
-   True ATR needs daily High/Low/Close (True Range). This dataset has close
-   only, so ATR is approximated as a Wilder-smoothed 20-day average of the
-   absolute close-to-close move (|close_t - close_t-1|). This is a lower
-   bound on real ATR (it misses intraday range and overnight gap range
-   beyond the close-to-close move), so position sizes computed here will
-   run slightly LARGER than true-ATR sizing would produce on the same stock.
-   If you can source daily OHLC data, swap `atr_from_closes()` for a real
-   True Range calculation and nothing else in this script needs to change.
+   True ATR needs daily High/Low/Close (True Range). Updated Sep 2026: when
+   the input file is an OHLC CSV (see INPUT FILE FORMAT below), real
+   Wilder-smoothed True Range ATR is computed from actual High/Low/Close via
+   `true_range_atr()` — this is the upgrade this docstring used to ask for
+   ("swap atr_from_closes() for a real True Range calculation"). The
+   close-only proxy, `atr_from_closes()` (a Wilder-smoothed 20-day average
+   of the absolute close-to-close move, |close_t - close_t-1|), remains the
+   fallback for the legacy xlsx layouts, which still carry close prices
+   only — it stays a lower bound on real ATR (misses intraday range and
+   overnight gap range), so position sizes computed from it run slightly
+   LARGER than true-ATR sizing would. Every row's `atr_method` field in the
+   output CSV records which one was actually used for that ticker (either
+   could apply within the same run — see analyse_ticker()), so a run's
+   output is self-documenting about which numbers are the real thing.
 
 2. Chandelier trailing stop.
    Book: exit if close < (highest close since entry − 3 × ATR_20).
@@ -49,15 +57,16 @@ WHERE THIS DIFFERS FROM THE BOOK, AND WHY (read this before trusting output)
    just proposes an initial portfolio from scratch (everything unheld).
 
 4. Liquidity filter. The book requires a minimum average dollar-volume
-   filter to exclude illiquid names. Implemented WHEN the input workbook
-   has a second sheet named VOLUME (same tickers, same layout as DATA,
-   daily share volume instead of price). A stock is disqualified if its
-   trailing 20-day average daily traded value (price × volume) falls
+   filter to exclude illiquid names. Implemented WHEN volume data is
+   available — a second sheet named VOLUME for an xlsx input (same
+   tickers, same layout as DATA, daily share volume instead of price), or
+   the `volume` column for an OHLC CSV input. A stock is disqualified if
+   its trailing 20-day average daily traded value (price × volume) falls
    below --min_liquidity (default ₹1,00,00,000 = ₹1 crore/day — a
    placeholder threshold, not a book-specified number; tune it for your
-   universe). If the workbook has no VOLUME sheet, this filter is simply
-   skipped (as with the original n500.xlsx / n750.xlsx files, which don't
-   have one) and every stock passes it by default.
+   universe). If no volume data is available (e.g. legacy n500.xlsx /
+   n750.xlsx, which have no VOLUME sheet), this filter is simply skipped
+   and every stock passes it by default.
 
 5. Index-membership rebalancing (twice yearly in the book) — not modeled;
    this script only knows the tickers present in the file you feed it.
@@ -67,27 +76,42 @@ stock MA filter, 200-day index MA regime filter, 15% single-day gap
 disqualifier) is unchanged from the book's specification.
 
 ------------------------------------------------------------------------------
-INPUT FILE FORMAT — two layouts are auto-detected on the DATA sheet:
+INPUT FILE FORMAT — auto-detected from the file extension (--file ...):
 
-  Legacy (n500.xlsx / n750.xlsx):
-    Col A : TICKER  (index row named NIFTY500 embedded among the stocks)
-    Col B : CLOSE (latest)
-    Col C : 52WK HIGH
-    Col D+: daily dates as column headers, close price on that date
+  .csv  ->  OHLC CSV (e.g. N750_OHLC.csv, from update_ohlc_dhan.py)
+    Tidy/long format, one row per (ticker, date):
+      columns: ticker, date, open, high, low, close, volume
+    A row named NIFTY500 (in the `ticker` column) is the benchmark index.
+    last_close comes from each ticker's most recent date; 52wk_high is the
+    trailing min(252, available) days' max of the real `high` column (not
+    close, since real intraday highs are available); ATR is real Wilder
+    True Range from high/low/close (see true_range_atr()); the `volume`
+    column feeds the liquidity filter directly. This is the only layout
+    with genuine OHLC, so it's the only one that gets true ATR — the two
+    xlsx layouts below always use the close-only proxy.
 
-  Updated (e.g. N750_updated.xlsx):
-    Col A : TICKER
-    Col B+: daily dates as column headers, close price on that date
-    (no static CLOSE / 52WK HIGH columns — both are derived: last_close
-    from the most recent date column, 52wk_high from the trailing
-    min(252, available) days of closes)
+  .xlsx (two layouts, both auto-detected on the DATA sheet by whether the
+  column headers stop being text and start being dates — nothing to
+  configure):
 
-  In both layouts: 0 = non-trading / missing, treated as NaN. The script
-  detects the layout by finding where the column headers stop being text
-  and start being dates — nothing to configure.
+    Legacy (n500.xlsx / n750.xlsx):
+      Col A : TICKER  (index row named NIFTY500 embedded among the stocks)
+      Col B : CLOSE (latest)
+      Col C : 52WK HIGH
+      Col D+: daily dates as column headers, close price on that date
 
-  Optional second sheet VOLUME: same tickers in the same order, daily
-  share volume instead of price, used for the liquidity filter above.
+    Updated (e.g. N750_updated.xlsx):
+      Col A : TICKER
+      Col B+: daily dates as column headers, close price on that date
+      (no static CLOSE / 52WK HIGH columns — both are derived: last_close
+      from the most recent date column, 52wk_high from the trailing
+      min(252, available) days of CLOSES, since there's no real intraday
+      high in this layout)
+
+    In both xlsx layouts: 0 = non-trading / missing, treated as NaN.
+
+    Optional second sheet VOLUME: same tickers in the same order, daily
+    share volume instead of price, used for the liquidity filter above.
 
 HOLDINGS FILE FORMAT (optional, --holdings path/to/holdings.csv)
   Columns (header row required): ticker, entry_date, entry_price
@@ -98,10 +122,12 @@ HOLDINGS FILE FORMAT (optional, --holdings path/to/holdings.csv)
   A row needs at least `ticker`; entry_date/entry_price may be blank.
 
 USAGE
-  python Clenow.py --file n500.xlsx \
+  python Clenow.py --file N750_OHLC.csv \
       --top_n 20 --account_value 1000000 \
       --holdings holdings.csv --risk_factor 0.001 \
       --output clenow_ranked.csv
+
+  (or --file n500.xlsx / N750_updated.xlsx for the legacy close-only layouts)
 
 DEPENDENCIES
   pip install pandas numpy scipy openpyxl
@@ -111,6 +137,7 @@ DEPENDENCIES
 import argparse
 import datetime
 import math
+import os
 import sys
 import warnings
 from typing import Any, Optional
@@ -179,6 +206,29 @@ def atr_from_closes(prices: pd.Series, window: int = ATR_WINDOW) -> pd.Series:
     return atr
 
 
+def true_range_atr(high: pd.Series, low: pd.Series, close: pd.Series,
+                    window: int = ATR_WINDOW) -> pd.Series:
+    """
+    Real Wilder-smoothed ATR from actual daily True Range:
+
+        TR_t = max(high_t - low_t, |high_t - close_(t-1)|, |low_t - close_(t-1)|)
+        ATR  = Wilder EWM of TR, alpha = 1/window (same smoothing as
+               atr_from_closes(), just fed the real True Range instead of
+               the close-to-close proxy)
+
+    `high`, `low`, `close` must be aligned (same date index, no NaN) and
+    ordered by date. Returns a Series of the same length (first value is
+    NaN, since TR needs a previous close).
+    """
+    prev_close = close.shift(1)
+    tr = pd.concat(
+        [high - low, (high - prev_close).abs(), (low - prev_close).abs()],
+        axis=1,
+    ).max(axis=1)
+    atr = tr.ewm(alpha=1.0 / window, adjust=False, min_periods=window).mean()
+    return atr
+
+
 # ── File Loading ───────────────────────────────────────────────────────────
 
 def _find_date_column_start(columns) -> Optional[int]:
@@ -197,15 +247,108 @@ def _find_date_column_start(columns) -> Optional[int]:
     return None
 
 
+def _is_ohlc_csv(filepath: str) -> bool:
+    """File-extension check driving the auto-detect in load_data()/
+    load_volume() — see module docstring, INPUT FILE FORMAT."""
+    return str(filepath).strip().lower().endswith(".csv")
+
+
+# In-process cache for the tidy OHLC CSV, keyed by (filepath, mtime): both
+# load_data() and load_ohlc_hl() need the same parsed frame (close for the
+# former; high/low for the latter; both need the real `high` column for a
+# proper 52wk_high too) — reading and re-parsing a many-MB CSV twice per
+# run would be pure waste. Cleared automatically whenever the file's mtime
+# changes, so re-running after a fresh update_ohlc_dhan.py pull picks up
+# the new data rather than a stale in-memory copy.
+_OHLC_CSV_CACHE: dict = {}
+
+
+def _load_ohlc_csv_cached(filepath: str) -> pd.DataFrame:
+    mtime = os.path.getmtime(filepath)
+    key = (str(filepath), mtime)
+    if _OHLC_CSV_CACHE.get("key") == key:
+        return _OHLC_CSV_CACHE["df"]
+
+    raw = pd.read_csv(filepath)
+    missing = {"ticker", "date", "open", "high", "low", "close"} - set(raw.columns)
+    if missing:
+        raise ValueError(
+            f"'{filepath}' is missing expected OHLC CSV column(s): {sorted(missing)} — "
+            f"expected ticker, date, open, high, low, close[, volume]."
+        )
+    raw["ticker"] = raw["ticker"].astype(str).str.strip()
+    raw["date"] = pd.to_datetime(raw["date"])
+
+    _OHLC_CSV_CACHE.clear()
+    _OHLC_CSV_CACHE["key"] = key
+    _OHLC_CSV_CACHE["df"] = raw
+    return raw
+
+
+def _pivot_ohlc_field(raw: pd.DataFrame, field: str) -> pd.DataFrame:
+    """ticker x date wide frame for one OHLC CSV column, sorted by date."""
+    wide = raw.pivot(index="ticker", columns="date", values=field)
+    return wide.reindex(sorted(wide.columns), axis=1)
+
+
+def load_ohlc_hl(filepath: str) -> Optional[tuple[pd.DataFrame, pd.DataFrame]]:
+    """
+    For an OHLC CSV input, returns (high [ticker x date], low [ticker x
+    date]) -- the extra data load_data() doesn't return (its signature is
+    unchanged so existing callers, e.g. clenow_runner.py's
+    `_, index_series, _ = Clenow.load_data(filepath)`, keep working
+    as-is). Returns None for an xlsx input (no real intraday high/low
+    exists in either xlsx layout), so callers fall back to the close-only
+    ATR proxy — see analyse_ticker().
+    """
+    if not _is_ohlc_csv(filepath):
+        return None
+    raw = _load_ohlc_csv_cached(filepath)
+    high = _pivot_ohlc_field(raw, "high").drop(index=INDEX_TICKER, errors="ignore")
+    low = _pivot_ohlc_field(raw, "low").drop(index=INDEX_TICKER, errors="ignore")
+    return high, low
+
+
 def load_data(filepath: str) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
     """
-    Auto-detects the legacy (TICKER, CLOSE, 52WK HIGH, dates...) layout vs.
-    the updated (TICKER, dates...) layout — see module docstring.
+    Auto-detects the input format from the file extension (.csv -> tidy
+    OHLC; .xlsx -> legacy or updated close-only layout, itself
+    auto-detected as before) — see module docstring, INPUT FILE FORMAT.
 
     Returns (stock_prices [ticker x date], index_series [date],
-             high_52wk [ticker -> 52-week-high price]).
+             high_52wk [ticker -> 52-week-high price]) in all cases, so
+    every existing caller (rank(), clenow_runner.py) keeps working
+    unchanged regardless of which input format was actually loaded.
     """
     print(f"Loading {filepath} ...")
+
+    if _is_ohlc_csv(filepath):
+        raw = _load_ohlc_csv_cached(filepath)
+        close = _pivot_ohlc_field(raw, "close")
+        high = _pivot_ohlc_field(raw, "high")
+        print(f"  Layout detected : OHLC CSV (tidy, {len(raw)} rows) — "
+              f"52wk_high derived from the real 'high' column")
+
+        if INDEX_TICKER not in close.index:
+            raise ValueError(f"'{INDEX_TICKER}' not found in the ticker column.")
+
+        index_series = close.loc[INDEX_TICKER].dropna().astype(float)
+        stock_prices = close.drop(index=INDEX_TICKER).astype(float)
+        high_no_idx = high.drop(index=INDEX_TICKER, errors="ignore").astype(float)
+
+        def _trailing_high_from_highs(row: pd.Series) -> float:
+            clean = row.dropna()
+            if clean.empty:
+                return np.nan
+            return clean.iloc[-min(len(clean), 252):].max()
+        high_52wk = high_no_idx.apply(_trailing_high_from_highs, axis=1)
+
+        date_cols = list(close.columns)
+        print(f"  Tickers loaded  : {len(stock_prices)}")
+        print(f"  Date columns    : {len(date_cols)}  ({date_cols[0].date()} → {date_cols[-1].date()})")
+        print(f"  Index ticker    : {INDEX_TICKER} ({index_series.notna().sum()} trading days)")
+        return stock_prices, index_series, high_52wk
+
     raw = pd.read_excel(filepath, sheet_name="DATA", header=0)
     raw = raw.rename(columns={raw.columns[0]: "ticker"})
 
@@ -258,11 +401,25 @@ def load_data(filepath: str) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
 
 def load_volume(filepath: str) -> Optional[pd.DataFrame]:
     """
-    Loads the optional VOLUME sheet (same TICKER + dates layout as DATA,
-    daily share volume). Returns None if the sheet doesn't exist so the
-    liquidity filter is simply skipped for files that don't have it
-    (e.g. the original n500.xlsx / n750.xlsx).
+    Loads daily share volume as a ticker x date frame, used by the
+    liquidity filter. For an OHLC CSV, this is the `volume` column
+    (pivoted, same as close/high/low). For an xlsx, this is the optional
+    VOLUME sheet (same TICKER + dates layout as DATA). Returns None if no
+    volume data is available so the liquidity filter is simply skipped
+    (e.g. the original n500.xlsx / n750.xlsx, which have no VOLUME sheet).
     """
+    if _is_ohlc_csv(filepath):
+        raw = _load_ohlc_csv_cached(filepath)
+        if "volume" not in raw.columns:
+            print("  No 'volume' column in the OHLC CSV — liquidity filter will be skipped.")
+            return None
+        print(f"Loading volume data from {filepath} ('volume' column) ...")
+        vol = _pivot_ohlc_field(raw, "volume").drop(index=INDEX_TICKER, errors="ignore").astype(float)
+        date_cols = list(vol.columns)
+        print(f"  Volume tickers  : {len(vol)}  |  Date columns: {len(date_cols)} "
+              f"({date_cols[0].date()} → {date_cols[-1].date()})")
+        return vol
+
     try:
         sheet_names = pd.ExcelFile(filepath).sheet_names
     except Exception:
@@ -343,15 +500,19 @@ def analyse_ticker(
     holding: Optional[pd.Series],
     volume_row: Optional[pd.Series] = None,
     min_liquidity: float = DEFAULT_MIN_AVG_DAILY_VALUE,
+    high_row: Optional[pd.Series] = None,
+    low_row: Optional[pd.Series] = None,
 ) -> dict:
     """
     Analyse one ticker. `holding` is the row from the holdings frame for this
     ticker if currently held, else None. `volume_row` is the ticker's daily
-    share-volume series if a VOLUME sheet was loaded, else None (liquidity
-    filter is skipped in that case). Does NOT assign the final portfolio
-    signal (BUY/HOLD/SELL/WATCHLIST) — that happens after ranking, in
-    build_portfolio(), because it depends on rank relative to the rest of
-    the universe and on open-slot availability.
+    share-volume series if volume data was loaded, else None (liquidity
+    filter is skipped in that case). `high_row`/`low_row` are the ticker's
+    daily high/low series when the input was an OHLC CSV (see
+    load_ohlc_hl()); both None for an xlsx input. Does NOT assign the final
+    portfolio signal (BUY/HOLD/SELL/WATCHLIST) — that happens after
+    ranking, in build_portfolio(), because it depends on rank relative to
+    the rest of the universe and on open-slot availability.
     """
     prices = price_row.dropna().astype(float)
     prices = prices[prices > 0]
@@ -366,6 +527,7 @@ def analyse_ticker(
         r_squared           = np.nan,
         momentum_score      = np.nan,
         atr_20              = np.nan,
+        atr_method          = "",
         highest_close_ref   = np.nan,
         stop_loss_level     = np.nan,
         distance_to_stop_pct= np.nan,
@@ -421,10 +583,27 @@ def analyse_ticker(
     base["r_squared"]        = round(r2,    4) if not np.isnan(r2)    else np.nan
     base["momentum_score"]   = round(score, 4) if not np.isnan(score) else np.nan
 
-    # ── ATR (close-to-close proxy) ───────────────────────────────────────
-    atr_series = atr_from_closes(prices, ATR_WINDOW)
+    # ── ATR: real True Range when high/low are available (OHLC CSV input),
+    #    else the close-to-close proxy (xlsx input) — see module docstring
+    #    point 1 and true_range_atr()'s docstring.
+    atr_method = "close_proxy"
+    atr_series = None
+    if high_row is not None and low_row is not None:
+        h = high_row.reindex(prices.index).astype(float)
+        l = low_row.reindex(prices.index).astype(float)
+        aligned = h.notna() & l.notna()
+        if aligned.sum() >= ATR_WINDOW:
+            atr_series = true_range_atr(h[aligned], l[aligned], prices[aligned], ATR_WINDOW)
+            atr_method = "true_range"
+        # else: not enough aligned high/low history for this ticker (e.g.
+        # a recent listing) -- fall through to the close proxy below so it
+        # still gets *a* usable ATR rather than none at all.
+    if atr_series is None:
+        atr_series = atr_from_closes(prices, ATR_WINDOW)
+
     atr_now = atr_series.iloc[-1]
     base["atr_20"] = round(atr_now, 6) if pd.notna(atr_now) else np.nan
+    base["atr_method"] = atr_method if pd.notna(atr_now) else ""
 
     # ── Chandelier stop reference ────────────────────────────────────────
     if pd.notna(atr_now):
@@ -548,6 +727,9 @@ def rank(
     stock_prices, index_series, high_52wk = load_data(filepath)
     volume = load_volume(filepath)
     holdings = load_holdings(holdings_path)
+    hl = load_ohlc_hl(filepath)
+    high_df, low_df = hl if hl is not None else (None, None)
+    print(f"  ATR method      : {'real True Range (OHLC CSV)' if hl is not None else 'close-to-close proxy (xlsx input, no High/Low)'}")
 
     # 2. Market filter
     market_ok, idx_close, idx_ma200 = check_market_filter(index_series)
@@ -564,7 +746,9 @@ def rank(
     for ticker, row in stock_prices.iterrows():
         holding = holdings.loc[ticker] if ticker in holdings.index else None
         vol_row = volume.loc[ticker] if (volume is not None and ticker in volume.index) else None
-        results.append(analyse_ticker(ticker, row, holding, vol_row, min_liquidity))
+        high_row = high_df.loc[ticker] if (high_df is not None and ticker in high_df.index) else None
+        low_row = low_df.loc[ticker] if (low_df is not None and ticker in low_df.index) else None
+        results.append(analyse_ticker(ticker, row, holding, vol_row, min_liquidity, high_row, low_row))
 
     df = pd.DataFrame(results)
 
@@ -608,7 +792,7 @@ def rank(
         "rank", "ticker", "signal", "signal_reason", "is_held",
         "momentum_score", "annualized_slope", "r_squared",
         "last_close", "ma_100", "below_ma100",
-        "atr_20", "highest_close_ref", "stop_loss_level", "distance_to_stop_pct",
+        "atr_20", "atr_method", "highest_close_ref", "stop_loss_level", "distance_to_stop_pct",
         "avg_daily_value_20d",
         "position_weight_pct", "allocated_amount", "approx_shares", "risk_amount_per_atr",
         "entry_date", "entry_price",
@@ -665,7 +849,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Clenow 'Stocks on the Move' Momentum Ranking for NSE 500/750"
     )
-    parser.add_argument("--file", required=True, help="Path to input Excel file (e.g. n500.xlsx)")
+    parser.add_argument("--file", required=True,
+                         help="Path to input file: an OHLC CSV (e.g. N750_OHLC.csv, for real ATR) "
+                              "or a legacy close-only Excel file (e.g. n500.xlsx, N750_updated.xlsx)")
     parser.add_argument("--top_n", type=int, default=DEFAULT_TOP_N,
                          help=f"Target portfolio size (default: {DEFAULT_TOP_N})")
     parser.add_argument("--output", default="clenow_ranked.csv", help="Output CSV filename")
@@ -677,7 +863,8 @@ def main():
                          help=f"Fraction of account equity risked per position per ATR (default: {DEFAULT_RISK_FACTOR})")
     parser.add_argument("--min_liquidity", type=float, default=DEFAULT_MIN_AVG_DAILY_VALUE,
                          help=f"Minimum {LIQUIDITY_WINDOW}-day avg daily traded value in INR to qualify "
-                              f"(default: {DEFAULT_MIN_AVG_DAILY_VALUE:,.0f}); only applied if the file has a VOLUME sheet")
+                              f"(default: {DEFAULT_MIN_AVG_DAILY_VALUE:,.0f}); only applied if the file has "
+                              f"volume data (a VOLUME sheet for xlsx, or a 'volume' column for an OHLC CSV)")
     args = parser.parse_args()
     rank(
         args.file, args.top_n, args.output,

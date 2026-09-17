@@ -103,9 +103,13 @@ def main(template_path: str, output_file: str, lookback_years: float):
 
     today = datetime.date.today()
     from_date = (today - datetime.timedelta(days=int(lookback_years * 365.25))).isoformat()
-    # Dhan's toDate is non-inclusive -- pad by a day so today's bar (once
-    # the market's closed) is actually included.
-    to_date = (today + datetime.timedelta(days=1)).isoformat()
+    # Confirmed Sep 2026 (empirically, via test_connection.py): Dhan's
+    # historical toDate is INCLUSIVE, not non-inclusive as the API docs
+    # claim -- no +1-day padding needed (a prior version padded by a day,
+    # meaning every request asked for data through a date one day in the
+    # future; suspected contributor to the DH-905 flakiness worked
+    # through elsewhere in this codebase).
+    to_date = today.isoformat()
     print(f"Date range: {from_date} -> {today.isoformat()} (inclusive)\n")
 
     print(f"Fetching {len(tickers)} equities' OHLCV via Dhan "

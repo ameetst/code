@@ -1,25 +1,23 @@
 """
-ETF Dual Momentum + Clenow + Weighted Sharpe + Tiered Regime Filter
+ETF Dual Momentum + Clenow + Weighted Sharpe + Binary Risk-On/Off Regime Filter
 ====================================================================
 Scoring pipeline (in correct order):
   Step 1 - SCREEN  : Apply 52-week high proximity filter.
                      Only ETFs within MAX_DRAWDOWN_FROM_HIGH of their 52wk high are investable.
-  Step 2 - SCORE   : Compute Clenow (6M+3M), Weighted Sharpe, Composite
-                     on ALL 224 ETFs for reference.
+  Step 2 - SCORE   : Weighted Sharpe composite (6M+3M Z-scores) on ALL ETFs for reference.
                      Investable rank is computed on the screened subset only.
-  Step 3 - REGIME  : Two-layer tiered filter determines how many slots to fill.
+  Step 3 - REGIME  : Binary risk-on/risk-off filter caps new-buy capacity.
   Step 4 - ALLOCATE: Select Top-N from the investable (screened) ranked list.
 
-Regime Filter - Tiered (three states):
-  BULL   (both pass) : all TOP_N slots active
-  PARTIAL (one fails): TOP_N_PARTIAL slots active, rest = cash
-  BEAR   (Price <= EMA100): full cash
-
-  Layer 1 - Trend  : MONIFTY500 above its 100-day EMA
+Regime Filter - Binary (two states):
+  BULL / risk-on  : Nifty 500 price > its 50-day EMA -> up to TOP_N slots
+  BEAR / risk-off : price <= its 50-day EMA -> no NEW buys; existing
+                    holdings are left alone and only close via their own
+                    exit rule, not because the regime flipped.
 
   Rebalance: Weekly (Monday / first trading day).
-  Exit logic: Hold positions unless 52wk-high DD > 25%, rank > 20, or TSL > 5%.
-  Layer 2 - EMA50  : Price above 50-day EMA (for BULL)
+  Exit logic (the only way a position closes): 52wk-high DD > 25%, rank
+  worse than EXIT_MAX_RANK, or TSL > 5% from peak since entry.
 
 All parameters in CONFIG below.
 """
@@ -125,7 +123,7 @@ def get_config_as_dict() -> dict:
 
 
 class CONFIG:
-    INPUT_FILE  = "ETF.xlsx"
+    INPUT_FILE  = "ETF_updated.xlsx"
     OUTPUT_FILE = "etf_rankings.xlsx"
 
     # Momentum windows (trading days)
@@ -134,9 +132,9 @@ class CONFIG:
     ANNUALIZE   = 252
 
     # Portfolio allocation
-    TOP_N         = 5    # slots when regime = BULL (both layers pass)
-    TOP_N_PARTIAL = 3    # slots when regime = PARTIAL (one layer fails)
-                         # remaining slots go to cash as a buffer
+    TOP_N         = 5    # slots when regime = BULL (risk-on)
+    TOP_N_PARTIAL = 3    # unused by the current binary regime filter (no PARTIAL
+                         # state); kept for config/back-compat with older logs
 
     # 52-week high proximity filter — the sole screen applied BEFORE ranking
     # ETF must be trading within MAX_DRAWDOWN_FROM_HIGH of its 52-week high.
@@ -157,8 +155,8 @@ class CONFIG:
     REGIME_INDEX_TICKER = "^CRSLDX"   # Yahoo Finance symbol for Nifty 500 Index
     REGIME_TICKER      = "MONIFTY500"
     REGIME_FALLBACKS   = ["BSE500IETF", "HDFCBSE500", "NIFTYBEES"]
-    TREND_FAST_EMA_WINDOW = 50     # Layer 1: fast EMA
-    TREND_EMA_WINDOW   = 100       # Layer 1: slow EMA
+    TREND_FAST_EMA_WINDOW = 50     # drives the regime decision (price vs this EMA)
+    TREND_EMA_WINDOW   = 100       # display-only; no longer drives the regime
 
     # Sector cap — max ETFs per sector in final allocation
     # Prevents concentration in duplicates tracking the same index
@@ -284,56 +282,122 @@ def classify_sector(etf_name: str, ticker: str) -> str:
 # =========================================================
 # 1. DATA LOADING
 # =========================================================
+def _load_etf_name_lookup(script_dir: Path | None = None) -> dict[str, str]:
+    """Best-effort TICKER -> ETF_NAME lookup from a legacy ETF.xlsx, for
+    enriching name-less input files (e.g. ETF_updated.xlsx). Returns {} if
+    no such file is present."""
+    from openpyxl import load_workbook
+
+    legacy = (script_dir or _SCRIPT_DIR) / "ETF.xlsx"
+    if not legacy.exists():
+        return {}
+    try:
+        wb = load_workbook(legacy, read_only=True, data_only=True)
+        ws = wb["DATA"]
+        lookup = {}
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=2, values_only=True):
+            name, ticker = row[0], row[1]
+            if ticker:
+                lookup[str(ticker).strip().upper()] = str(name).strip() if name else ""
+        wb.close()
+        return lookup
+    except Exception:
+        return {}
+
+
 def load_etf_data(filepath: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Load ETF data from ETF.xlsx.
+    Load ETF price data from an Excel workbook's DATA sheet.
 
-    The date headers (row 1, col C onwards) are an Excel dynamic array formula:
-        =TRANSPOSE(LET(d, SEQUENCE(365,...TODAY()...), FILTER(d, WEEKDAY(d,2)<6)))
-    This formula is TODAY()-based and has no cached values readable by openpyxl.
+    Supports two layouts, auto-detected from the header row:
 
-    Fix: read only the price grid via openpyxl (formula-safe), and reconstruct
-    the date index in Python by generating the last N business days (Mon-Fri)
-    to match the column count exactly.
+    1. Legacy (ETF_NAME, TICKER, <price cols>) — e.g. old ETF.xlsx.
+       The date headers (row 1, col C onwards) are an Excel dynamic array
+       formula (=TRANSPOSE(LET(d, SEQUENCE(365,...TODAY()...), ...))) with
+       no cached values readable by openpyxl, so the date index is
+       reconstructed in Python as the last N business days ending today.
+
+    2. Current (TICKER, <date cols>) — e.g. ETF_updated.xlsx. Row 1 holds
+       real (static) dates read directly from the sheet. ETF_NAME isn't
+       present in this layout; it's enriched from a legacy ETF.xlsx in the
+       same folder when available, else left blank. A handful of price
+       cells in this file carry a stray date number format (copy/paste
+       artifact) that makes openpyxl hand back a datetime instead of the
+       underlying float — those are converted back to their numeric serial.
     """
     from openpyxl import load_workbook
+    from openpyxl.utils.datetime import to_excel
+    import datetime as _dt
 
     wb = load_workbook(filepath, data_only=True)
     ws = wb["DATA"]
     max_col = ws.max_column
     max_row = ws.max_row
 
-    # Price data starts at Excel column 3 (C), 0-based index 2
-    PRICE_START_COL = 3   # Excel 1-indexed
-    n_price_cols = max_col - PRICE_START_COL + 1  # number of date columns
+    header = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    legacy_format = str(header[0]).strip().upper() == "ETF_NAME" if header else True
 
-    # Reconstruct date index: last N business days (Mon-Fri) ending today
-    # This mirrors the Excel formula which generates ~261 trading days per year
-    today = pd.Timestamp.today().normalize()
-    # Generate enough biz days; filter to exact count needed
-    candidate_dates = pd.bdate_range(end=today, periods=n_price_cols)
-    dates = list(candidate_dates)  # ascending order, length = n_price_cols
+    if legacy_format:
+        # Price data starts at Excel column 3 (C), 0-based index 2
+        PRICE_START_COL = 3   # Excel 1-indexed
+        n_price_cols = max_col - PRICE_START_COL + 1
 
-    # Read ETF names, tickers and price rows
-    rows = list(ws.iter_rows(min_row=2, max_row=max_row, values_only=True))
-    wb.close()
+        # Reconstruct date index: last N business days (Mon-Fri) ending today
+        today = pd.Timestamp.today().normalize()
+        dates = list(pd.bdate_range(end=today, periods=n_price_cols))
 
-    etf_names, tickers, price_rows = [], [], []
-    for row in rows:
-        name   = str(row[0]).strip() if row[0] is not None else ""
-        ticker = str(row[1]).strip() if row[1] is not None else ""
-        if not ticker or ticker == "None":
-            continue
-        etf_names.append(name)
-        tickers.append(ticker)
-        # cols 2 onwards (0-based) are price columns
-        price_rows.append(row[2: 2 + n_price_cols])
+        rows = list(ws.iter_rows(min_row=2, max_row=max_row, values_only=True))
+        wb.close()
 
-    meta = pd.DataFrame({"ETF_NAME": etf_names, "TICKER": tickers})
+        etf_names, tickers, price_rows = [], [], []
+        for row in rows:
+            name   = str(row[0]).strip() if row[0] is not None else ""
+            ticker = str(row[1]).strip() if row[1] is not None else ""
+            if not ticker or ticker == "None":
+                continue
+            etf_names.append(name)
+            tickers.append(ticker)
+            price_rows.append(row[2: 2 + n_price_cols])
 
-    price_raw = pd.DataFrame(price_rows, index=tickers, columns=dates)
+        meta = pd.DataFrame({"ETF_NAME": etf_names, "TICKER": tickers})
+        price_raw = pd.DataFrame(price_rows, index=tickers, columns=dates)
+
+    else:
+        # TICKER, <date cols> — dates are real values in row 1, col B onwards.
+        # Trailing columns beyond the real data (stale Excel formatting) can
+        # inflate ws.max_column, so trim to the last column with an actual date.
+        raw_dates = header[1:]
+        last_date_idx = -1
+        for i, v in enumerate(raw_dates):
+            if isinstance(v, (_dt.date, _dt.datetime)):
+                last_date_idx = i
+        dates = raw_dates[:last_date_idx + 1]
+        n_price_cols = len(dates)
+        name_lookup = _load_etf_name_lookup()
+
+        tickers, price_rows = [], []
+        for row in ws.iter_rows(min_row=2, max_row=max_row, min_col=1, max_col=1 + n_price_cols):
+            ticker_cell, *price_cells = row
+            ticker = str(ticker_cell.value).strip() if ticker_cell.value is not None else ""
+            if not ticker or ticker == "None":
+                continue
+            tickers.append(ticker)
+            fixed = []
+            for c in price_cells:
+                v = c.value
+                # A few cells carry a stray date number format even though the
+                # underlying value is a plain price; recover the numeric serial.
+                if isinstance(v, (_dt.datetime, _dt.date)):
+                    v = to_excel(v)
+                fixed.append(v)
+            price_rows.append(fixed)
+        wb.close()
+
+        etf_names = [name_lookup.get(t.upper(), "") for t in tickers]
+        meta = pd.DataFrame({"ETF_NAME": etf_names, "TICKER": tickers})
+        price_raw = pd.DataFrame(price_rows, index=tickers, columns=pd.to_datetime(dates))
+
     price_raw = price_raw.apply(pd.to_numeric, errors="coerce").replace(0, np.nan)
-
     prices = price_raw.T.sort_index().ffill()
     print(f"[load]   {filepath}")
     print(f"         {len(tickers)} ETFs  |  {len(dates)} date cols  "
@@ -444,16 +508,22 @@ def fetch_nifty500_index(n_days: int = 600, script_dir: Path | None = None) -> p
 
 def regime_status(prices: pd.DataFrame, script_dir: Path | None = None) -> dict:
     """
-    Returns tiered regime state:
-      BULL    - both layers pass  -> invest TOP_N slots
-      PARTIAL - one layer fails   -> invest TOP_N_PARTIAL slots, rest = cash
-      BEAR    - both layers fail  -> full cash
+    Simple binary regime state, based on price vs the 50-day EMA only:
+      BULL (risk-on)  - Nifty 500 price > its 50-day EMA. Normal weekly
+                        hold-and-replace, up to TOP_N slots.
+      BEAR (risk-off) - price <= its 50-day EMA. No NEW buys — existing
+                        holdings are left alone and only close when they
+                        individually trip an exit rule (see
+                        build_allocation()), not because of the regime.
+
+    nifty_ema_100 is still computed/returned for dashboard display, but no
+    longer drives the regime decision.
 
     Trend source priority:
       1. Live Nifty 500 INDEX via yfinance (CONFIG.REGIME_INDEX_TICKER, e.g. ^CRSLDX)
       2. CONFIG.REGIME_TICKER (MONIFTY500) from ETF.xlsx
       3. CONFIG.REGIME_FALLBACKS, in order, from ETF.xlsx
-      4. Default to BULL if nothing is available at all
+      4. Default to BULL (risk-on) if nothing is available at all
     """
     trend_series = None
     trend_ticker = None
@@ -479,10 +549,11 @@ def regime_status(prices: pd.DataFrame, script_dir: Path | None = None) -> dict:
     # --- Priority 4: nothing available at all -> default BULL ---
     if trend_series is None:
         print("  [warn] No Nifty 500 source available (live or ETF.xlsx); "
-              "trend layer defaulting to BULL")
+              "trend layer defaulting to BULL (risk-on)")
         return {
             "regime_ok"   : True,
             "label"       : "BULL",
+            "risk_on"     : True,
             "active_slots": CONFIG.TOP_N,
             "trend_ok"    : True,
             "nifty_price" : np.nan,
@@ -492,37 +563,30 @@ def regime_status(prices: pd.DataFrame, script_dir: Path | None = None) -> dict:
         }
 
     s = trend_series
-    if len(s) >= CONFIG.TREND_EMA_WINDOW:
-        nifty_price = float(s.iloc[-1])
-        nifty_ema_50  = float(s.ewm(span=CONFIG.TREND_FAST_EMA_WINDOW, adjust=False).mean().iloc[-1])
-        nifty_ema_100 = float(s.ewm(span=CONFIG.TREND_EMA_WINDOW, adjust=False).mean().iloc[-1])
+    if len(s) >= CONFIG.TREND_FAST_EMA_WINDOW:
+        nifty_price  = float(s.iloc[-1])
+        nifty_ema_50 = float(s.ewm(span=CONFIG.TREND_FAST_EMA_WINDOW, adjust=False).mean().iloc[-1])
+        nifty_ema_100 = (float(s.ewm(span=CONFIG.TREND_EMA_WINDOW, adjust=False).mean().iloc[-1])
+                          if len(s) >= CONFIG.TREND_EMA_WINDOW else np.nan)
 
-        # Regime (Run 1 - best performing config):
-        #   BULL    : EMA50 > EMA100  AND  Price > EMA50  -> TOP_N slots
-        #   PARTIAL : Price > EMA100  (but not BULL)       -> TOP_N_PARTIAL slots
-        #   BEAR    : Price <= EMA100                       -> 0 slots, full cash
-        if nifty_ema_50 > nifty_ema_100 and nifty_price > nifty_ema_50:
-            label        = "BULL"
-            active_slots = CONFIG.TOP_N
-        elif nifty_price > nifty_ema_100:
-            label        = "PARTIAL"
-            active_slots = CONFIG.TOP_N_PARTIAL
-        else:
-            label        = "BEAR"
-            active_slots = 0
-
-        trend_ok = active_slots > 0
+        # Simple binary rule: risk-on only while price is above its 50-EMA.
+        risk_on = nifty_price > nifty_ema_50
+        label   = "BULL" if risk_on else "BEAR"
+        active_slots = CONFIG.TOP_N if risk_on else 0
+        trend_ok = risk_on
     else:
-        trend_ok    = True
-        nifty_price = float(s.iloc[-1]) if len(s) else np.nan
-        nifty_ema_50 = np.nan
+        trend_ok      = True
+        nifty_price   = float(s.iloc[-1]) if len(s) else np.nan
+        nifty_ema_50  = np.nan
         nifty_ema_100 = np.nan
-        label = "BULL"
-        active_slots = CONFIG.TOP_N
+        label         = "BULL"
+        risk_on       = True
+        active_slots  = CONFIG.TOP_N
 
     return {
-        "regime_ok"   : active_slots == CONFIG.TOP_N,
+        "regime_ok"   : risk_on,
         "label"       : label,
+        "risk_on"     : risk_on,
         "active_slots": active_slots,
         "trend_ok"    : trend_ok,
         "nifty_price" : nifty_price,
@@ -758,51 +822,36 @@ def build_allocation(df: pd.DataFrame, regime: dict,
                      prev_allocation: list | None = None,
                      prices: pd.DataFrame | None = None) -> pd.DataFrame:
     """
-    Weekly Hold-and-Replace (WRH) allocation.
+    Weekly Hold-and-Replace (WRH) allocation, binary risk-on/risk-off regime.
 
     If prev_allocation is provided (list of slot dicts from last week):
-      1. Check each held position against exit triggers (should_exit)
-      2. HOLD positions that pass all checks
-      3. Fill vacated + new slots from investable ranking (skip already held)
+      1. Check each held position against exit triggers (should_exit) --
+         this is the ONLY way a position is ever closed; the regime layer
+         no longer force-trims holdings on its own.
+      2. HOLD every position that passes (no artificial cap on how many).
+      3. RISK-ON only: fill any open slots (up to TOP_N) with the next
+         best-ranked investable ETFs, replacing whatever was exited.
+      4. RISK-OFF: do NOT open any new positions -- vacated slots simply
+         sit in cash until risk-on resumes and the slot gets refilled.
 
-    If prev_allocation is None (first run): behaves like fresh top-N pick.
-
-    Number of active slots determined by tiered regime state:
-      BULL    -> TOP_N slots
-      PARTIAL -> TOP_N_PARTIAL slots (remainder = cash buffer)
-      BEAR    -> 0 slots (full cash)
+    If prev_allocation is None (first run): behaves like a fresh top-N pick
+    when risk-on, or all-cash when risk-off (nothing to hold yet).
     """
-    active = regime["active_slots"]
-    total  = CONFIG.TOP_N
-    w      = 1.0 / total
-
-    # Full cash — regime is BEAR
-    if active == 0:
-        return pd.DataFrame([{
-            "SLOT"        : i + 1,
-            "TICKER"      : "CASH",
-            "ETF_NAME"    : "Cash / Money Market",
-            "SECTOR"      : "CASH",
-            "WEIGHT"      : w,
-            "INV_RANK"    : "-",
-            "REASON"      : f"Regime = {regime['label']} -> full cash"
-        } for i in range(total)])
+    risk_on = regime.get("risk_on", regime.get("active_slots", CONFIG.TOP_N) > 0)
+    total   = CONFIG.TOP_N
+    w       = 1.0 / total
 
     # Investable ETFs sorted by investable rank (composite score)
     investable = df[df["SCREEN_PASS"] & (df["RANK_INVESTABLE"] > 0)].copy()
     investable = investable.sort_values("RANK_INVESTABLE").reset_index(drop=True)
-    is_partial = (active == CONFIG.TOP_N_PARTIAL)
 
     slots = []
     held_tickers = set()      # tickers retained from previous week
     sector_count: dict[str, int] = {}
 
     # ── Phase 1: evaluate holds from previous allocation ─────────────
-    # Rule-based exits (52wk DD / rank / TSL) are checked first and always
-    # remove a position. Survivors are then ranked by CURRENT investable
-    # rank so that, if the slot count has shrunk (e.g. BULL -> PARTIAL),
-    # the weakest-ranked holdings are trimmed rather than whichever
-    # happened to occupy the last slot(s) in last week's list.
+    # Rule-based exits (52wk DD / rank / TSL) are the only reason a
+    # position closes. Every survivor is kept, regardless of regime.
     if prev_allocation:
         survivors = []
         for prev_slot in prev_allocation:
@@ -832,15 +881,10 @@ def build_allocation(df: pd.DataFrame, regime: dict,
                 "inv_rank": inv_rk,
             })
 
-        # Best current rank first; tickers that fell out of the ranked
-        # universe entirely (inv_rank is None) sort last.
+        # Best current rank first, purely for a stable display order.
         survivors.sort(key=lambda c: c["inv_rank"] if c["inv_rank"] is not None else float("inf"))
 
         for cand in survivors:
-            if len(held_tickers) >= active:
-                print(f"    TRIM {cand['ticker']}: cut for reduced slot count "
-                      f"(rank {cand['inv_rank']})")
-                continue
             sector = cand["sector"]
             sector_count[sector] = sector_count.get(sector, 0) + 1
             held_tickers.add(cand["ticker"])
@@ -854,50 +898,43 @@ def build_allocation(df: pd.DataFrame, regime: dict,
                 "REASON"  : "HOLD — no exit trigger",
             })
 
-    # ── Phase 2: fill remaining active slots from ranking ────────────
-    open_slots   = active - len(slots)
-    candidate_idx = 0
-    filled_new    = 0
-    while filled_new < open_slots and candidate_idx < len(investable):
-        row    = investable.iloc[candidate_idx]
-        ticker = row["TICKER"]
-        sector = row.get("SECTOR", "OTHER")
-        candidate_idx += 1
+    # ── Phase 2: fill open slots from ranking — RISK-ON ONLY ─────────
+    if risk_on:
+        open_slots    = total - len(slots)
+        candidate_idx = 0
+        filled_new    = 0
+        while filled_new < open_slots and candidate_idx < len(investable):
+            row    = investable.iloc[candidate_idx]
+            ticker = row["TICKER"]
+            sector = row.get("SECTOR", "OTHER")
+            candidate_idx += 1
 
-        if ticker in held_tickers:
-            continue   # already held from Phase 1
-        sc = sector_count.get(sector, 0)
-        if sc >= CONFIG.SECTOR_CAP:
-            continue   # sector cap hit
+            if ticker in held_tickers:
+                continue   # already held from Phase 1
+            sc = sector_count.get(sector, 0)
+            if sc >= CONFIG.SECTOR_CAP:
+                continue   # sector cap hit
 
-        sector_count[sector] = sc + 1
-        held_tickers.add(ticker)
-        slots.append({
-            "SLOT"    : len(slots) + 1,
-            "TICKER"  : ticker,
-            "ETF_NAME": row["ETF_NAME"],
-            "SECTOR"  : sector,
-            "WEIGHT"  : w,
-            "INV_RANK": int(row["RANK_INVESTABLE"]),
-            "REASON"  : (f"NEW BUY — Rank {int(row['RANK_INVESTABLE'])}  |  "
-                         f"Sector={sector} ({sc+1}/{CONFIG.SECTOR_CAP})"),
-        })
-        filled_new += 1
+            sector_count[sector] = sc + 1
+            held_tickers.add(ticker)
+            slots.append({
+                "SLOT"    : len(slots) + 1,
+                "TICKER"  : ticker,
+                "ETF_NAME": row["ETF_NAME"],
+                "SECTOR"  : sector,
+                "WEIGHT"  : w,
+                "INV_RANK": int(row["RANK_INVESTABLE"]),
+                "REASON"  : (f"NEW BUY — Rank {int(row['RANK_INVESTABLE'])}  |  "
+                             f"Sector={sector} ({sc+1}/{CONFIG.SECTOR_CAP})"),
+            })
+            filled_new += 1
 
-    # Fill any remaining active slots with CASH (universe exhausted)
-    while len(slots) < active:
-        slots.append({
-            "SLOT"    : len(slots) + 1,
-            "TICKER"  : "CASH",
-            "ETF_NAME": "Cash (sector cap / investable universe exhausted)",
-            "SECTOR"  : "CASH",
-            "WEIGHT"  : w,
-            "INV_RANK": "-",
-            "REASON"  : "No remaining qualifying ETF after cap",
-        })
-
-    # Remaining slots: cash buffer for PARTIAL regime
+    # ── Remaining slots: cash ─────────────────────────────────────────
     for _ in range(len(slots), total):
+        if risk_on:
+            reason = "No remaining qualifying ETF after screen/sector cap"
+        else:
+            reason = f"Regime = {regime['label']} (risk-off) -> no new buys"
         slots.append({
             "SLOT"    : len(slots) + 1,
             "TICKER"  : "CASH",
@@ -905,9 +942,7 @@ def build_allocation(df: pd.DataFrame, regime: dict,
             "SECTOR"  : "CASH",
             "WEIGHT"  : w,
             "INV_RANK": "-",
-            "REASON"  : (f"Regime buffer: {regime['label']} -> "
-                         f"only {active} of {total} slots active"
-                         if is_partial else "Universe exhausted")
+            "REASON"  : reason,
         })
 
     return pd.DataFrame(slots)
@@ -1661,10 +1696,14 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         ws.column_dimensions[get_column_letter(ci)].width = width
     ws.row_dimensions[HDR].height = 32
 
+    held_set = set(allocation.loc[allocation["TICKER"] != "CASH", "TICKER"])
     for ri, (_, row) in enumerate(df.iterrows(), start=HDR + 1):
         passed  = row["SCREEN_PASS"]
         inv_rk  = row["RANK_INVESTABLE"]
-        in_alloc = passed and (inv_rk > 0) and (inv_rk <= regime["active_slots"])
+        # Highlight by actual allocation membership (not rank-vs-active_slots --
+        # under the binary risk-on/off regime, active_slots is 0 during
+        # risk-off even though existing holdings can still be in `allocation`).
+        in_alloc = row["TICKER"] in held_set
         bg = (DKGREEN if in_alloc else
               GREEN   if passed else
               ORANGE)
@@ -1731,18 +1770,16 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
 
     regime_rows = [
         ("Regime Label",                                  r["label"]),
-        ("Active slots",                                  f"{r['active_slots']} of {CONFIG.TOP_N}"),
-        ("--- LOGIC ---",                                 ""),
-        ("BULL (50EMA > 100EMA & Price > 50EMA) -> slots",str(CONFIG.TOP_N)),
-        ("PARTIAL (50EMA <= 100EMA & Price > 50EMA) -> slots", str(CONFIG.TOP_N_PARTIAL)),
-        ("BEAR  (Price <= 50EMA)  -> slots",              "0  (full cash)"),
+        ("Active slots (new-buy ceiling)",                f"{r['active_slots']} of {CONFIG.TOP_N}"),
+        ("--- LOGIC (binary risk-on/off) ---",            ""),
+        ("BULL / risk-on  (Price > 50EMA) -> new-buy ceiling", str(CONFIG.TOP_N)),
+        ("BEAR / risk-off (Price <= 50EMA) -> no new buys; existing holds run until they trip an exit rule", "0"),
         ("--- PARAMETERS ---",                            ""),
         ("Index used",                                    r["trend_ticker"]),
         ("Current price",                                 f"{r['nifty_price']:.2f}"),
         (f"{CONFIG.TREND_FAST_EMA_WINDOW}-day EMA",       f"{r['nifty_ema_50']:.2f}"),
-        (f"{CONFIG.TREND_EMA_WINDOW}-day EMA",            f"{r['nifty_ema_100']:.2f}"),
+        (f"{CONFIG.TREND_EMA_WINDOW}-day EMA (display only, not used in regime decision)", f"{r['nifty_ema_100']:.2f}"),
         ("Price above 50-day EMA?",                       str(r["nifty_price"] > r["nifty_ema_50"] if pd.notna(r["nifty_price"]) else "N/A")),
-        ("50-day EMA > 100-day EMA?",                     str(r["nifty_ema_50"] > r["nifty_ema_100"] if pd.notna(r["nifty_ema_50"]) else "N/A")),
     ]
     for ri2, (lbl, val) in enumerate(regime_rows, start=2):
         is_section = lbl.startswith("---")
@@ -1781,7 +1818,7 @@ def run_pipeline(fp=None, out=None):
     print(f"         {len(meta)} ETFs | {len(prices)} days "
           f"({prices.index[0].date()} -> {prices.index[-1].date()})")
 
-    print("[regime] Computing tiered regime filter ...")
+    print("[regime] Computing risk-on/risk-off regime filter ...")
     regime = regime_status(prices, script_dir=SCRIPT_DIR)
 
     print("[scores] Screening + scoring all ETFs ...")

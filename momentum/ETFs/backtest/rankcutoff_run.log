@@ -1,0 +1,64 @@
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+[load] C:\Users\ameet\Documents\Github\dhan_datahq\base files\History_ETFs.xlsx
+       283 tickers (non-empty) | 2609 trading days (2016-09-12 -> 2026-09-10)
+
+[clean] Applying the same transient/permanent bad-print fix as before ...
+        70 fixes applied (58 transient, 12 permanent rescale)
+[regime/benchmark] Fetching ^CRSLDX (Nifty 500 Index) via yfinance ...
+       2462 rows (2016-09-12 -> 2026-09-11)
+
+======================================================================
+  FIXED cutoff -- EXIT_MAX_RANK = 40
+======================================================================
+
+  FIXED (rank > 40)
+    Total Return    :   176.43%
+    CAGR            :    10.71%
+    Max Drawdown    :   -21.47%  (trough: 2025-08-01)
+    Volatility      :    12.53%
+    Sharpe (simple) :      0.85
+
+======================================================================
+  PERCENTILE cutoff -- 20% of screen-pass universe
+======================================================================
+
+  PERCENTILE (20% of investable)
+    Total Return    :   228.73%
+    CAGR            :    12.65%
+    Max Drawdown    :   -20.85%  (trough: 2025-08-01)
+    Volatility      :    12.45%
+    Sharpe (simple) :      1.02
+
+  Percentile-cutoff stats over the backtest: min=49  max=57  mean=55.9  (screen-pass count ranged 245-283)
+
+  BUY & HOLD NIFTY 500
+    Total Return    :   209.31%
+    CAGR            :    11.96%
+    Max Drawdown    :   -38.30%  (trough: 2020-03-23)
+    Volatility      :    15.76%
+    Sharpe (simple) :      0.76
+
+Chart (full period) -> C:\Users\ameet\Documents\Github\code\momentum\ETFs\backtest\comparison_rankcutoff_full.png
+
+======================================================================
+  FULL PERIOD SUMMARY: 2016-09-12 -> 2026-09-10
+======================================================================
+  Metric                      FIXED (40)    PERCENTILE (20%)     Buy&Hold N500
+  CAGR                            10.71%              12.65%            11.96%
+  Total Return                   176.43%             228.73%           209.31%
+  Max Drawdown                   -21.47%             -20.85%           -38.30%
+  Volatility                      12.53%              12.45%            15.76%
+  Sharpe (simple)                   0.85                1.02              0.76
+  Final Equity             INR 2,764,424       INR 3,287,461     INR 3,093,104
+
+======================================================================
+  2018-2020 SUB-PERIOD SUMMARY
+======================================================================
+  Metric                      FIXED (40)    PERCENTILE (20%)     Buy&Hold N500
+  Total Return                    10.33%              28.84%            22.09%
+  CAGR                             3.33%               8.82%             6.88%
+  Max Drawdown                   -17.81%             -10.13%           -38.30%
+  Volatility                      10.54%              11.34%            19.81%
+  Sharpe (simple)                   0.32                0.78              0.35
+
+  Total BUY trades -- FIXED: 179   PERCENTILE: 150

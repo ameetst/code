@@ -84,11 +84,6 @@
     "entry_price": 759.5,
     "qty": 75.0
   },
-  "BHARATFORG": {
-    "entry_date": "2026-08-10",
-    "entry_price": 2262.9,
-    "qty": 26.0
-  },
   "AETHER": {
     "entry_date": "2026-08-31",
     "entry_price": 1684.4,
@@ -98,50 +93,5 @@
     "entry_date": "2026-08-31",
     "entry_price": 9217.0,
     "qty": 11.0
-  },
-  "SAILIFE": {
-    "entry_date": "2026-09-04",
-    "entry_price": 1574.8,
-    "qty": null
-  },
-  "ENTERO": {
-    "entry_date": "2026-09-04",
-    "entry_price": 1848.0,
-    "qty": null
-  },
-  "AKUMS": {
-    "entry_date": "2026-09-04",
-    "entry_price": 780.55,
-    "qty": null
-  },
-  "RADICO": {
-    "entry_date": "2026-09-04",
-    "entry_price": 4559.0,
-    "qty": null
-  },
-  "KTKBANK": {
-    "entry_date": "2026-09-04",
-    "entry_price": 339.75,
-    "qty": null
-  },
-  "AVALON": {
-    "entry_date": "2026-09-04",
-    "entry_price": 2248.6,
-    "qty": null
-  },
-  "QUESS": {
-    "entry_date": "2026-09-04",
-    "entry_price": 366.55,
-    "qty": null
-  },
-  "RUBICON": {
-    "entry_date": "2026-09-04",
-    "entry_price": 1775.7,
-    "qty": null
-  },
-  "ALIVUS": {
-    "entry_date": "2026-09-04",
-    "entry_price": 1418.8,
-    "qty": null
   }
 }

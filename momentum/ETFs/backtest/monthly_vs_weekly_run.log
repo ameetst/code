@@ -1,0 +1,182 @@
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+[load] C:\Users\ameet\Documents\Github\dhan_datahq\base files\History_ETFs.xlsx
+       283 tickers (non-empty) | 2609 trading days (2016-09-12 -> 2026-09-10)
+
+[clean] Applying the same transient/permanent bad-print fix as before ...
+        70 fixes applied (58 transient, 12 permanent rescale)
+[regime/benchmark] Fetching ^CRSLDX (Nifty 500 Index) via yfinance ...
+       2462 rows (2016-09-12 -> 2026-09-11)
+
+======================================================================
+  Running WEEKLY (live rules, hold-and-replace)
+======================================================================
+    EXIT SETFNN50: TSL 5.7% >= 5%
+    TRIM SETFGOLD: cut for reduced slot count (rank 29)
+    EXIT NIFTY1: Rank 48 > 40
+    EXIT LICNETFSEN: TSL 6.0% >= 5%
+    EXIT MIDSELIETF: TSL 9.9% >= 5%
+    EXIT CONSUMBEES: TSL 5.3% >= 5%
+    EXIT HNGSNGBEES: TSL 8.5% >= 5%
+    EXIT HNGSNGBEES: TSL 16.4% >= 5%
+    EXIT IVZINGOLD: TSL 5.5% >= 5%
+    EXIT HNGSNGBEES: TSL 5.4% >= 5%
+    EXIT GOLD1: Rank 42 > 40
+    EXIT SETF10GILT: Rank 43 > 40
+    EXIT LICNETFGSC: Rank 43 > 40
+    EXIT PSUBANK: TSL 5.5% >= 5%
+    EXIT SNXT50BETA: TSL 14.7% >= 5%
+    TRIM ICICIB22: cut for reduced slot count (rank 22)
+    TRIM LICNETFGSC: cut for reduced slot count (rank 38)
+    EXIT LICNETFGSC: TSL 5.6% >= 5%
+    EXIT LICNETFSEN: Rank 42 > 40
+    EXIT LICNETFGSC: TSL 5.9% >= 5%
+    EXIT SBIETFQLTY: Rank 44 > 40
+    EXIT LICNETFGSC: Rank 46 > 40 | TSL 7.9% >= 5%
+    EXIT CONSUMBEES: Rank 43 > 40
+    EXIT SETF10GILT: Rank 46 > 40
+    EXIT HNGSNGBEES: TSL 7.3% >= 5%
+    EXIT LICNFNHGP: Rank 50 > 40
+    EXIT HNGSNGBEES: Rank 41 > 40 | TSL 9.1% >= 5%
+    TRIM SETFNN50: cut for reduced slot count (rank 21)
+    EXIT LICNETFGSC: TSL 8.3% >= 5%
+    EXIT LICNETFGSC: TSL 9.6% >= 5%
+    EXIT GOLDBETA: TSL 7.3% >= 5%
+    EXIT GOLDBETA: TSL 8.3% >= 5%
+    EXIT HNGSNGBEES: Rank 52 > 40
+    EXIT SHARIABEES: TSL 6.2% >= 5%
+    EXIT GOLDBETA: TSL 9.3% >= 5%
+    EXIT SHARIABEES: TSL 8.1% >= 5%
+    EXIT LICNETFGSC: TSL 5.1% >= 5%
+    EXIT GOLDBETA: TSL 10.3% >= 5%
+    EXIT LTGILTBEES: Rank 45 > 40
+    EXIT GOLDBETA: TSL 10.0% >= 5%
+    EXIT GOLDBETA: TSL 8.8% >= 5%
+    EXIT GOLDBETA: TSL 12.1% >= 5%
+    EXIT INFRABEES: TSL 5.4% >= 5%
+    EXIT NV20: TSL 5.2% >= 5%
+    EXIT JUNIORBEES: TSL 6.8% >= 5%
+    EXIT MID150BEES: TSL 5.2% >= 5%
+    EXIT BSE500IETF: TSL 5.3% >= 5%
+    EXIT SETFNIFBK: TSL 5.3% >= 5%
+    TRIM BSE500IETF: cut for reduced slot count (rank 9)
+    TRIM LOWVOLIETF: cut for reduced slot count (rank 30)
+    EXIT HDFCNIFBAN: TSL 5.0% >= 5%
+    EXIT NV20IETF: TSL 6.3% >= 5%
+    TRIM LOWVOLIETF: cut for reduced slot count (rank 23)
+    EXIT HDFCNIFTY: Rank 71 > 40
+    EXIT ICICIB22: Rank 47 > 40
+    EXIT CPSEETF: Rank 46 > 40 | TSL 6.8% >= 5%
+    EXIT SBIETFIT: TSL 6.4% >= 5%
+    EXIT SHARIABEES: TSL 5.2% >= 5%
+    EXIT MID150BEES: TSL 5.6% >= 5%
+    EXIT JUNIORBEES: TSL 5.6% >= 5%
+    EXIT NV20IETF: TSL 6.3% >= 5%
+    EXIT SHARIABEES: TSL 5.1% >= 5%
+    EXIT SBIETFIT: TSL 8.1% >= 5%
+    EXIT PSUBNKBEES: TSL 5.2% >= 5%
+    EXIT CPSEETF: Rank 49 > 40
+    EXIT BANKNIFTY1: TSL 5.1% >= 5%
+    TRIM CONSUMBEES: cut for reduced slot count (rank 4)
+    EXIT AUTOBEES: TSL 5.4% >= 5%
+    EXIT AUTOIETF: TSL 5.8% >= 5%
+    EXIT SILVER: TSL 5.8% >= 5%
+    EXIT SILVER: TSL 5.7% >= 5%
+    EXIT HDFCGOLD: Rank 43 > 40 | TSL 5.4% >= 5%
+    EXIT GILT5YBEES: Rank 66 > 40
+    EXIT FMCGIETF: Rank 48 > 40
+    EXIT PHARMABEES: Rank 45 > 40
+    EXIT HDFCSML250: Rank 41 > 40
+    EXIT MIDCAPIETF: Rank 50 > 40
+    EXIT ALPHA: TSL 5.5% >= 5%
+    EXIT ICICIB22: TSL 7.2% >= 5%
+    EXIT CPSEETF: TSL 9.1% >= 5%
+    EXIT CPSEETF: TSL 6.1% >= 5%
+    EXIT INFRABEES: Rank 49 > 40
+    EXIT ALPL30IETF: Rank 57 > 40
+    EXIT SETFGOLD: Rank 56 > 40
+    EXIT MOMENTUM: Rank 57 > 40
+    EXIT AUTOBEES: Rank 55 > 40
+    EXIT AUTOIETF: Rank 46 > 40
+    EXIT MAKEINDIA: Rank 61 > 40
+    EXIT SETFNN50: Rank 55 > 40
+    EXIT CONSUMBEES: TSL 5.0% >= 5%
+    TRIM SHARIABEES: cut for reduced slot count (rank 14)
+    TRIM NIFTYQLITY: cut for reduced slot count (rank 9)
+    TRIM CONSUMBEES: cut for reduced slot count (rank 24)
+    EXIT GOLDBETA: Rank 43 > 40
+    EXIT LICNETFGSC: Rank 171 > 40
+    EXIT LTGILTBEES: Rank 58 > 40
+    EXIT MOCAPITAL: TSL 5.1% >= 5%
+    EXIT GROWWDEFNC: TSL 8.6% >= 5%
+    EXIT MODEFENCE: TSL 8.4% >= 5%
+    EXIT BBNPNBETF: Rank 99 > 40
+    EXIT GROWWDEFNC: TSL 10.6% >= 5%
+    EXIT MODEFENCE: TSL 10.3% >= 5%
+    EXIT MAHKTECH: TSL 12.5% >= 5%
+    EXIT HNGSNGBEES: TSL 10.7% >= 5%
+    EXIT TATAGOLD: TSL 6.9% >= 5%
+    EXIT SILVERCASE: TSL 13.4% >= 5%
+    EXIT HNGSNGBEES: TSL 9.1% >= 5%
+    EXIT HNGSNGBEES: TSL 7.2% >= 5%
+    EXIT AUTOIETF: Rank 41 > 40
+    EXIT AUTOBEES: Rank 44 > 40
+    EXIT SILVERIETF: TSL 5.6% >= 5%
+    EXIT BANKPSU: Rank 51 > 40
+    EXIT HDFCPSUBK: Rank 46 > 40
+    EXIT PSUBANK: Rank 63 > 40
+    EXIT TOP15IETF: Rank 61 > 40
+    EXIT HDFCNIFBAN: Rank 52 > 40
+    EXIT HDFCGROWTH: Rank 47 > 40
+    EXIT GROWWPOWER: TSL 5.5% >= 5%
+    EXIT GROWWCAPM: Rank 52 > 40
+    TRIM GROWWDEFNC: cut for reduced slot count (rank 22)
+    EXIT GILT5YBEES: Rank 67 > 40
+    TRIM MOHEALTH: cut for reduced slot count (rank 18)
+    TRIM MODEFENCE: cut for reduced slot count (rank 28)
+
+  WEEKLY (hold-and-replace)
+    CAGR            :     6.76%
+    Total Return    :    92.33%
+    Max Drawdown    :   -24.63%
+    Volatility      :    10.19%
+    Sharpe (simple) :      0.66
+    Final Equity    : INR      1,923,417
+
+======================================================================
+  Running MONTHLY (hold-and-flush, no intra-month replacement)
+======================================================================
+
+  MONTHLY (hold-and-flush)
+    CAGR            :     4.99%
+    Total Return    :    62.75%
+    Max Drawdown    :   -25.58%
+    Volatility      :     8.21%
+    Sharpe (simple) :      0.61
+    Final Equity    : INR      1,627,605
+
+======================================================================
+  Buy & Hold -- ^CRSLDX
+======================================================================
+
+  BUY & HOLD NIFTY 500
+    CAGR            :    11.96%
+    Total Return    :   209.31%
+    Max Drawdown    :   -38.30%
+    Volatility      :    15.76%
+    Sharpe (simple) :      0.76
+    Final Equity    : INR      3,093,104
+
+Chart -> C:\Users\ameet\Documents\Github\code\momentum\ETFs\backtest\comparison_monthly_vs_weekly.png
+
+======================================================================
+  SUMMARY: 2016-09-12 -> 2026-09-10
+======================================================================
+  Metric                          WEEKLY           MONTHLY     Buy&Hold N500
+  CAGR                             6.76%             4.99%            11.96%
+  Total Return                    92.33%            62.75%           209.31%
+  Max Drawdown                   -24.63%           -25.58%           -38.30%
+  Volatility                      10.19%             8.21%            15.76%
+  Sharpe (simple)                   0.66              0.61              0.76
+  Final Equity             INR 1,923,417     INR 1,627,605     INR 3,093,104
+
+  Total BUY trades -- WEEKLY: 230   MONTHLY: 335

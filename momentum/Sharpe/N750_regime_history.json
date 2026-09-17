@@ -544,5 +544,61 @@
     "Breadth": 0.685,
     "Momentum": 0.418,
     "Dynamic N": 19
+  },
+  {
+    "date": "2026-09-07",
+    "Composite": 0.5365,
+    "Breadth": 0.685,
+    "Momentum": 0.418,
+    "Dynamic N": 19
+  },
+  {
+    "date": "2026-09-08",
+    "Composite": 0.5331,
+    "Breadth": 0.681,
+    "Momentum": 0.417,
+    "Dynamic N": 19
+  },
+  {
+    "date": "2026-09-09",
+    "Composite": 0.5316,
+    "Breadth": 0.685,
+    "Momentum": 0.42,
+    "Dynamic N": 19
+  },
+  {
+    "date": "2026-09-10",
+    "Composite": 0.5269,
+    "Breadth": 0.683,
+    "Momentum": 0.42,
+    "Dynamic N": 19
+  },
+  {
+    "date": "2026-09-11",
+    "Composite": 0.5234,
+    "Breadth": 0.675,
+    "Momentum": 0.425,
+    "Dynamic N": 18
+  },
+  {
+    "date": "2026-09-14",
+    "Composite": 0.5324,
+    "Breadth": 0.675,
+    "Momentum": 0.425,
+    "Dynamic N": 19
+  },
+  {
+    "date": "2026-09-16",
+    "Composite": 0.5303,
+    "Breadth": 0.675,
+    "Momentum": 0.411,
+    "Dynamic N": 19
+  },
+  {
+    "date": "2026-09-17",
+    "Composite": 0.5256,
+    "Breadth": 0.644,
+    "Momentum": 0.431,
+    "Dynamic N": 19
   }
 ]

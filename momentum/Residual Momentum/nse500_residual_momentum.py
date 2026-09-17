@@ -43,11 +43,13 @@ import argparse
 import warnings
 import sys
 import time
+import datetime as _dt
 from datetime import datetime, timedelta
 from pathlib import Path
 from io import BytesIO
 
 import numpy as np
+import openpyxl
 import pandas as pd
 import requests
 import yfinance as yf
@@ -70,6 +72,199 @@ NIFTY500_TICKER     = "^CRSLDX"   # Nifty 500 TR index on Yahoo Finance
 RF_TICKER           = "INDA.NS"   # fallback; we use RBI 91-day T-bill proxy (4% ann default)
 RF_ANNUAL_DEFAULT   = 0.065       # 6.5% annualised RBI repo rate proxy
 SLEEP_BETWEEN_DL    = 0.05       # seconds between yfinance calls
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 0. LOAD FROM AN N750/NSEAll-FORMAT WORKBOOK (--source-xlsx), BYPASSING
+#    yfinance/NSE-API ENTIRELY. Everything downstream of this section
+#    (build_factors onward) is unchanged and source-agnostic - it only
+#    ever sees a plain (dates x tickers) returns DataFrame.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _infer_dates_for_columns(date_indices: list) -> list:
+    """
+    Reconstruct trading dates when openpyxl can't read cached header values -
+    some N750-format workbooks drive their date header off a dynamic Excel
+    array formula (SEQUENCE(365,1, WORKDAY(TODAY()-365)) filtered to Mon-Fri)
+    whose cached values get wiped whenever openpyxl saves the file.
+
+    The array formula always starts at col B (0-based index 1), so
+    date_indices[k] - 1 gives the offset into the formula's date sequence.
+    """
+    today = _dt.date.today()
+    start = today - _dt.timedelta(days=365)
+    while start.weekday() >= 5:  # advance to first weekday (WORKDAY)
+        start += _dt.timedelta(days=1)
+
+    formula_dates = []
+    d = start
+    while len(formula_dates) < 365:
+        if d.weekday() < 5:
+            formula_dates.append(d)
+        d += _dt.timedelta(days=1)
+
+    result = []
+    for i in date_indices:
+        offset = i - 1
+        if 0 <= offset < len(formula_dates):
+            result.append(formula_dates[offset])
+        else:
+            extra = offset - len(formula_dates) + 1
+            last = formula_dates[-1]
+            ext = []
+            while len(ext) < extra:
+                last += _dt.timedelta(days=1)
+                if last.weekday() < 5:
+                    ext.append(last)
+            formula_dates.extend(ext)
+            result.append(formula_dates[offset])
+    return result
+
+
+def _load_sheet(filepath: Path, sheet_name: str):
+    """Load a DATA- or VOLUME-shaped sheet: col A = ticker, remaining
+    columns = one date each. Returns (tickers, date_indices, dates, all_rows)."""
+    wb = openpyxl.load_workbook(filepath, data_only=True, read_only=True)
+    if sheet_name not in wb.sheetnames:
+        wb.close()
+        return None
+    ws = wb[sheet_name]
+    all_rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+    if not all_rows:
+        return None
+
+    header = all_rows[0]
+    date_indices = [i for i, h in enumerate(header)
+                    if isinstance(h, (_dt.datetime, _dt.date))]
+    if date_indices:
+        dates = [h.date() if isinstance(h, _dt.datetime) else h
+                 for h in (header[i] for i in date_indices)]
+    else:
+        print(f"    Note: {sheet_name} date headers not cached - inferring "
+              f"dates from price column positions and today's date.")
+        candidate = set()
+        for row in all_rows[1: min(11, len(all_rows))]:
+            for i, v in enumerate(row):
+                if i == 0:
+                    continue
+                try:
+                    if v is not None and float(v) > 0:
+                        candidate.add(i)
+                except (TypeError, ValueError):
+                    pass
+        if not candidate:
+            return None
+        date_indices = sorted(candidate)
+        dates = _infer_dates_for_columns(date_indices)
+
+    return all_rows, header, date_indices, dates
+
+
+def load_prices_from_xlsx(filepath: Path):
+    """
+    Load daily close prices (and, if present, daily volume) from an
+    N750/NSEAll-format workbook's DATA/VOLUME sheets.
+
+    Returns
+    -------
+    daily_prices : DataFrame  index=date, columns=ticker (NIFTY500 excluded)
+    daily_volume : DataFrame or None  same shape, if a VOLUME sheet exists
+    """
+    loaded = _load_sheet(filepath, "DATA")
+    if loaded is None:
+        raise ValueError(f"{filepath}: no usable DATA sheet found.")
+    all_rows, header, date_indices, dates = loaded
+
+    tickers, price_matrix = [], []
+    for row in all_rows[1:]:
+        if row[0] is None:
+            continue
+        px = []
+        for i in date_indices:
+            v = row[i] if i < len(row) else None
+            try:
+                px.append(float(v) if v and float(v) > 0 else np.nan)
+            except Exception:
+                px.append(np.nan)
+        ticker_name = str(row[0]).strip()
+        if ticker_name.upper() in ("NIFTY 500", "NIFTY500"):
+            ticker_name = "NIFTY500"
+        tickers.append(ticker_name)
+        price_matrix.append(px)
+
+    daily_prices = pd.DataFrame(price_matrix, index=tickers, columns=pd.to_datetime(dates)).T
+    daily_prices = daily_prices.loc[:, ~daily_prices.columns.duplicated(keep="first")]
+    daily_prices = daily_prices.drop(columns=["NIFTY500"], errors="ignore")
+
+    daily_volume = None
+    vol_loaded = _load_sheet(filepath, "VOLUME")
+    if vol_loaded is not None:
+        v_rows, v_header, v_date_indices, v_dates = vol_loaded
+        vtickers, vol_matrix = [], []
+        for row in v_rows[1:]:
+            if row[0] is None:
+                continue
+            vv = []
+            for i in v_date_indices:
+                val = row[i] if i < len(row) else None
+                try:
+                    vv.append(float(val) if val is not None and float(val) >= 0 else np.nan)
+                except Exception:
+                    vv.append(np.nan)
+            vticker_name = str(row[0]).strip()
+            if vticker_name.upper() in ("NIFTY 500", "NIFTY500"):
+                vticker_name = "NIFTY500"
+            vtickers.append(vticker_name)
+            vol_matrix.append(vv)
+        daily_volume = pd.DataFrame(vol_matrix, index=vtickers, columns=pd.to_datetime(v_dates)).T
+        daily_volume = daily_volume.loc[:, ~daily_volume.columns.duplicated(keep="first")]
+        daily_volume = daily_volume.drop(columns=["NIFTY500"], errors="ignore")
+
+    return daily_prices, daily_volume
+
+
+def monthly_from_xlsx(filepath: Path, start: str, end: str):
+    """
+    Adapt an N750/NSEAll workbook's daily DATA/VOLUME sheets into the same
+    shapes download_prices()/liquidity_filter() would have produced from
+    yfinance: monthly close prices, and an average-monthly-traded-value
+    (crore INR) Series per ticker for the liquidity filter.
+    """
+    print(f"\n[1-2/7] Loading universe from workbook: {filepath}")
+    daily_prices, daily_volume = load_prices_from_xlsx(filepath)
+    print(f"    ✓ {daily_prices.shape[1]} tickers, "
+          f"{daily_prices.index.min():%Y-%m-%d} -> {daily_prices.index.max():%Y-%m-%d}")
+
+    start_dt = pd.Timestamp(start + "-01")
+    end_dt   = pd.Timestamp(end   + "-01") + pd.offsets.MonthEnd(1)
+
+    monthly = daily_prices.resample("ME").last()
+    monthly = monthly.loc[(monthly.index >= start_dt) & (monthly.index <= end_dt)]
+    monthly = monthly.dropna(axis=1, thresh=30)
+    print(f"    ✓ {monthly.shape[1]} stocks with sufficient data, {monthly.shape[0]} months")
+
+    avg_tv = None
+    if daily_volume is not None:
+        common = daily_prices.columns.intersection(daily_volume.columns)
+        tv = (daily_prices[common] * daily_volume[common] / 1e7)
+        tv = tv.loc[(tv.index >= start_dt) & (tv.index <= end_dt)]
+        avg_tv = tv.resample("ME").sum().mean()
+
+    return monthly, avg_tv
+
+
+def liquidity_filter_from_workbook(monthly_prices: pd.DataFrame, avg_tv: pd.Series,
+                                    min_volume_cr: float) -> list:
+    """Workbook-sourced equivalent of liquidity_filter() - no yfinance calls,
+    uses average-monthly-traded-value already computed from the VOLUME sheet."""
+    if min_volume_cr <= 0 or avg_tv is None:
+        return list(monthly_prices.columns)
+    print(f"\n    Applying liquidity filter (min avg monthly vol: ₹{min_volume_cr} Cr)...")
+    liquid = [t for t in monthly_prices.columns
+              if t in avg_tv.index and avg_tv[t] >= min_volume_cr]
+    print(f"    ✓ {len(liquid)} stocks pass liquidity filter")
+    return liquid if liquid else list(monthly_prices.columns)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -372,15 +567,24 @@ def compute_signal(residuals: pd.DataFrame) -> pd.DataFrame:
 
     for ticker in residuals.columns:
         r = residuals[ticker]
+        raw_col = np.full(len(residuals), np.nan)
+        std_col = np.full(len(residuals), np.nan)
         for i in range(13, len(residuals)):   # need at least 13 obs
             window = r.iloc[i-12 : i-1]       # t-12 to t-2 (11 months)
             if window.notna().sum() < 6:
                 continue
             raw = window.sum()
             std = window.std()
-            raw_signals.iloc[i][ticker] = raw
+            raw_col[i] = raw
             if std > 0:
-                std_signals.iloc[i][ticker] = raw / std
+                std_col[i] = raw / std
+        # Whole-column assignment (not chained .iloc[i][ticker] = ...,
+        # which is a silent no-op under pandas's mandatory copy-on-write:
+        # .iloc[i] returns a copy of the row, so writing into it never
+        # reaches the original DataFrame - raw_signals/std_signals would
+        # stay all-NaN and the backtest would find zero valid months).
+        raw_signals[ticker] = raw_col
+        std_signals[ticker] = std_col
 
     print(f"    ✓ Signals computed")
     return raw_signals, std_signals
@@ -678,8 +882,14 @@ def parse_args():
     parser.add_argument("--bot",       type=float, default=DEFAULT_BOT,       help="Short threshold percentile")
     parser.add_argument("--min-obs",   type=int,   default=DEFAULT_MIN_OBS,   help="Min obs for regression")
     parser.add_argument("--liquidity", type=float, default=DEFAULT_LIQUIDITY, help="Min avg monthly vol (Cr INR)")
-    parser.add_argument("--output",    default="nse500_residual_momentum_results.xlsx")
+    parser.add_argument("--output",    default=None,
+                         help="Excel output path (default: nse500_residual_momentum_results.xlsx, "
+                              "or <source-stem>_residual_momentum_results.xlsx with --source-xlsx)")
     parser.add_argument("--no-short",  action="store_true", help="Long-only mode")
+    parser.add_argument("--source-xlsx", type=Path, default=None,
+                         help="Load prices from an N750/NSEAll-format workbook's DATA/VOLUME "
+                              "sheets (e.g. dhan_datahq's base files/History_updated.xlsx) "
+                              "instead of fetching NSE 500 constituents + yfinance downloads.")
     return parser.parse_args()
 
 
@@ -689,6 +899,7 @@ def main():
     print("=" * 65)
     print("  NSE 500 RESIDUAL MOMENTUM — FULL PIPELINE")
     print("=" * 65)
+    print(f"  Source       : {args.source_xlsx if args.source_xlsx else 'yfinance / NSE API'}")
     print(f"  Period       : {args.start} → {args.end}")
     print(f"  Roll window  : {args.roll} months")
     print(f"  Long / Short : top {int((1-args.top)*100)}% / bot {int(args.bot*100)}%")
@@ -697,21 +908,35 @@ def main():
     print(f"  Mode         : {'Long-only' if args.no_short else 'Long/Short'}")
     print("=" * 65)
 
-    # Step 1 – Tickers
-    tickers = fetch_nse500_tickers()
+    if args.source_xlsx:
+        # Steps 1-2, workbook-sourced: bypass NSE-API ticker fetch and
+        # yfinance downloads entirely.
+        prices, avg_tv = monthly_from_xlsx(args.source_xlsx, args.start, args.end)
+        if prices.empty:
+            print(f"ERROR: No usable price data found in {args.source_xlsx}.")
+            sys.exit(1)
 
-    # Step 2 – Prices & returns
-    prices = download_prices(tickers, args.start, args.end)
-    if prices.empty:
-        print("ERROR: No price data downloaded. Check internet connection.")
-        sys.exit(1)
+        returns = compute_returns(prices)
 
-    returns = compute_returns(prices)
+        liquid_tickers = liquidity_filter_from_workbook(prices, avg_tv, args.liquidity)
+        returns = returns[liquid_tickers]
+        print(f"    Universe after all filters: {returns.shape[1]} stocks")
+    else:
+        # Step 1 – Tickers
+        tickers = fetch_nse500_tickers()
 
-    # Liquidity filter
-    liquid_tickers = liquidity_filter(prices, list(prices.columns), args.start, args.end, args.liquidity)
-    returns = returns[liquid_tickers]
-    print(f"    Universe after all filters: {returns.shape[1]} stocks")
+        # Step 2 – Prices & returns
+        prices = download_prices(tickers, args.start, args.end)
+        if prices.empty:
+            print("ERROR: No price data downloaded. Check internet connection.")
+            sys.exit(1)
+
+        returns = compute_returns(prices)
+
+        # Liquidity filter
+        liquid_tickers = liquidity_filter(prices, list(prices.columns), args.start, args.end, args.liquidity)
+        returns = returns[liquid_tickers]
+        print(f"    Universe after all filters: {returns.shape[1]} stocks")
 
     # Step 3 – Factors
     factors = build_factors(returns)
@@ -735,11 +960,15 @@ def main():
         print(f"  {k:<35} {v:>10}")
 
     # Step 8 – Export
-    export_excel(perf, metrics, raw_signals, std_signals, residuals, factors, args.output)
+    output_path = args.output
+    if output_path is None:
+        output_path = (f"{args.source_xlsx.stem}_residual_momentum_results.xlsx"
+                        if args.source_xlsx else "nse500_residual_momentum_results.xlsx")
+    export_excel(perf, metrics, raw_signals, std_signals, residuals, factors, output_path)
 
     print("\n" + "=" * 65)
     print("  DONE")
-    print(f"  Results saved to: {args.output}")
+    print(f"  Results saved to: {output_path}")
     print("=" * 65)
 
 
