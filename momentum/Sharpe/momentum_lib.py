@@ -1162,14 +1162,25 @@ def compute_regime_score(
     if prices_df is not None and len(prices_df.columns) >= 200:
         ema50_all   = prices_df.T.ewm(span=50,  adjust=False).mean().T
         ema200_all  = prices_df.T.ewm(span=200, adjust=False).mean().T
-        last_px     = prices_df.iloc[:, -1]
-        last_ema50  = ema50_all.iloc[:, -1]
-        last_ema200 = ema200_all.iloc[:, -1]
-        valid       = last_px.notna() & last_ema200.notna()
-        n_valid     = int(valid.sum())
+
+        # Use each stock's own last VALID close instead of blindly assuming
+        # the most recent date column is populated for every ticker — a
+        # freshly appended date column whose closes haven't been pulled in
+        # yet would otherwise push every stock into the n_valid==0 fallback
+        # below (silently reporting a neutral 0.5/0.5 instead of the real
+        # breadth). Mirrors _pct_from_52h()'s per-ticker dropna() convention.
+        col_pos        = {c: i for i, c in enumerate(prices_df.columns)}
+        last_valid_col = prices_df.apply(lambda row: row.last_valid_index(), axis=1)
+        valid_mask     = last_valid_col.notna()
+        n_valid        = int(valid_mask.sum())
         if n_valid > 0:
-            ema50_score     = float((last_px[valid] > last_ema50[valid]).sum()) / n_valid
-            ema_trend_score = float((last_ema50[valid] > last_ema200[valid]).sum()) / n_valid
+            row_positions = np.where(valid_mask.values)[0]
+            col_positions = last_valid_col[valid_mask].map(col_pos).values
+            last_px     = prices_df.values[row_positions, col_positions]
+            last_ema50  = ema50_all.values[row_positions, col_positions]
+            last_ema200 = ema200_all.values[row_positions, col_positions]
+            ema50_score     = float((last_px > last_ema50).sum()) / n_valid
+            ema_trend_score = float((last_ema50 > last_ema200).sum()) / n_valid
         else:
             ema50_score = 0.5
             ema_trend_score = 0.5

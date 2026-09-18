@@ -727,5 +727,23 @@
     "action": "SELL",
     "quantity": 26,
     "price": 1950.0
+  },
+  {
+    "id": "2ad66d30-a48f-44aa-8530-f63c09535597",
+    "date": "2026-09-18",
+    "timestamp": "2026-09-18T15:09:54.287672",
+    "ticker": "ATHERENERG",
+    "action": "SELL",
+    "quantity": 62,
+    "price": 1600.0
+  },
+  {
+    "id": "7ae641b2-ade9-4697-a99c-e0ecfdf8fa04",
+    "date": "2026-09-18",
+    "timestamp": "2026-09-18T15:11:07.018536",
+    "ticker": "SYRMA",
+    "action": "SELL",
+    "quantity": 56,
+    "price": 1727.5
   }
 ]

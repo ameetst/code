@@ -612,5 +612,15 @@
     "n_held": 19,
     "invested_frac": 0.633,
     "qty_weighted": false
+  },
+  {
+    "date": "2026-09-18",
+    "portfolio_nav": 117.6109,
+    "benchmark_nav": 101.1485,
+    "portfolio_ret": 6e-05,
+    "benchmark_ret": 0.002427,
+    "n_held": 19,
+    "invested_frac": 0.633,
+    "qty_weighted": false
   }
 ]

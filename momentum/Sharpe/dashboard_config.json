@@ -4,7 +4,7 @@
   "min_n": 5,
   "max_n": 30,
   "min_turnover": 1.0,
-  "eq_series_filter": true,
+  "eq_series_filter": false,
   "circuit_filter_enabled": false,
   "circuit_threshold": 20,
   "rel_dd_breach_threshold": -20

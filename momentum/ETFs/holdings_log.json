@@ -570,7 +570,7 @@
     ]
   },
   "2026-W38": {
-    "run_date": "2026-09-17 11:00",
+    "run_date": "2026-09-18 09:46",
     "regime": "BEAR",
     "active_slots": 0,
     "allocation": [
@@ -586,23 +586,23 @@
       },
       {
         "slot": 2,
-        "ticker": "HDFCSML250",
-        "etf_name": "HDFC NIFTY Smallcap 250 ETF",
-        "sector": "SMALLCAP",
-        "weight": 0.2,
-        "inv_rank": "10",
-        "entry_price": 180.12,
-        "peak": 185.46
-      },
-      {
-        "slot": 3,
         "ticker": "MOSMALL250",
         "etf_name": "Motilal Oswal Nifty SC 250 ETF",
         "sector": "OTHER",
         "weight": 0.2,
-        "inv_rank": "15",
+        "inv_rank": "10",
         "entry_price": 17.97,
         "peak": 18.5
+      },
+      {
+        "slot": 3,
+        "ticker": "HDFCSML250",
+        "etf_name": "HDFC NIFTY Smallcap 250 ETF",
+        "sector": "SMALLCAP",
+        "weight": 0.2,
+        "inv_rank": "12",
+        "entry_price": 180.12,
+        "peak": 185.46
       },
       {
         "slot": 4,

@@ -137,15 +137,31 @@ def get_live_vix():
     return None, None
 
 def compute_ad_ratio(prices_df):
-    """Calculate 1-Day Advance/Decline ratio."""
+    """Calculate 1-Day Advance/Decline ratio.
+
+    Uses each stock's own last two VALID closes (dropna() first) rather than
+    the raw last two columns — a freshly appended date column whose closes
+    haven't been pulled in yet would otherwise make every stock's "1-day"
+    return NaN, driving adv=dec=0 and the ratio to a misleading `inf`
+    instead of the genuine "no data yet" case.
+    """
     if len(prices_df.columns) < 2:
         return 0, 0, None
-    last_two = prices_df.iloc[:, -2:]
-    rets = last_two.iloc[:, 1] - last_two.iloc[:, 0]
-    adv = (rets > 0).sum()
-    dec = (rets < 0).sum()
+    rets = []
+    for ticker in prices_df.index:
+        px = prices_df.loc[ticker].dropna()
+        if len(px) < 2:
+            continue
+        rets.append(px.iloc[-1] - px.iloc[-2])
+    if not rets:
+        return 0, 0, None
+    rets = pd.Series(rets)
+    adv = int((rets > 0).sum())
+    dec = int((rets < 0).sum())
+    if adv == 0 and dec == 0:
+        return adv, dec, None
     ratio = adv / dec if dec > 0 else float('inf')
-    return int(adv), int(dec), ratio
+    return adv, dec, ratio
 
 @st.cache_data(ttl=86400)
 def compute_cap_tier_momentum(prices_df, stock_tickers):
@@ -637,7 +653,8 @@ def load_volume_data(filepath):
 @st.cache_data(show_spinner="Computing Sharpe rankings...")
 def compute_all(_prices_df, _nifty_series, _stock_tickers, _volume_df,
                 _min_turnover_cr, _eq_series_filter, _circuit_filter_enabled,
-                _circuit_threshold, _band_csv):
+                _circuit_threshold, _band_csv, signal_weights, min_n, max_n,
+                new_entry_threshold):
     return ml.compute_universe_rankings(
         _prices_df, _nifty_series, _stock_tickers,
         volume_df=_volume_df,
@@ -649,6 +666,10 @@ def compute_all(_prices_df, _nifty_series, _stock_tickers, _volume_df,
         windows=WINDOWS,
         trading_days=TRADING_DAYS,
         rfr_annual=RFR_ANNUAL,
+        signal_weights=signal_weights,
+        min_n=min_n,
+        max_n=max_n,
+        new_entry_threshold=new_entry_threshold,
     )
 
 def load_ledger(path):
@@ -690,7 +711,8 @@ try:
     result, regime_score, regime_detail = compute_all(
         prices_df, nifty_series, stock_tickers, volume_df, min_turnover_cr,
         eq_series_filter, circuit_filter_enabled, circuit_threshold,
-        str(SCRIPT_DIR / "Price_Band_List.csv"))
+        str(SCRIPT_DIR / "Price_Band_List.csv"),
+        SIGNAL_WEIGHTS, MIN_N, MAX_N, NEW_ENTRY_THRESHOLD)
 except Exception as e:
     st.error(f"Error computing rankings: {e}"); st.stop()
 
@@ -810,7 +832,10 @@ with st.expander("📡 Regime Score Breakdown", expanded=False):
         hist_df = hist_df.set_index("date").sort_index()
         chart_df = hist_df[["Composite", "Breadth", "Momentum"]].copy()
         chart_df["Entry Threshold"] = NEW_ENTRY_THRESHOLD
-        chart_df.index = chart_df.index.strftime("%d-%b-%Y")
+        # Keep a real DatetimeIndex (no strftime-to-string) so Streamlit/Altair
+        # encodes the x-axis as temporal and sorts chronologically — a string
+        # index gets encoded as nominal and sorted alphabetically instead
+        # (e.g. "Nov" < "Oct" < "Sep"), scrambling the date order.
         st.line_chart(chart_df, height=260)
         st.caption(
             f"📊 {len(regime_history)} day(s) recorded  |  "
