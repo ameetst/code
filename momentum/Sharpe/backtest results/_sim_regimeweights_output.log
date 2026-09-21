@@ -1,0 +1,35 @@
+Loading C:\Users\ameet\Documents\Github\dhan_datahq\base files\History_updated.xlsx ...
+  Warning: 5 duplicate ticker row(s) found — keeping first occurrence only.
+Traceback (most recent call last):
+  File "C:\Users\ameet\AppData\Roaming\Python\Python314\site-packages\pandas\core\indexes\base.py", line 3641, in get_loc
+    return self._engine.get_loc(casted_key)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "pandas/_libs/index.pyx", line 168, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/index.pyx", line 197, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7668, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7676, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'NIFTY500'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\ameet\Documents\Github\code\momentum\Sharpe\backtest results\sim_regime_weights.py", line 58, in <module>
+    prices_df, nifty_series, stock_tickers, dates = ml.load_prices(FILE)
+                                                    ~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\ameet\Documents\Github\code\momentum\Sharpe\momentum_lib.py", line 261, in load_prices
+    nifty_series  = prices_df.loc["NIFTY500"].copy()
+                    ~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\ameet\AppData\Roaming\Python\Python314\site-packages\pandas\core\indexing.py", line 1207, in __getitem__
+    return self._getitem_axis(maybe_callable, axis=axis)
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ameet\AppData\Roaming\Python\Python314\site-packages\pandas\core\indexing.py", line 1449, in _getitem_axis
+    return self._get_label(key, axis=axis)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\ameet\AppData\Roaming\Python\Python314\site-packages\pandas\core\indexing.py", line 1399, in _get_label
+    return self.obj.xs(label, axis=axis)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ameet\AppData\Roaming\Python\Python314\site-packages\pandas\core\generic.py", line 4241, in xs
+    loc = index.get_loc(key)
+  File "C:\Users\ameet\AppData\Roaming\Python\Python314\site-packages\pandas\core\indexes\base.py", line 3648, in get_loc
+    raise KeyError(key) from err
+KeyError: 'NIFTY500'

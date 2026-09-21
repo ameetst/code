@@ -1,0 +1,103 @@
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+[load] C:\Users\ameet\Documents\Github\dhan_datahq\base files\History_ETFs.xlsx
+       283 tickers (non-empty) | 2609 trading days (2016-09-12 -> 2026-09-10)
+[regime/benchmark] Fetching ^CRSLDX (Nifty 500 Index) via yfinance ...
+       2462 rows (2016-09-12 -> 2026-09-11)
+
+Split-half boundary: 2021-09-10
+
+[run] BASELINE (52wk-high screen only)
+[ 1/25] w1=0   w6=0   CAGR=11.66% MaxDD=-17.4% Sharpe=0.97 buys=130
+[ 2/25] w1=0   w6=0.5 CAGR=11.20% MaxDD=-17.1% Sharpe=1.01 buys=126
+[ 3/25] w1=0   w6=1   CAGR=11.91% MaxDD=-12.2% Sharpe=1.10 buys=122
+[ 4/25] w1=0   w6=1.5 CAGR=14.27% MaxDD=-14.5% Sharpe=1.25 buys=119
+[ 5/25] w1=0   w6=2   CAGR=13.67% MaxDD=-11.6% Sharpe=1.19 buys=126
+[ 6/25] w1=0.5 w6=0   CAGR=12.63% MaxDD=-17.5% Sharpe=1.16 buys=123
+[ 7/25] w1=0.5 w6=0.5 CAGR=12.13% MaxDD=-18.1% Sharpe=1.09 buys=122
+[ 8/25] w1=0.5 w6=1   CAGR=10.22% MaxDD=-17.1% Sharpe=0.90 buys=127
+[ 9/25] w1=0.5 w6=1.5 CAGR=11.03% MaxDD=-16.7% Sharpe=0.99 buys=127
+[10/25] w1=0.5 w6=2   CAGR=12.23% MaxDD=-12.5% Sharpe=1.17 buys=108
+[11/25] w1=1   w6=0   CAGR=12.59% MaxDD=-16.3% Sharpe=1.16 buys=123
+[12/25] w1=1   w6=0.5 CAGR=10.30% MaxDD=-16.2% Sharpe=0.95 buys=123
+[13/25] w1=1   w6=1   CAGR=11.17% MaxDD=-15.7% Sharpe=1.00 buys=123
+[14/25] w1=1   w6=1.5 CAGR=11.96% MaxDD=-16.0% Sharpe=1.01 buys=125
+[15/25] w1=1   w6=2   CAGR=10.21% MaxDD=-12.7% Sharpe=0.94 buys=121
+[16/25] w1=1.5 w6=0   CAGR=10.21% MaxDD=-16.0% Sharpe=0.99 buys=119
+[17/25] w1=1.5 w6=0.5 CAGR=11.21% MaxDD=-15.1% Sharpe=1.06 buys=118
+[18/25] w1=1.5 w6=1   CAGR=11.82% MaxDD=-13.8% Sharpe=1.08 buys=123
+[19/25] w1=1.5 w6=1.5 CAGR=11.91% MaxDD=-12.9% Sharpe=1.09 buys=124
+[20/25] w1=1.5 w6=2   CAGR=11.34% MaxDD=-16.0% Sharpe=1.00 buys=122
+[21/25] w1=2   w6=0   CAGR=10.70% MaxDD=-16.0% Sharpe=1.04 buys=115
+[22/25] w1=2   w6=0.5 CAGR=11.17% MaxDD=-13.5% Sharpe=1.05 buys=119
+[23/25] w1=2   w6=1   CAGR=11.95% MaxDD=-13.9% Sharpe=1.10 buys=119
+[24/25] w1=2   w6=1.5 CAGR=13.08% MaxDD=-12.5% Sharpe=1.19 buys=121
+[25/25] w1=2   w6=2   CAGR=12.04% MaxDD=-16.0% Sharpe=1.06 buys=121
+
+==============================================================================
+  BASELINE: CAGR=10.71%  MaxDD=-21.5%  Vol=12.5%  Sharpe=0.85  Buys=179
+==============================================================================
+
+  CAGR   (rows = w1 [1M weight], cols = w6 [6M weight], w3 = 1)
+w6      0.0     0.5     1.0     1.5     2.0
+w1                                         
+0.0  11.66%  11.20%  11.91%  14.27%  13.67%
+0.5  12.63%  12.13%  10.22%  11.03%  12.23%
+1.0  12.59%  10.30%  11.17%  11.96%  10.21%
+1.5  10.21%  11.21%  11.82%  11.91%  11.34%
+2.0  10.70%  11.17%  11.95%  13.08%  12.04%
+
+  MaxDD   (rows = w1 [1M weight], cols = w6 [6M weight], w3 = 1)
+w6      0.0     0.5     1.0     1.5     2.0
+w1                                         
+0.0  -17.4%  -17.1%  -12.2%  -14.5%  -11.6%
+0.5  -17.5%  -18.1%  -17.1%  -16.7%  -12.5%
+1.0  -16.3%  -16.2%  -15.7%  -16.0%  -12.7%
+1.5  -16.0%  -15.1%  -13.8%  -12.9%  -16.0%
+2.0  -16.0%  -13.5%  -13.9%  -12.5%  -16.0%
+
+  Sharpe   (rows = w1 [1M weight], cols = w6 [6M weight], w3 = 1)
+w6    0.0   0.5   1.0   1.5   2.0
+w1                               
+0.0  0.97  1.01  1.10  1.25  1.19
+0.5  1.16  1.09  0.90  0.99  1.17
+1.0  1.16  0.95  1.00  1.01  0.94
+1.5  0.99  1.06  1.08  1.09  1.00
+2.0  1.04  1.05  1.10  1.19  1.06
+
+  Buys   (rows = w1 [1M weight], cols = w6 [6M weight], w3 = 1)
+w6   0.0  0.5  1.0  1.5  2.0
+w1                          
+0.0  130  126  122  119  126
+0.5  123  122  127  127  108
+1.0  123  123  123  125  121
+1.5  119  118  123  124  122
+2.0  115  119  119  121  121
+
+  Reference (1,1,1): CAGR=11.17% MaxDD=-15.7% Sharpe=1.00
+
+------------------------------------------------------------------------------
+  Robustness vs BASELINE across 25 weight combos
+    CAGR    better in 20/25 combos   min=0.102  median=0.118  max=0.143   (baseline 0.107)
+    Sharpe  better in 25/25 combos   min=0.898  median=1.057  max=1.252   (baseline 0.855)
+    MaxDD   better in 25/25 combos   min=-0.181  median=-0.160  max=-0.116   (baseline -0.215)
+    split-half H1: CAGR better in 24/25, Sharpe better in 23/25   (baseline CAGR 6.94%, Sharpe 0.70)
+    split-half H2: CAGR better in 10/25, Sharpe better in 24/25   (baseline CAGR 14.61%, Sharpe 1.00)
+    Sharpe better in BOTH halves: 22/25 combos
+
+  Top 5 by Sharpe:
+    label  CAGR  MaxDD  Sharpe  Buys  Sharpe_H1  Sharpe_H2
+(0,1,1.5) 0.143 -0.145   1.252   119      1.105      1.407
+(2,1,1.5) 0.131 -0.125   1.194   121      0.936      1.442
+  (0,1,2) 0.137 -0.116   1.186   126      1.033      1.365
+(0.5,1,2) 0.122 -0.125   1.167   108      0.960      1.367
+  (1,1,0) 0.126 -0.163   1.160   123      1.247      1.097
+
+  Bottom 5 by Sharpe:
+    label  CAGR  MaxDD  Sharpe  Buys  Sharpe_H1  Sharpe_H2
+(0.5,1,1) 0.102 -0.171   0.898   127      0.704      1.082
+  (1,1,2) 0.102 -0.127   0.942   121      0.612      1.269
+(1,1,0.5) 0.103 -0.162   0.951   123      0.818      1.074
+  (0,1,0) 0.117 -0.174   0.973   130      0.875      1.069
+(1.5,1,0) 0.102 -0.160   0.987   119      0.947      1.028
+
+Heatmap -> C:\Users\ameet\Documents\Github\code\momentum\ETFs\backtest\momaccel_weights_heatmap.png

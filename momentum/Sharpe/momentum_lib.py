@@ -87,6 +87,7 @@ CONFIG_DEFAULTS = {
     "circuit_filter_enabled":  True,
     "circuit_threshold":       20,
     "rel_dd_breach_threshold": -20,
+    "hold_rank_buffer":        50,    # exit rank threshold (rank > this, after the hold lock)
 }
 # Max Position Weight (%) / Max Position Size (INR) are derived from
 # capital / max_n (see Sharpe.py, sharpe_dashboard.py) — not stored here,

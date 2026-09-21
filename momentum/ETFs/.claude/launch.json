@@ -6,6 +6,12 @@
       "runtimeExecutable": "streamlit",
       "runtimeArgs": ["run", "etf_dashboard.py", "--server.headless", "true"],
       "port": 8501
+    },
+    {
+      "name": "etf-dashboard-flask",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["etf_flask/app.py"],
+      "port": 8502
     }
   ]
 }

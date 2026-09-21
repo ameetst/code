@@ -170,7 +170,7 @@ class CONFIG:
 
     # Weekly rebalance: selective exit triggers
     EXIT_MAX_DD_FROM_HIGH = 0.25   # exit if >25% from 52-week high
-    EXIT_MAX_RANK         = 20     # exit if investable rank > 20
+    EXIT_MAX_RANK         = 40     # exit if investable rank > 40
     HISTORY_PERIODS       = 52     # weeks of log history to retain in Excel
 
 
@@ -743,7 +743,7 @@ def should_exit(ticker: str, ranking_df: pd.DataFrame, peak: float,
 
     Exit triggers (ANY fires → exit):
       1. >25% away from 52-week high  (EXIT_MAX_DD_FROM_HIGH)
-      2. Investable rank > 20          (EXIT_MAX_RANK)
+      2. Investable rank > EXIT_MAX_RANK (CONFIG default 40)
       3. Drawdown from peak > 5%       (TSL_THRESHOLD)
     """
     reasons = []

@@ -1,0 +1,7 @@
+Loading C:\Users\ameet\AppData\Local\Temp\claude\C--Users-ameet-Documents-Github-code-momentum-Sharpe\2710db40-31ee-4d02-ab87-cafca9b2ae0d\scratchpad\History_updated_sep4.xlsx ...
+Rebalance points: 472
+Running ...
+  [1/471] 2017-08-18Traceback (most recent call last):
+  File "C:\Users\ameet\Documents\Github\code\momentum\Sharpe\backtest results\sim_regime_weights.py", line 167, in <module>
+    dyn_n = int(MIN_N + min(score / FULL, 1.0) * (maxn - MIN_N))
+ValueError: cannot convert float NaN to integer

@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ETF Momentum Strategy</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+</head>
+<body>
+{% macro num(key, label, help='') -%}
+  {%- set f = num_fields[key] -%}
+  <label class="field"><span>{{ label }}</span>
+    <input type="number" name="{{ key }}" value="{{ cfg[key]|round(4) }}" min="{{ f.min }}" max="{{ f.max }}" step="{{ f.step }}">
+    {% if help %}<div class="hint">{{ help }}</div>{% endif %}
+  </label>
+{%- endmacro %}
+
+<main class="page">
+  <h1>📈 ETF Momentum Strategy</h1>
+  <p class="subtitle">Screen → Score → Regime → Allocate</p>
+
+  {% for n in notices %}<div class="alert warn">⚠️ {{ n }}</div>{% endfor %}
+
+  {% if fatal %}
+    <div class="alert error">❌ {{ fatal }}</div>
+  {% else %}
+
+  <!-- Regime banner -->
+  <div class="regime-row">
+    {% for label, value, pill in banner %}
+      <div class="regime-card">
+        <div class="regime-card-label">{{ label }}</div>
+        <div class="regime-card-value">{% if pill %}<span class="regime-pill {{ pill }}">{{ value }}</span>{% else %}{{ value }}{% endif %}</div>
+      </div>
+    {% endfor %}
+  </div>
+  <hr>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab-btn" data-tab="recommendation" role="tab">📊 Current Recommendation</button>
+    <button class="tab-btn" data-tab="rankings" role="tab">📋 Full Rankings</button>
+    <button class="tab-btn" data-tab="config" role="tab">⚙️ Configuration</button>
+    <button class="tab-btn" data-tab="tradelog" role="tab">📝 Tradelog &amp; MTM</button>
+  </nav>
+
+  <!-- ═════════ TAB 1: CURRENT RECOMMENDATION ═════════ -->
+  <section class="tab-panel" id="tab-recommendation" role="tabpanel">
+    <h2>📊 Top 5 Ranking</h2>
+    <div class="table-wrap">
+      <table class="data selectable-table sortable-table" id="alloc-table">
+        <thead><tr>
+          <th class="sortable">Slot</th><th class="sortable">Ticker</th><th class="sortable">ETF Name</th>
+          <th class="sortable">Sector</th><th class="sortable">Weight</th><th class="sortable">Inv Rank</th>
+        </tr></thead>
+        <tbody>
+        {% for r in alloc_rows %}
+          <tr class="{{ 'row-cash' if r.is_cash else 'selectable' }}" data-ticker="{{ r.ticker }}">
+            <td data-v="{{ r.slot }}">{{ r.slot }}</td><td>{{ r.ticker }}</td><td>{{ r.name }}</td><td>{{ r.sector }}</td>
+            <td data-v="{{ r.weight|replace('%','') }}">{{ r.weight }}</td><td>{{ r.inv_rank }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">💡 Select a row above to auto-fill it in <b>Log New Transaction</b> (Tradelog &amp; MTM tab).</p>
+    <hr>
+
+    <h2>⚡ Actions</h2>
+    <div class="grid cols-2">
+      <button class="btn block" id="btn-rebalance" data-busy="Running full pipeline… this can take a minute">🔁 Run Weekly Rebalance</button>
+      {% if output_exists %}
+        <a class="btn block" href="{{ url_for('download_rankings') }}">📥 Download Rankings Excel</a>
+      {% else %}
+        <div class="alert info" style="margin:0">Run the weekly rebalance first to generate the Excel output.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- ═════════ TAB 2: FULL RANKINGS ═════════ -->
+  <section class="tab-panel" id="tab-rankings" role="tabpanel">
+    <h2>📋 Full Rankings</h2>
+    <div class="grid cols-3">
+      <label class="field"><span>Screen Filter</span>
+        <select id="f-screen"><option value="all">All</option><option value="pass">PASS only</option><option value="fail">FAIL only</option></select>
+      </label>
+      <label class="field"><span>Sector</span>
+        <select id="f-sector"><option value="">All</option>{% for s in sectors %}<option>{{ s }}</option>{% endfor %}</select>
+      </label>
+      <label class="field"><span>Show top N: <b id="f-topn-val"></b></span>
+        <input type="range" id="f-topn" min="5" max="{{ [rank_rows|length, 5]|max }}" step="5" value="{{ [rank_rows|length, 50]|min }}">
+      </label>
+    </div>
+    <div class="table-wrap scroll-500" style="margin-top:14px">
+      <table class="data selectable-table sortable-table" id="rank-table">
+        <thead><tr>
+          <th class="sortable">Inv Rank</th><th class="sortable">Ticker</th><th class="sortable">ETF Name</th><th class="sortable">Sector</th>
+          <th class="sortable num">Wtd Sharpe</th><th class="sortable num">Sharpe 6M</th><th class="sortable num">Sharpe 3M</th><th class="sortable">Screen</th>
+        </tr></thead>
+        <tbody>
+        {% for r in rank_rows %}
+          <tr class="selectable {{ 'row-fail' if not r.screen else ('row-held' if r.held else '') }}"
+              data-ticker="{{ r.ticker }}" data-sector="{{ r.sector }}" data-screen="{{ 1 if r.screen else 0 }}">
+            <td data-v="{{ r.rank if r.rank is not none else '' }}">{{ r.rank if r.rank is not none else '' }}</td>
+            <td>{{ r.ticker }}</td><td>{{ r.name }}</td><td>{{ r.sector }}</td>
+            <td class="num" data-v="{{ r.wtd if r.wtd is not none else '' }}">{{ r.wtd|f3 }}</td>
+            <td class="num" data-v="{{ r.s6 if r.s6 is not none else '' }}">{{ r.s6|f3 }}</td>
+            <td class="num" data-v="{{ r.s3 if r.s3 is not none else '' }}">{{ r.s3|f3 }}</td>
+            <td data-v="{{ 1 if r.screen else 0 }}">{{ '✓' if r.screen else '✗' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">💡 Select a row above to auto-fill it in <b>Log New Transaction</b> (Tradelog &amp; MTM tab).</p>
+    <p class="caption">Showing <span id="f-shown"></span> rows &nbsp;|&nbsp; Universe: {{ universe }} ETFs &nbsp;|&nbsp;
+      Investable: {{ n_investable }} &nbsp;|&nbsp; Screened out: {{ n_screened_out }}</p>
+  </section>
+
+  <!-- ═════════ TAB 3: CONFIGURATION ═════════ -->
+  <section class="tab-panel" id="tab-config" role="tabpanel">
+    <h2>⚙️ Strategy Configuration</h2>
+    <p>Edit parameters below and click <b>Save</b> to persist to <code>strategy_config.json</code> and refresh the rankings shown here.
+       <b>Run Rebalance</b> saves and then also regenerates the Excel output and holdings log.</p>
+
+    <h3>📁 Data Source</h3>
+    <div class="radio-group" id="ds-radios">
+      <label><input type="radio" name="ds" value="default" {{ '' if uploaded_name else 'checked' }}> Default ({{ default_input }})</label>
+      <label><input type="radio" name="ds" value="upload" {{ 'checked' if uploaded_name else '' }}> Upload custom file</label>
+    </div>
+    <div id="ds-default" {% if uploaded_name %}hidden{% endif %} style="margin-top:10px">
+      {% if default_input_exists %}<div class="alert info">📄 {{ default_input }}</div>
+      {% else %}<div class="alert error">❌ {{ default_input }} not found!</div>{% endif %}
+    </div>
+    <div id="ds-upload" {% if not uploaded_name %}hidden{% endif %} style="margin-top:10px">
+      <input type="file" id="ds-file" accept=".xlsx">
+      {% if uploaded_name %}<div class="alert success">✅ Using uploaded file: {{ uploaded_name }}. Click <b>Run Rebalance</b> to apply.</div>{% endif %}
+    </div>
+    <hr>
+
+    <form id="cfg-form" novalidate>
+      <h3>📊 Portfolio Allocation</h3>
+      <div class="grid cols-2">
+        {{ num('TOP_N', 'Top N (risk-on)', 'Number of ETF slots held while the regime is risk-on (price above its 50-EMA). No separate partial tier anymore.') }}
+        {{ num('SECTOR_CAP', 'Sector Cap') }}
+      </div>
+      <hr>
+
+      <h3>📈 Momentum Scoring</h3>
+      <div class="grid cols-2">
+        <div class="grid">{{ num('WINDOW_6M', '6M Window (days)') }}{{ num('SHARPE_W6M', 'Sharpe 6M Weight') }}</div>
+        <div class="grid">{{ num('WINDOW_3M', '3M Window (days)') }}{{ num('SHARPE_W3M', 'Sharpe 3M Weight') }}</div>
+      </div>
+      <hr>
+
+      <h3>🔍 Screening</h3>
+      {{ num('MAX_DRAWDOWN_FROM_HIGH', 'Max Drawdown from 52W High', 'ETFs must be within this % of their 52-week high (0.25 = must be ≥ 75%)') }}
+      <hr>
+
+      <h3>🎯 Regime Filter</h3>
+      <p class="caption">Binary risk-on/risk-off: <b>risk-on</b> while price is above its Fast EMA, <b>risk-off</b> otherwise.
+        Risk-off blocks new buys only — existing holdings are left alone and close solely via their own exit rule
+        (52wk-high DD, rank cutoff, or TSL), not because of a regime flip.</p>
+      <label class="field"><span>Index Ticker (Yahoo Finance)</span>
+        <input type="text" name="REGIME_INDEX_TICKER" value="{{ cfg.REGIME_INDEX_TICKER }}">
+        <div class="hint">Live Nifty 500 index symbol fetched via yfinance (primary regime source). Falls back to the ETF.xlsx-based Regime Ticker below if this fetch fails or yfinance is unavailable.</div>
+      </label>
+      <div class="grid cols-3" style="margin-top:12px">
+        <label class="field"><span>Regime Ticker (fallback)</span><input type="text" name="REGIME_TICKER" value="{{ cfg.REGIME_TICKER }}"></label>
+        {{ num('TREND_FAST_EMA_WINDOW', 'Fast EMA Window', 'This is the ONLY EMA that drives the risk-on/off decision (price vs this EMA).') }}
+        {{ num('TREND_EMA_WINDOW', 'Slow EMA Window (display only)', 'No longer used in the regime decision — kept only for reference/reporting.') }}
+      </div>
+      <label class="field" style="margin-top:12px"><span>Regime Fallbacks (comma-separated)</span>
+        <input type="text" name="REGIME_FALLBACKS" value="{{ cfg_fallbacks }}">
+        <div class="hint">Fallback tickers if regime ticker is missing from data</div>
+      </label>
+      <hr>
+
+      <h3>⚠️ Risk Management</h3>
+      <div class="grid cols-2">
+        {{ num('DAILY_RF_ANNUAL', 'Risk-Free Rate (annual)', 'Annual risk-free rate used for Sharpe calculation') }}
+        {{ num('TSL_THRESHOLD', 'TSL Threshold', 'Trailing stop loss drawdown trigger (0.05 = 5%)') }}
+      </div>
+      <hr>
+
+      <h3>🚪 Weekly Exit Triggers</h3>
+      <div class="grid cols-2">
+        {{ num('EXIT_MAX_DD_FROM_HIGH', 'Exit: Max DD from 52W High', 'Exit position if >X% away from 52-week high (0.25 = 25%)') }}
+        {{ num('EXIT_MAX_RANK', 'Exit: Max Investable Rank', 'Exit position if investable rank exceeds this value') }}
+      </div>
+      <hr>
+
+      <div class="grid cols-2">
+        <button type="button" class="btn block" id="btn-cfg-save">💾 Save Configuration</button>
+        <button type="button" class="btn block" id="btn-cfg-run" data-busy="Saving config and running full pipeline… this can take a minute">🔁 Run Rebalance with New Config</button>
+      </div>
+    </form>
+    <hr>
+
+    <h3>📄 Current Config File</h3>
+    {% if cfg_file_text %}<pre>{{ cfg_file_text }}</pre>
+    {% else %}<div class="alert info">No <code>strategy_config.json</code> found — using hardcoded defaults.</div>{% endif %}
+  </section>
+
+  <!-- ═════════ TAB 4: TRADELOG & MTM ═════════ -->
+  <section class="tab-panel" id="tab-tradelog" role="tabpanel">
+    <h2>📝 Tradelog &amp; Real-time MTM</h2>
+    <div class="metrics">
+      <div class="metric"><div class="label">Total Invested</div><div class="value">{{ totals.invested|inr }}</div></div>
+      <div class="metric"><div class="label">Current Market Value</div><div class="value">{{ totals.market|inr }}</div></div>
+      <div class="metric"><div class="label">Unrealized PnL (MTM)</div><div class="value">{{ totals.unreal|inr }}</div>
+        <div class="delta {{ 'pos' if totals.unreal_pct >= 0 else 'neg' }}">{{ '%+.2f'|format(totals.unreal_pct) }}%</div></div>
+      <div class="metric"><div class="label">Realized PnL</div><div class="value">{{ totals.realized|inr }}</div></div>
+    </div>
+    <hr>
+
+    <div class="row-head">
+      <h3 style="margin:0">💼 Active Holdings</h3>
+      <button class="btn" id="btn-refresh" data-busy="Fetching latest NAVs from Yahoo Finance (.NS)…">🔄 Refresh Live Market Prices</button>
+    </div>
+
+    {% if not holdings %}
+      <div class="alert info">No active holdings. Log a BUY trade below to open a position.</div>
+    {% else %}
+      {% if breached %}
+        <div class="alert error">🚨 <b>{{ breached|length }} holding(s) breaching exit criteria!</b></div>
+        {% for h in breached %}<div class="exit-alert"><b>⚠️ {{ h.Ticker }}</b> — {{ h['Exit Reason'] }}</div>{% endfor %}
+      {% else %}
+        <div class="alert success">✅ All active holdings within exit thresholds (52wk-high DD, rank, TSL).</div>
+      {% endif %}
+      <div class="table-wrap">
+        <table class="data selectable-table sortable-table" id="holdings-table">
+          <thead><tr>
+            <th class="sortable">Ticker</th><th class="sortable num">Qty</th><th class="sortable num">Avg Price</th><th class="sortable num">Current Price</th>
+            <th class="sortable num">Cost Value</th><th class="sortable num">Market Value</th><th class="sortable num">Unrealized PnL</th>
+            <th class="sortable num">Unrealized PnL %</th><th class="sortable">First Buy Date</th><th class="sortable">Exit Reason</th>
+          </tr></thead>
+          <tbody>
+          {% for h in holdings %}
+            <tr class="selectable {{ 'row-exit' if h['Exit Reason'] != 'OK' else ('row-gain' if h['Unrealized PnL'] > 0 else ('row-loss' if h['Unrealized PnL'] < 0 else '')) }}"
+                data-ticker="{{ h.Ticker }}" data-qty="{{ h.Qty|int }}" data-price="{{ h['Current Price'] }}">
+              <td>{{ h.Ticker }}</td>
+              <td class="num" data-v="{{ h.Qty }}">{{ '{:,.0f}'.format(h.Qty) }}</td>
+              <td class="num" data-v="{{ h['Avg Price'] }}">{{ h['Avg Price']|inr }}</td>
+              <td class="num" data-v="{{ h['Current Price'] }}">{{ h['Current Price']|inr }}</td>
+              <td class="num" data-v="{{ h['Cost Value'] }}">{{ h['Cost Value']|inr }}</td>
+              <td class="num" data-v="{{ h['Market Value'] }}">{{ h['Market Value']|inr }}</td>
+              <td class="num" data-v="{{ h['Unrealized PnL'] }}">{{ h['Unrealized PnL']|inr }}</td>
+              <td class="num" data-v="{{ h['Unrealized PnL %'] }}">{{ '%+.2f'|format(h['Unrealized PnL %']) }}%</td>
+              <td>{{ h['First Buy Date'] }}</td>
+              <td>{{ h['Exit Reason'] }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">💡 Select a row to pre-fill the form below with that ticker, its quantity and current price (handy for a SELL).</p>
+    {% endif %}
+    <hr>
+
+    <h3>➕ Log New Transaction</h3>
+    {% if not etf_tickers %}
+      <div class="alert warn">No ETF tickers available. Ensure ETF.xlsx loaded correctly.</div>
+    {% else %}
+    <form id="trade-form" autocomplete="off">
+      <div class="grid" style="grid-template-columns: 2fr 1fr 1fr">
+        <label class="field"><span>Select ETF</span>
+          <input type="text" id="tl-ticker" list="etf-list" value="{{ etf_tickers[0] }}" required>
+          <datalist id="etf-list">{% for t in etf_tickers %}<option value="{{ t }}">{% endfor %}</datalist>
+        </label>
+        <div class="field"><span>Action</span>
+          <div class="radio-group">
+            <label><input type="radio" name="tl-action" value="BUY" checked> BUY</label>
+            <label><input type="radio" name="tl-action" value="SELL"> SELL</label>
+          </div>
+        </div>
+        <label class="field"><span>Transaction Date</span><input type="date" id="tl-date" value="{{ today }}" required></label>
+      </div>
+      <div class="grid" style="grid-template-columns: 1fr 1fr 2fr; margin-top:12px">
+        <label class="field"><span>Quantity (Units)</span><input type="number" id="tl-qty" min="1" step="1" value="10" required></label>
+        <label class="field"><span>Price per Unit (INR)</span><input type="number" id="tl-price" min="0.01" step="any" value="{{ boot.prices[etf_tickers[0]] }}" required></label>
+        <div></div>
+      </div>
+      <button type="submit" class="btn block" style="margin-top:14px">💾 Record Transaction</button>
+    </form>
+    {% endif %}
+    <hr>
+
+    <h3>🕒 Transaction History &amp; Management</h3>
+    {% if not transactions %}
+      <div class="alert info">No transactions logged yet.</div>
+    {% else %}
+      <div class="row-head" style="margin-bottom:8px">
+        <span class="caption" id="tx-sel-count">No transactions selected</span>
+        <button class="btn danger small" id="btn-delete" disabled>🗑️ Delete Selected</button>
+      </div>
+      <div class="table-wrap scroll-500">
+        <table class="data sortable-table" id="tx-table">
+          <thead><tr>
+            <th></th><th class="sortable">Date</th><th class="sortable">Ticker</th><th class="sortable">Action</th>
+            <th class="sortable num">Quantity</th><th class="sortable num">Price</th><th class="sortable num">Total Value</th><th></th>
+          </tr></thead>
+          <tbody>
+          {% for tx in transactions %}
+            <tr class="{{ 'row-buy' if tx.action == 'BUY' else 'row-sell' }}"
+                data-id="{{ tx.id }}" data-ticker="{{ tx.ticker }}" data-action="{{ tx.action }}"
+                data-date="{{ tx.date }}" data-qty="{{ tx.quantity }}" data-price="{{ tx.price }}">
+              <td><input type="checkbox" class="tx-check" aria-label="Select transaction"></td>
+              <td>{{ tx.date }}</td><td>{{ tx.ticker }}</td><td>{{ tx.action }}</td>
+              <td class="num" data-v="{{ tx.quantity }}">{{ '{:,.0f}'.format(tx.quantity) }}</td>
+              <td class="num" data-v="{{ tx.price }}">{{ tx.price|inr }}</td>
+              <td class="num" data-v="{{ tx.total }}">{{ tx.total|inr }}</td>
+              <td><button class="btn secondary small tx-edit">✏️ Edit</button></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </section>
+
+  <!-- Edit-transaction dialog -->
+  <dialog id="edit-dialog">
+    <form id="edit-form" method="dialog">
+      <h3 style="margin-top:0">✏️ Edit Transaction</h3>
+      <div class="grid" style="grid-template-columns: 1fr 1fr 1fr">
+        <label class="field"><span>Ticker</span><input type="text" id="ed-ticker" list="etf-list" required></label>
+        <div class="field"><span>Action</span>
+          <div class="radio-group">
+            <label><input type="radio" name="ed-action" value="BUY"> BUY</label>
+            <label><input type="radio" name="ed-action" value="SELL"> SELL</label>
+          </div>
+        </div>
+        <label class="field"><span>Date</span><input type="date" id="ed-date" required></label>
+      </div>
+      <div class="grid cols-2" style="margin-top:12px">
+        <label class="field"><span>Quantity</span><input type="number" id="ed-qty" min="1" step="1" required></label>
+        <label class="field"><span>Price (INR)</span><input type="number" id="ed-price" min="0.01" step="any" required></label>
+      </div>
+      <div class="grid cols-2" style="margin-top:16px">
+        <button type="submit" class="btn">💾 Save Changes</button>
+        <button type="button" class="btn secondary" id="ed-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  {% endif %}
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+{% if not fatal %}<script id="boot" type="application/json">{{ boot|tojson }}</script>{% endif %}
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>

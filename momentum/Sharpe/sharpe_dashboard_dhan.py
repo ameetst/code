@@ -590,6 +590,8 @@ if "cfg_circuit_threshold" not in st.session_state:
     st.session_state.cfg_circuit_threshold = _saved_cfg["circuit_threshold"]
 if "cfg_rel_dd_breach_threshold" not in st.session_state:
     st.session_state.cfg_rel_dd_breach_threshold = _saved_cfg["rel_dd_breach_threshold"]
+if "cfg_hold_rank_buffer" not in st.session_state:
+    st.session_state.cfg_hold_rank_buffer = _saved_cfg["hold_rank_buffer"]
 
 # Derive runtime values from session state
 selected_file = st.session_state.cfg_file
@@ -617,6 +619,7 @@ eq_series_filter      = st.session_state.cfg_eq_series_filter
 circuit_filter_enabled = st.session_state.cfg_circuit_filter_enabled
 circuit_threshold     = int(st.session_state.cfg_circuit_threshold)
 rel_dd_breach_threshold = float(st.session_state.cfg_rel_dd_breach_threshold)
+hold_rank_buffer      = int(st.session_state.cfg_hold_rank_buffer)
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 RFR_ANNUAL   = 0.07
@@ -636,7 +639,7 @@ params = {
         "ADTV Filter":      f">= {min_turnover_cr} Cr (12M or 6M median)",
         "Series EQ Filter": "Enabled" if eq_series_filter else "Disabled",
         "Circuit Filter":   f"Enabled (>= {circuit_threshold} days)" if circuit_filter_enabled else "Disabled",
-        "Rank Buffer":      str(round(2 * MAX_N)),   # scales with MAX_N — must match Sharpe.py's HOLD_RANK_BUFFER
+        "Rank Buffer":      str(hold_rank_buffer),   # manual, stored in dashboard_config.json — shared with Sharpe.py's HOLD_RANK_BUFFER
         "Cash Yield":       "6% p.a.",
         "Ledger File":      Path(LEDGER_FILE).name,
     }
@@ -2040,6 +2043,16 @@ with tab_config:
              "distance minus benchmark's) falls below this value. Default: -20.")
 
     st.divider()
+    st.markdown("#### 🚪 Rank-Drop Exit")
+    st.number_input(
+        "Rank Buffer (exit rank threshold)",
+        min_value=1, max_value=5000, step=5, format="%d",
+        key="cfg_hold_rank_buffer",
+        help="A held stock whose rank falls beyond this value is flagged for exit once "
+             "the 28-day hold lock has passed. Entered manually — it does not scale "
+             "with Max Positions. Shared with Sharpe.py once saved. Default: 50.")
+
+    st.divider()
     st.markdown("#### 📋 Strategy Parameters (Read-only)")
 
     for k, v in params.items():
@@ -2063,6 +2076,7 @@ with tab_config:
                 "circuit_filter_enabled": st.session_state.cfg_circuit_filter_enabled,
                 "circuit_threshold":      int(st.session_state.cfg_circuit_threshold),
                 "rel_dd_breach_threshold": int(st.session_state.cfg_rel_dd_breach_threshold),
+                "hold_rank_buffer":       int(st.session_state.cfg_hold_rank_buffer),
             }
             try:
                 _saved_path = ml.save_config(_current_cfg, str(SCRIPT_DIR))

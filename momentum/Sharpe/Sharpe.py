@@ -25,9 +25,8 @@ the rank exit respects it.
        is flagged EXIT_52H = True and must be sold immediately.
 
   2. RANK-BASED EXIT (respects 28-day hold lock)
-       If a held stock's rank drops to > HOLD_RANK_BUFFER (= round(2 * MAX_N),
-       scales with portfolio size so it stays correctly calibrated across
-       universes of different sizes)
+       If a held stock's rank drops to > HOLD_RANK_BUFFER (manual setting,
+       stored as "hold_rank_buffer" in dashboard_config.json)
        AND it has been held for >= MIN_HOLD_DAYS (default 28 calendar days),
        it is flagged EXIT_RANK = True.
 
@@ -123,16 +122,15 @@ BAND_CSV                = _SCRIPT_DIR / "Price_Band_List.csv"
 MIN_N               = _saved_cfg["min_n"]   # minimum holdings at lowest regime score
 MAX_N               = _saved_cfg["max_n"]   # maximum holdings at highest regime score
 
-# Max Position Weight (%) / Max Position Size (INR) / Hold Rank Buffer are all
-# derived from MAX_N — not independent settings. HOLD_RANK_BUFFER in particular
-# scales with portfolio size rather than sitting at a fixed rank, so it stays
-# correctly calibrated if the universe or MAX_N changes (a fixed absolute value
-# silently goes stale when the eligible pool's size changes — see N750->NSEAll
-# migration notes).
+# Max Position Weight (%) / Max Position Size (INR) are derived from MAX_N — not
+# independent settings. HOLD_RANK_BUFFER is a manual setting stored in
+# dashboard_config.json ("hold_rank_buffer"), edited from the dashboard's
+# Configuration tab; it is not derived from MAX_N, so revisit it if the
+# universe or MAX_N changes.
 MAX_WT                = 1.0 / MAX_N
 MAX_WT_PCT            = MAX_WT * 100.0
 MAX_POSITION_SIZE_INR = PORTFOLIO_CAPITAL / MAX_N
-HOLD_RANK_BUFFER       = round(2 * MAX_N)   # exit rank threshold
+HOLD_RANK_BUFFER      = int(_saved_cfg["hold_rank_buffer"])   # exit rank threshold
 
 NEW_ENTRY_THRESHOLD = 0.40   # regime score below this — no new buys
 SIGNAL_WEIGHTS      = {      # must sum to 1.0
@@ -318,37 +316,59 @@ if not any(e["date"] == today_str for e in eq_history):
     held_tickers = list(ledger.keys())
     n_held = len(held_tickers)
 
-    # Determine the reference date: last recorded equity date, or second-to-last price column
     last_eq_date = None
     if eq_history:
         last_eq_date = datetime.date.fromisoformat(eq_history[-1]["date"])
 
-    # Find the price column index for the reference date (gap-aware)
-    date_cols = prices_df.columns  # these are datetime/date objects
-    ref_col_idx = -2  # default: previous day's column
-    if last_eq_date is not None:
-        # Find the column on or just before the last equity date
-        for i, d in enumerate(date_cols):
-            col_date = d.date() if hasattr(d, 'date') else d
-            if col_date <= last_eq_date:
-                ref_col_idx = i
-        # If ref_col_idx is still the last column, fall back to second-to-last
-        if ref_col_idx == len(date_cols) - 1:
-            ref_col_idx = -2
+    # Usable price columns only. The newest column can be an empty placeholder
+    # (prices not refreshed yet); treating it as "now" would silently zero the
+    # stock leg of the return.
+    col_dates = [d.date() if hasattr(d, 'date') else d for d in prices_df.columns]
+    _coverage = prices_df.notna().mean().values
+    valid_idx = [i for i, c in enumerate(_coverage) if c > 0.5]
 
-    # Calculate gap days for cash return proration
-    ref_col_date = date_cols[ref_col_idx]
-    ref_date = ref_col_date.date() if hasattr(ref_col_date, 'date') else ref_col_date
-    latest_date = date_cols[-1].date() if hasattr(date_cols[-1], 'date') else date_cols[-1]
-    gap_calendar_days = max((latest_date - ref_date).days, 1)
+    now_idx = valid_idx[-1] if valid_idx else None
+    latest_date = col_dates[now_idx] if now_idx is not None else None
+
+    # Return windows tile without overlap or gaps: each run starts from the price
+    # date the previous run ended on (`price_date`). Rows written before that
+    # field existed fall back to the last valid column on or before their date.
+    ref_idx = None
+    if valid_idx:
+        if eq_history:
+            _pd = eq_history[-1].get("price_date")
+            _ref_target = datetime.date.fromisoformat(_pd) if _pd else last_eq_date
+            for i in valid_idx:
+                if col_dates[i] <= _ref_target:
+                    ref_idx = i
+        elif len(valid_idx) >= 2:
+            ref_idx = valid_idx[-2]      # first ever run: previous trading day
+
+    # No column newer than the reference => nothing to measure. The row still
+    # records cash accrual; the price move is picked up once prices are updated.
+    has_new_prices = ref_idx is not None and now_idx > ref_idx
+    ref_date = col_dates[ref_idx] if ref_idx is not None else None
+
+    # Cash accrues over calendar days since the previous row
+    gap_calendar_days = max((TODAY - last_eq_date).days, 1) if last_eq_date else 1
 
     # Portfolio multi-day return — qty-weighted (real position size from the
     # ledger, synced from the trade log) when every held ticker has a known
     # qty; falls back to the old equal-weighted mean otherwise (e.g. a
     # notional entry from this script's own ranking recommendations that
     # hasn't been confirmed via a real trade yet).
+    def _ref_px(t):
+        """Start price for ticker t over this return window: the reference-
+        column close, or the ledger entry_price when the position was opened
+        after the reference date, so a new entry isn't credited with the move
+        that happened before it was bought."""
+        rec = ledger[t]
+        if rec["entry_date"] > ref_date and rec["entry_price"] > 0:
+            return rec["entry_price"]
+        return prices_df.loc[t].iloc[ref_idx]
+
     used_qty_weighting = False
-    if n_held > 0 and len(prices_df.columns) >= 2:
+    if n_held > 0 and has_new_prices:
         qtys_known = all(ledger[t].get("qty") is not None for t in held_tickers)
         if qtys_known:
             val_ref = 0.0
@@ -356,8 +376,8 @@ if not any(e["date"] == today_str for e in eq_history):
             for t in held_tickers:
                 if t in prices_df.index:
                     qty = ledger[t]["qty"]
-                    px_now = prices_df.loc[t].iloc[-1]
-                    px_ref = prices_df.loc[t].iloc[ref_col_idx]
+                    px_now = prices_df.loc[t].iloc[now_idx]
+                    px_ref = _ref_px(t)
                     if pd.notna(px_now) and pd.notna(px_ref) and px_ref > 0:
                         val_ref += qty * px_ref
                         val_now += qty * px_now
@@ -367,8 +387,8 @@ if not any(e["date"] == today_str for e in eq_history):
             port_rets = []
             for t in held_tickers:
                 if t in prices_df.index:
-                    px_now = prices_df.loc[t].iloc[-1]
-                    px_ref = prices_df.loc[t].iloc[ref_col_idx]
+                    px_now = prices_df.loc[t].iloc[now_idx]
+                    px_ref = _ref_px(t)
                     if pd.notna(px_now) and pd.notna(px_ref) and px_ref > 0:
                         port_rets.append(px_now / px_ref - 1.0)
             avg_stock_ret = float(np.mean(port_rets)) if port_rets else 0.0
@@ -378,28 +398,35 @@ if not any(e["date"] == today_str for e in eq_history):
     else:
         avg_stock_ret = 0.0
 
+    # With no new prices there is no stock return to weight. Record the method that
+    # would have applied, so the dashboard doesn't flag the day as an equal-weight
+    # fallback (that flag means "a held ticker was missing a synced qty").
+    if n_held > 0 and not has_new_prices:
+        used_qty_weighting = all(ledger[t].get("qty") is not None for t in held_tickers)
+
     # Cash drag: prorate by calendar days in gap
     invested_frac = min(n_held / MAX_N, 1.0)
     cash_frac = 1.0 - invested_frac
     cash_ret_for_gap = cash_frac * (LIQUID_YIELD_PA / 365.0) * gap_calendar_days
     portfolio_ret = invested_frac * avg_stock_ret + cash_ret_for_gap
 
-    # Benchmark multi-day return (NIFTY 500)
+    # Benchmark return (NIFTY 500) over the same window as the portfolio: last
+    # NIFTY observation on or before each end date of the price window.
+    bench_ret = 0.0
     nifty_px = nifty_series.dropna()
-    if len(nifty_px) >= 2:
-        # Use same reference logic for benchmark
-        nifty_dates = nifty_px.index
-        nifty_ref_idx = -2
-        if last_eq_date is not None:
-            for i, d in enumerate(nifty_dates):
-                nd = d.date() if hasattr(d, 'date') else d
-                if nd <= last_eq_date:
-                    nifty_ref_idx = i
-            if nifty_ref_idx == len(nifty_dates) - 1:
-                nifty_ref_idx = -2
-        bench_ret = float(nifty_px.iloc[-1] / nifty_px.iloc[nifty_ref_idx] - 1.0)
-    else:
-        bench_ret = 0.0
+    if has_new_prices and len(nifty_px) >= 2:
+        nifty_dates = [d.date() if hasattr(d, 'date') else d for d in nifty_px.index]
+
+        def _nifty_idx_at(dt):
+            idx = None
+            for k, nd in enumerate(nifty_dates):
+                if nd <= dt:
+                    idx = k
+            return idx
+
+        _n_now, _n_ref = _nifty_idx_at(latest_date), _nifty_idx_at(ref_date)
+        if _n_now is not None and _n_ref is not None and _n_now > _n_ref:
+            bench_ret = float(nifty_px.iloc[_n_now] / nifty_px.iloc[_n_ref] - 1.0)
 
     # Compound NAV
     if eq_history:
@@ -419,8 +446,12 @@ if not any(e["date"] == today_str for e in eq_history):
         "n_held":        n_held,
         "invested_frac": round(invested_frac, 3),
         "qty_weighted":  used_qty_weighting,
+        "price_date":    latest_date.isoformat() if latest_date else None,
     })
     _save_equity_history(eq_history, EQUITY_FILE)
+    if not has_new_prices:
+        print(f"  Note: no price column newer than {ref_date} — stock/benchmark return "
+              f"recorded as 0 (cash accrual only); the move is picked up once prices update.")
     _gap_str = f"  (gap: {gap_calendar_days}d)" if gap_calendar_days > 1 else ""
     _wt_str = "qty-weighted" if used_qty_weighting else "equal-weight fallback"
     print(f"  Portfolio NAV: {port_nav:.2f}  |  Benchmark NAV: {bench_nav:.2f}  "
@@ -493,7 +524,7 @@ print(f"  Dynamic N     : {dynamic_n}  "
 #   EXIT_RANK.
 #
 # EXIT_RANK — Rank-based exit.
-#   The stock's rank has fallen beyond HOLD_RANK_BUFFER (= round(2 * MAX_N))
+#   The stock's rank has fallen beyond HOLD_RANK_BUFFER (from dashboard_config.json)
 #   AND the stock has been held for at least MIN_HOLD_DAYS (28 days).
 #   The hold lock protects against rank whipsaw for recently bought stocks.
 #
