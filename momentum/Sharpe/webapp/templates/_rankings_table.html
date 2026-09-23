@@ -1,0 +1,25 @@
+{# Rendered standalone (HTMX swap target) and also included by rankings.html on first load. #}
+<h2>📊 Top {{ max_n }} Rankings — Regime Score: {{ "%.2f"|format(regime.score) }} | Dynamic N (Strategy): {{ regime.dynamic_n }}</h2>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Rank</th><th>Ticker</th><th>Composite</th><th>Res Mom</th>
+      <th>Volatility %</th><th>Vol-Adj Score</th><th>LTP</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr class="{{ 'held-row' if row.held else '' }}">
+      <td>{{ row.rank if row.rank is not none else "—" }}</td>
+      <td>{{ row.ticker }}</td>
+      <td>{{ "%.3f"|format(row.composite) if row.composite is not none else "—" }}</td>
+      <td>{{ "%.3f"|format(row.res_mom) if row.res_mom is not none else "—" }}</td>
+      <td>{{ "%.1f%%"|format(row.volatility_pct) if row.volatility_pct is not none else "—" }}</td>
+      <td>{{ "%.3f"|format(row.vol_adj_score) if row.vol_adj_score is not none else "—" }}</td>
+      <td>{{ "Rs %.2f"|format(row.ltp) if row.ltp is not none else "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="caption">🟡 Yellow rows = currently held positions | White rows = not yet in portfolio</p>

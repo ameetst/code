@@ -1,0 +1,275 @@
+/* Palette lifted from the Streamlit dashboard's inline CSS so the two UIs look the same during the parallel run. */
+:root {
+  --accent: #1f4e79;
+  --accent-hover: #163d5e;
+  --ink: #1a1a2e;
+  --muted: #6b7a8d;
+  --card-bg: #f5f7fa;
+  --border: #e8ecf1;
+  --held-row: #fffde7;
+  --good: #2e7d32;
+  --good-bg: #e8f5e9;
+  --warn: #f57f17;
+  --warn-bg: #fff8e1;
+  --bad: #c62828;
+  --bad-bg: #ffebee;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #fff;
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.app { width: 100%; margin: 0; padding: 16px 32px 48px; }
+
+.app-title { color: var(--accent); margin: 8px 0 0; font-size: 30px; }
+.app-subtitle { color: var(--muted); margin: 4px 0 20px; }
+
+.badge {
+  display: inline-block; padding: 6px 16px; border-radius: 20px;
+  font-weight: 700; font-size: 17px;
+}
+.badge.high { background: var(--good-bg); color: var(--good); }
+.badge.mid  { background: var(--warn-bg); color: var(--warn); }
+.badge.low  { background: var(--bad-bg);  color: var(--bad); }
+
+.metric-row {
+  display: grid; gap: 12px; margin-bottom: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  align-items: stretch;
+}
+.metric {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 18px; min-width: 0;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.metric.center { align-items: center; }
+.metric-label { font-size: 13px; color: var(--muted); margin: 0 0 4px; }
+.metric-value {
+  font-size: 16px; font-weight: 700; margin: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+h2 {
+  color: var(--accent); border-bottom: 2px solid var(--border);
+  padding-bottom: 8px; margin: 24px 0 12px; font-size: 22px;
+}
+
+.expander { margin: 12px 0; border: 1px solid var(--border); border-radius: 8px; }
+.expander summary { padding: 10px 14px; cursor: pointer; font-weight: 600; color: var(--accent); }
+.expander-body { padding: 0 14px 14px; }
+.signal-table { border-collapse: collapse; }
+.signal-table td { padding: 4px 12px 4px 0; color: var(--ink); }
+
+.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.data-table th {
+  background: var(--accent); color: #fff; text-align: left;
+  padding: 8px 10px; position: sticky; top: 0;
+}
+.data-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); background: #fff; }
+.data-table tr.held-row td { background: var(--held-row); }
+.data-table tr.row-disqualified td { background: #fff8f8; color: #b0b0b0; }
+.data-table tr.row-breach td { background: var(--bad-bg); }
+.data-table tr.row-regime td { background: var(--good-bg); }
+.data-table tr.row-sell-immediate td { background: var(--bad-bg); font-weight: bold; }
+.data-table tr.row-sell td { background: #fff3e0; }
+.data-table tr.row-locked td { background: var(--warn-bg); }
+.data-table tr.row-healthy td { background: var(--good-bg); }
+
+.caption { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+code { background: var(--card-bg); border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+
+.banner {
+  padding: 10px 14px; border-radius: 8px; font-size: 14px; margin-bottom: 16px;
+  background: var(--warn-bg); color: var(--warn); border: 1px solid #ffe0b2;
+}
+.banner.error { background: var(--bad-bg); color: var(--bad); border-color: #ffcdd2; }
+.banner.success { background: var(--good-bg); color: var(--good); border-color: #c8e6c9; }
+.banner.info { background: #e3f2fd; color: #1565c0; border-color: #bbdefb; }
+
+/* ── Nav ─────────────────────────────────────────────────────────────────── */
+.nav-tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--border); margin: 16px 0 20px; }
+.nav-tabs a {
+  padding: 8px 16px; color: var(--muted); text-decoration: none; font-size: 14px;
+  font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -2px;
+}
+.nav-tabs a:hover { color: var(--accent); }
+.nav-tabs a.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Full Rankings filter form ──────────────────────────────────────────── */
+.filter-row { display: flex; gap: 24px; flex-wrap: wrap; margin: 12px 0 20px; align-items: flex-end; }
+.filter-row label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.filter-row select { font-size: 14px; padding: 4px; }
+.filter-row input[type="range"] { width: 160px; }
+.filter-row output { font-size: 13px; color: var(--ink); font-weight: 600; }
+
+/* ── Performance metric coloring ────────────────────────────────────────── */
+.metric-sub { font-size: 14px; font-weight: 600; }
+.value-pos { color: var(--good); }
+.value-neg { color: var(--bad); }
+
+/* ── Equity chart (static/js/equity_chart.js) ───────────────────────────── */
+.eq-legend { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 6px; }
+.eq-legend-item { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.eq-legend-line { width: 16px; height: 0; border-top: 2.5px solid; display: inline-block; }
+.eq-legend-line.dashed { border-top-style: dashed; }
+.eq-legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: #b8860b; }
+.eq-wrap { position: relative; }
+.eq-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.eq-gridline { stroke: var(--border, #edf0f4); stroke-width: 1; }
+.eq-baseline { stroke: var(--border); stroke-width: 1; }
+.eq-axis-label { fill: var(--muted); font-size: 10.5px; }
+.eq-series-path { fill: none; stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; }
+.eq-crosshair { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+.eq-hover-dot { stroke-width: 2; pointer-events: none; }
+.eq-fallback-dot { pointer-events: none; }
+.eq-tooltip {
+  position: absolute; background: #fff; border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 11px; font-size: 12px; pointer-events: none; box-shadow: 0 6px 20px rgba(20, 30, 50, 0.12);
+  min-width: 150px; display: none; z-index: 10;
+}
+.eq-t-date { color: var(--muted); font-size: 11px; margin-bottom: 6px; }
+.eq-t-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 3px 0; }
+.eq-t-k { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.eq-t-key { width: 12px; height: 0; border-top: 2.5px solid; display: inline-block; }
+.eq-t-key.dashed { border-top-style: dashed; }
+.eq-t-v { font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; }
+.eq-t-meta { margin-top: 4px; font-size: 11px; color: var(--muted); }
+.eq-t-note { margin-top: 6px; padding-top: 6px; border-top: 1px solid #edf0f4; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
+.eq-t-note.warn { color: #b8860b; }
+
+/* ── Tradelog forms (Log New Transaction, Edit Transaction) ────────────────── */
+.clickable-row { cursor: pointer; }
+.clickable-row:hover td { filter: brightness(0.96); }
+
+.trade-form, .edit-panel form {
+  display: flex; flex-direction: column; gap: 12px; margin: 12px 0 20px;
+}
+.form-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; }
+.form-row.form-row-nowrap { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+.form-row label {
+  display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted);
+}
+.form-row input, .form-row select {
+  padding: 6px 8px; font-size: 14px; border: 1px solid var(--border); border-radius: 6px;
+  background: #fff; color: var(--ink);
+}
+/* Keeps a row's fields on one line even in a narrow window, instead of relying on the
+   browser's default (~188px) select/number-input width. Sized per field by name, so
+   any .form-row-nowrap automatically gets consistent widths -- no per-label class
+   needed at the call site (used by both the Log New Transaction and Edit Transaction
+   forms, which share these field names). */
+.form-row.form-row-nowrap label { flex: 0 0 auto; min-width: 0; }
+.form-row-nowrap select[name="ticker"] { width: 150px; }
+.form-row-nowrap select[name="action"] { width: 85px; }
+.form-row-nowrap input[name="date"] { width: 150px; }
+.form-row-nowrap input[name="quantity"] { width: 110px; }
+.form-row-nowrap input[name="price"] { width: 110px; }
+.form-row-nowrap select[name="type"] { width: 140px; }
+.form-row-nowrap input[name="amount"] { width: 130px; }
+.form-row-nowrap input[name="capital"] { width: 150px; }
+.form-row-nowrap input[name="min_n"] { width: 90px; }
+.form-row-nowrap input[name="max_n"] { width: 90px; }
+/* Opt-in for the rare field (Note) that should fill remaining space instead of
+   getting a fixed width -- everything else in a .form-row-nowrap defaults to auto. */
+.form-row-nowrap label.field-grow { flex: 1 1 160px; }
+.form-row-nowrap label.field-grow input { width: 100%; }
+
+.btn-primary {
+  background: var(--accent); color: #fff; border: none; border-radius: 8px;
+  font-weight: 600; padding: 10px 22px; cursor: pointer; font-size: 14px;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-secondary {
+  background: #fff; color: var(--ink); border: 1px solid var(--border); border-radius: 8px;
+  font-weight: 600; padding: 8px 18px; cursor: pointer; font-size: 14px; margin-left: 8px;
+}
+.btn-secondary:hover { background: var(--card-bg); }
+
+.edit-panel {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px; margin: 16px 0;
+}
+.edit-panel h4 { margin: 0 0 12px; color: var(--accent); }
+
+/* ── Configuration page ─────────────────────────────────────────────────── */
+h4 { color: var(--accent); margin: 18px 0 6px; font-size: 15px; }
+.checkbox-label {
+  flex-direction: row !important; align-items: center; gap: 8px !important; font-size: 14px !important;
+  color: var(--ink) !important;
+}
+.checkbox-label input[type="checkbox"] { width: 16px; height: 16px; }
+.save-row { display: flex; align-items: center; gap: 16px; margin-top: 8px; }
+
+/* ── Sortable table headers (static/js/sortable_tables.js) ─────────────────── */
+.data-table th.sortable-th { cursor: pointer; user-select: none; position: relative; padding-right: 20px; }
+.data-table th.sortable-th:hover { background: var(--accent-hover); }
+.data-table th.sortable-th::after {
+  content: "\2195"; position: absolute; right: 6px; opacity: 0.45; font-size: 11px;
+}
+.data-table th.sortable-th[data-sort-dir="asc"]::after { content: "\2191"; opacity: 1; }
+.data-table th.sortable-th[data-sort-dir="desc"]::after { content: "\2193"; opacity: 1; }
+
+/* ── Regime Score Breakdown / Market Cap Momentum Breakdown ────────────────── */
+.metric-row-6 { grid-template-columns: repeat(6, 1fr); }
+@media (max-width: 1100px) { .metric-row-6 { grid-template-columns: repeat(3, 1fr); } }
+
+.regime-progress { margin: 14px 0; }
+.regime-progress-track {
+  width: 100%; height: 10px; background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 4px;
+}
+.regime-progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.3s ease; }
+
+.expander-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.expander-subhead { font-weight: 700; color: var(--ink); margin: 0 0 8px; }
+.expander-nested { margin-top: 8px; }
+.expander-nested > summary { font-size: 14px; }
+
+.tier-dual-header {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 10px 0 6px;
+  font-weight: 700; font-size: 13px; color: var(--ink);
+}
+.tier-dual-row { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 6px; }
+.tier-bars { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.tier-bar {
+  display: flex; align-items: center; gap: 12px; background: var(--card-bg);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px;
+}
+.tier-bar-label { min-width: 130px; }
+.tier-bar-name { font-weight: 600; font-size: 13px; color: var(--ink); }
+.tier-bar-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.tier-bar-track { flex: 1; height: 8px; border-radius: 999px; overflow: hidden; }
+.tier-bar-fill { height: 100%; border-radius: 999px; }
+.tier-bar-pct { min-width: 44px; text-align: right; font-weight: 700; font-size: 14px; }
+
+/* ── HTMX loading indicator (shown only while its triggering request is in flight) ── */
+.htmx-indicator { opacity: 0; transition: opacity 0.15s ease; }
+.htmx-request.htmx-indicator, .htmx-request .htmx-indicator { opacity: 1; }
+
+/* ── Regime trend chart (static/js/line_chart.js) ───────────────────────────── */
+.lc-legend { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 6px; }
+.lc-legend-item { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.lc-legend-line { width: 16px; height: 0; border-top: 2.5px solid; display: inline-block; }
+.lc-legend-line.dashed { border-top-style: dashed; }
+.lc-wrap { position: relative; }
+.lc-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.lc-gridline { stroke: var(--border); stroke-width: 1; }
+.lc-axis-label { fill: var(--muted); font-size: 10.5px; }
+.lc-series-path { fill: none; stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; }
+.lc-crosshair { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+.lc-hover-dot { stroke-width: 2; pointer-events: none; }
+.lc-tooltip {
+  position: absolute; background: #fff; border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 11px; font-size: 12px; pointer-events: none; box-shadow: 0 6px 20px rgba(20, 30, 50, 0.12);
+  min-width: 160px; display: none; z-index: 10;
+}
+.lc-t-date { color: var(--muted); font-size: 11px; margin-bottom: 6px; }
+.lc-t-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 3px 0; }
+.lc-t-k { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.lc-t-key { width: 12px; height: 0; border-top: 2.5px solid; display: inline-block; }
+.lc-t-key.dashed { border-top-style: dashed; }
+.lc-t-v { font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; }

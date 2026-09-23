@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% set active_tab = "rankings" %}
+{% block content %}
+<div class="metric-row">
+  <div class="metric center">
+    <span class="badge {{ regime.badge }}">{{ regime.emoji }} Score: {{ "%.2f"|format(regime.score) }}</span>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Dynamic N</p>
+    <p class="metric-value">{{ regime.dynamic_n }} stocks</p>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Entry Gate</p>
+    <p class="metric-value">{{ regime.entry_label }}</p>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Eligible (52H)</p>
+    <p class="metric-value">{{ regime.eligible_52h }}</p>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Data Range</p>
+    <p class="metric-value">{{ regime.data_start }} to {{ regime.data_end }}</p>
+  </div>
+</div>
+
+<details class="expander">
+  <summary>📡 Regime Score Breakdown</summary>
+  <div class="expander-body">
+    <div class="metric-row metric-row-6">
+      {% for s in regime.signals %}
+      <div class="metric">
+        <p class="metric-label">{{ s.label }}{{ " (%d%%)"|format(s.weight_pct) if s.weight_pct is not none }}</p>
+        <p class="metric-value">{{ "%.3f"|format(s.value) }}</p>
+      </div>
+      {% endfor %}
+      <div class="metric" title="{{ 'Source: ' + regime.vix_source if regime.vix_source else 'Live VIX unavailable (both Dhan and Yahoo Finance failed)' }}">
+        <p class="metric-label">Live India VIX</p>
+        <p class="metric-value">{{ "%.2f"|format(regime.vix_value) if regime.vix_value is not none else "N/A" }}</p>
+      </div>
+      <div class="metric" title="{{ regime.adv }} Advancers / {{ regime.dec }} Decliners">
+        <p class="metric-label">1D A/D Ratio</p>
+        <p class="metric-value">{{ regime.ad_ratio_str }}</p>
+      </div>
+    </div>
+    {% if regime.vix_source %}
+    <p class="caption">💹 India VIX sourced from <strong>{{ regime.vix_source }}</strong>.</p>
+    {% endif %}
+
+    <div class="regime-progress">
+      <div class="regime-progress-track">
+        <div class="regime-progress-fill" style="width: {{ (regime.score * 100)|round(1) }}%;"></div>
+      </div>
+      <span class="caption">Composite Regime Score: {{ "%.3f"|format(regime.score) }}</span>
+    </div>
+
+    <hr class="expander-divider">
+    <p class="expander-subhead">📈 Regime Score Trend</p>
+    {% if trend.records_json %}
+      <script id="regime-trend-data" type="application/json">{{ trend.records_json|safe }}</script>
+      <div id="regime-trend-root"></div>
+      <script src="{{ url_for('static', filename='js/line_chart.js') }}"></script>
+      <script>
+        initLineChart('regime-trend-root',
+          JSON.parse(document.getElementById('regime-trend-data').textContent),
+          [
+            {key: 'Composite', label: 'Composite', color: '#1F4E79'},
+            {key: 'Breadth', label: 'Breadth', color: '#2E7D32'},
+            {key: 'Momentum', label: 'Momentum', color: '#F57F17'},
+            {key: 'Entry Threshold', label: 'Entry Threshold', color: '#C62828', dashed: true},
+          ]);
+      </script>
+      <p class="caption">📊 {{ trend.n_days }} day(s) recorded | Latest: {{ trend.latest_date }} |
+         Entry Threshold line = {{ trend.entry_threshold }}</p>
+    {% else %}
+      <p class="caption">📅 Trend chart appears after 2+ days of recorded data. Come back tomorrow!</p>
+    {% endif %}
+  </div>
+</details>
+
+<details class="expander">
+  <summary>📊 Market Cap Momentum Breakdown</summary>
+  <div class="expander-body">
+    {% if cap_tier.available %}
+      <p class="caption">Comparing <strong>63-day raw return &gt; 0%</strong> vs
+         <strong>3M Sharpe score &gt; 0</strong> across cap tiers. Classification sourced from STOCKDB.csv.</p>
+      <div class="tier-dual-header">
+        <div>📈 63-Day Raw Return &gt; 0%</div>
+        <div>⚡ 3M Sharpe Score &gt; 0 <span class="caption">(risk-adjusted)</span></div>
+      </div>
+      {% for row in cap_tier.rows %}
+      <div class="tier-dual-row">
+        <div class="tier-bar">
+          <div class="tier-bar-label">
+            <div class="tier-bar-name">{{ row.cap_tier }}</div>
+            <div class="tier-bar-sub">{{ row.ret_pos }} of {{ row.total }}</div>
+          </div>
+          <div class="tier-bar-track" style="background:{{ row.ret_colors[1] }};">
+            <div class="tier-bar-fill" style="width:{{ [row.ret_pct, 100]|min }}%; background:{{ row.ret_colors[0] }};"></div>
+          </div>
+          <div class="tier-bar-pct" style="color:{{ row.ret_colors[2] }};">{{ row.ret_pct }}%</div>
+        </div>
+        <div class="tier-bar">
+          <div class="tier-bar-label">
+            <div class="tier-bar-name">{{ row.cap_tier }}</div>
+            <div class="tier-bar-sub">{{ row.sharpe_pos }} of {{ row.total }}
+              <span class="{{ 'value-pos' if row.delta > 0 else ('value-neg' if row.delta < 0 else '') }}">
+                ({{ "+%d"|format(row.delta) if row.delta > 0 else row.delta }})</span>
+            </div>
+          </div>
+          <div class="tier-bar-track" style="background:{{ row.sharpe_colors[1] }};">
+            <div class="tier-bar-fill" style="width:{{ [row.sharpe_pct, 100]|min }}%; background:{{ row.sharpe_colors[0] }};"></div>
+          </div>
+          <div class="tier-bar-pct" style="color:{{ row.sharpe_colors[2] }};">{{ row.sharpe_pct }}%</div>
+        </div>
+      </div>
+      {% endfor %}
+      <p class="caption">Delta (shown in count next to 3M Sharpe) = Sharpe positive count minus Return positive
+         count. Green = Sharpe identifies MORE positive-momentum stocks than raw return. Red = Sharpe is more
+         conservative.</p>
+    {% else %}
+      <div class="banner">⚠️ STOCKDB.csv not found. Cap tier classification unavailable.</div>
+    {% endif %}
+
+    <hr class="expander-divider">
+    <details class="expander expander-nested">
+      <summary>📡 Yahoo Finance Market Cap View (slow, ~15s)</summary>
+      <div class="expander-body">
+        <p class="caption">Fetches live market cap from Yahoo Finance for classification. Cached for 24h.</p>
+        <div id="cap-tier-yahoo-root">
+          <button type="button" class="btn-primary"
+                  hx-get="{{ url_for('rankings.cap_tier_yahoo') }}"
+                  hx-target="#cap-tier-yahoo-root" hx-swap="innerHTML"
+                  hx-indicator="#cap-tier-yahoo-spinner">Load Yahoo Market Cap Data</button>
+          <span id="cap-tier-yahoo-spinner" class="htmx-indicator caption"> Fetching (~15s)...</span>
+        </div>
+      </div>
+    </details>
+  </div>
+</details>
+
+<div id="rankings-table" hx-get="{{ url_for('rankings.table_partial') }}" hx-trigger="load"
+     hx-swap="innerHTML">
+  <p class="caption">Loading rankings…</p>
+</div>
+{% endblock %}

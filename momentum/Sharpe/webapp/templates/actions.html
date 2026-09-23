@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% set active_tab = "actions" %}
+{% block content %}
+<h2>{{ actions_dot }} Actions Monitor</h2>
+
+{% if not view.has_ledger %}
+  <div class="banner">No open positions found in the positions ledger. Nothing to evaluate.</div>
+{% else %}
+
+  {% if view.n_exits > 0 %}
+    <div class="banner error">🚨 <strong>{{ view.n_exits }} EXIT SIGNAL(S) — Action Required!</strong></div>
+    <h3>Exits Required</h3>
+    <table class="data-table">
+      <thead>
+        <tr><th>Ticker</th><th>Action</th><th>Trigger</th><th>Rank</th><th>52H%</th>
+            <th>Rel 52H DD</th><th>Days Held</th><th>Entry Date</th><th>Unrealised P&amp;L</th></tr>
+      </thead>
+      <tbody>
+        {% for r in view.exit_triggers %}
+        <tr class="{{ r.row_class }}">
+          <td>{{ r.ticker }}</td><td>{{ r.action }}</td><td>{{ r.trigger }}</td>
+          <td>{{ r.rank if r.rank is not none else "—" }}</td>
+          <td>{{ r.pct_52h if r.pct_52h is not none else "—" }}</td>
+          <td>{{ r.rel_52h_dd if r.rel_52h_dd is not none else "—" }}</td>
+          <td>{{ r.days_held }}</td><td>{{ r.entry_date }}</td>
+          <td>Rs {{ "{:,.0f}".format(r.unrealised_pnl) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="banner success">✅ All {{ view.n_current_holdings }} positions healthy. No exits triggered.</div>
+  {% endif %}
+
+  <div class="metric-row">
+    <div class="metric"><p class="metric-label">Max Stocks Allowed</p><p class="metric-value">{{ view.dynamic_n }}</p></div>
+    <div class="metric"><p class="metric-label">Current Holdings</p><p class="metric-value">{{ view.n_current_holdings }}</p></div>
+    <div class="metric"><p class="metric-label">Positions to Exit</p><p class="metric-value">{{ view.n_exits }}</p></div>
+    {% if view.n_new_positions > 0 and view.allow_new %}
+    <div class="metric"><p class="metric-label">New Positions</p><p class="metric-value value-pos">+{{ view.n_new_positions }}</p></div>
+    {% endif %}
+  </div>
+
+  {% set es = view.entries_section %}
+  {% if es %}
+    {% if es.status == "regime_blocked" %}
+      <div class="banner">⛔ Regime Score ({{ "%.2f"|format(view.regime_score) }}) below threshold
+        ({{ view.entry_threshold }}) — no new entries permitted.</div>
+    {% elif es.status == "no_candidates" %}
+      <div class="banner info">No eligible entry candidates found in the current ranking.</div>
+    {% elif es.status == "no_cash" %}
+      <div class="banner info">No cash available for new entries.</div>
+    {% elif es.status == "no_allocatable" %}
+      <div class="banner info">No eligible entry candidates could be allocated.</div>
+    {% elif es.status == "ok" %}
+      <h3>🆕 New Entry Candidates</h3>
+      {% if es.insufficient_cash %}
+      <div class="banner">⚠️ Insufficient cash for all entries — allocation pro-rata scaled to available cash.</div>
+      {% endif %}
+      <table class="data-table">
+        <thead>
+          <tr><th>Ticker</th><th>Action</th><th>Rank</th><th>52H%</th>
+              <th>Inv. Amount</th><th>Qty to Purchase</th><th>Circuit Hits (UC/LC)</th></tr>
+        </thead>
+        <tbody>
+          {% for r in es.rows %}
+          <tr class="row-regime">
+            <td>{{ r.ticker }}</td><td>🟢 BUY</td>
+            <td>{{ r.rank if r.rank is not none else "—" }}</td>
+            <td>{{ r.pct_52h if r.pct_52h is not none else "—" }}</td>
+            <td>Rs {{ "{:,.0f}".format(r.inv_amount) }}</td>
+            <td>{{ "{:,.0f}".format(r.qty) }}</td>
+            <td>{{ r.circuit_hits if r.circuit_hits is not none else "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="caption">
+        Available Cash: <strong>Rs {{ "{:,.0f}".format(es.available_cash) }}</strong> &nbsp;|&nbsp;
+        Total Allocation: <strong>Rs {{ "{:,.0f}".format(es.total_allocation) }}</strong>
+      </p>
+    {% endif %}
+  {% endif %}
+
+  <h3>📋 All Positions</h3>
+  <table class="data-table">
+    <thead>
+      <tr><th>Ticker</th><th>Action</th><th>Trigger</th><th>Rank</th><th>52H%</th>
+          <th>Rel 52H DD</th><th>Days Held</th><th>Entry Date</th><th>Unrealised P&amp;L</th></tr>
+    </thead>
+    <tbody>
+      {% for r in view.exit_rows %}
+      <tr class="{{ r.row_class }}">
+        <td>{{ r.ticker }}</td><td>{{ r.action }}</td><td>{{ r.trigger }}</td>
+        <td>{{ r.rank if r.rank is not none else "—" }}</td>
+        <td>{{ r.pct_52h if r.pct_52h is not none else "—" }}</td>
+        <td>{{ r.rel_52h_dd if r.rel_52h_dd is not none else "—" }}</td>
+        <td>{{ r.days_held }}</td><td>{{ r.entry_date }}</td>
+        <td>Rs {{ "{:,.0f}".format(r.unrealised_pnl) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="caption">
+    <strong>Positions:</strong> {{ view.summary.positions }} &nbsp;|&nbsp;
+    <strong>52H Exits:</strong> {{ view.summary.n_52h_exits }} &nbsp;|&nbsp;
+    <strong>Rel DD Exits:</strong> {{ view.summary.n_reldd_exits }} &nbsp;|&nbsp;
+    <strong>Rank Exits:</strong> {{ view.summary.n_rank_exits }} &nbsp;|&nbsp;
+    <strong>Hold-Locked:</strong> {{ view.summary.n_hold_locked }} &nbsp;|&nbsp;
+    <strong>Healthy:</strong> {{ view.summary.n_healthy }}
+  </p>
+{% endif %}
+{% endblock %}

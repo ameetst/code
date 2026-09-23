@@ -1,0 +1,31 @@
+{# HTMX target for the "Edit" link on a Transaction History row. #}
+{% if editing_tx %}
+<div class="edit-panel">
+  <h4>✏️ Edit Transaction <code>{{ editing_tx.id[:8] }}</code></h4>
+  <form hx-post="{{ url_for('tradelog.edit', tx_id=editing_tx.id) }}" hx-target="#tradelog-content" hx-swap="innerHTML">
+    <div class="form-row form-row-nowrap">
+      <label>Ticker
+        <select name="ticker">
+          {% for t in stock_tickers %}
+          <option value="{{ t }}" {{ "selected" if t == editing_tx.ticker }}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Action
+        <select name="action">
+          <option value="BUY" {{ "selected" if editing_tx.action|upper == "BUY" }}>BUY</option>
+          <option value="SELL" {{ "selected" if editing_tx.action|upper == "SELL" }}>SELL</option>
+        </select>
+      </label>
+      <label>Date <input type="date" name="date" value="{{ editing_tx.date }}"></label>
+      <label>Quantity <input type="number" name="quantity" min="1" step="1" value="{{ editing_tx.quantity }}"></label>
+      <label>Price (INR) <input type="number" name="price" min="0.01" step="0.01" value="{{ editing_tx.price }}"></label>
+    </div>
+    <div>
+      <button type="submit" class="btn-primary">💾 Save Changes</button>
+      <button type="button" class="btn-secondary"
+              onclick="document.getElementById('edit-form-wrapper').innerHTML='';">Cancel</button>
+    </div>
+  </form>
+</div>
+{% endif %}

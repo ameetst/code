@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Sharpe Momentum{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+  <!-- CDN for scaffolding; vendor into static/js for an offline-capable build (see README). -->
+  <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/sortable_tables.js') }}"></script>
+</head>
+<body>
+  <div class="app">
+    <h1 class="app-title">📊 Sharpe Momentum Strategy</h1>
+    <p class="app-subtitle">Rank &rarr; Filter &rarr; Size &rarr; Allocate &nbsp;|&nbsp; Dynamic Regime Engine</p>
+    {% if read_only %}
+    <div class="banner">Read-only preview — trade entry and config changes stay in the Streamlit dashboard for now.</div>
+    {% endif %}
+    <nav class="nav-tabs">
+      <a href="{{ url_for('rankings.index') }}" class="{{ 'active' if active_tab == 'rankings' }}">📊 Top Rankings</a>
+      <a href="{{ url_for('actions.index') }}" class="{{ 'active' if active_tab == 'actions' }}">{{ actions_dot }} Actions Monitor</a>
+      <a href="{{ url_for('tradelog.index') }}" class="{{ 'active' if active_tab == 'tradelog' }}">📝 Tradelog &amp; MTM</a>
+      <a href="{{ url_for('cash_ledger.index') }}" class="{{ 'active' if active_tab == 'cash' }}">💰 Cash Ledger</a>
+      <a href="{{ url_for('rankings.full_page') }}" class="{{ 'active' if active_tab == 'full' }}">📋 Full Rankings</a>
+      <a href="{{ url_for('configuration.index') }}" class="{{ 'active' if active_tab == 'config' }}">⚙️ Configuration</a>
+      <a href="{{ url_for('performance.index') }}" class="{{ 'active' if active_tab == 'performance' }}">📈 Performance</a>
+    </nav>
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

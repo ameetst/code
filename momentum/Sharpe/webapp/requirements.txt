@@ -1,0 +1,6 @@
+# Only what the webapp adds. pandas / numpy / scipy / openpyxl / yfinance come from the
+# existing environment that already runs momentum_lib (the venv is created with
+# --system-site-packages), so nothing here can change the Streamlit setup.
+flask
+waitress   # production WSGI server (Windows-friendly; gunicorn needs a Unix syscall)
+pytest

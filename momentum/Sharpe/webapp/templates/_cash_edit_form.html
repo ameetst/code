@@ -1,0 +1,27 @@
+{# HTMX target for the "Edit" link on a Cash Transaction History row. #}
+{% if editing_entry %}
+<div class="edit-panel">
+  <h4>✏️ Edit Entry <code>{{ editing_entry.id[:8] }}</code></h4>
+  <form hx-post="{{ url_for('cash_ledger.edit', entry_id=editing_entry.id) }}" hx-target="#cash-content" hx-swap="innerHTML">
+    <div class="form-row form-row-nowrap">
+      <label>Type
+        <select name="type">
+          {% for t in entry_types %}
+          <option value="{{ t }}" {{ "selected" if t == editing_entry.type }}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Date <input type="date" name="date" value="{{ editing_entry.date }}"></label>
+      <label>Amount (INR)
+        <input type="number" name="amount" min="0.01" step="1000" value="{{ editing_entry.amount }}">
+      </label>
+      <label class="field-grow">Note <input type="text" name="note" value="{{ editing_entry.note or '' }}"></label>
+    </div>
+    <div>
+      <button type="submit" class="btn-primary">💾 Save Changes</button>
+      <button type="button" class="btn-secondary"
+              onclick="document.getElementById('cash-edit-form-wrapper').innerHTML='';">Cancel</button>
+    </div>
+  </form>
+</div>
+{% endif %}

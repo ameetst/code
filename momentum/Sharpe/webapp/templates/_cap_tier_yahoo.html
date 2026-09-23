@@ -1,0 +1,34 @@
+{# HTMX target for the "Load/Refresh Yahoo Market Cap Data" button (#cap-tier-yahoo-root). #}
+{% if error %}
+  <div class="banner error">❌ Could not load Market Cap data: {{ error }}</div>
+  <button type="button" class="btn-primary"
+          hx-get="{{ url_for('rankings.cap_tier_yahoo') }}"
+          hx-target="#cap-tier-yahoo-root" hx-swap="innerHTML">Load Yahoo Market Cap Data</button>
+{% elif rows %}
+  <div class="tier-bars">
+    {% for row in rows %}
+    <div class="tier-bar tier-bar-single">
+      <div class="tier-bar-label">
+        <div class="tier-bar-name">{{ row.tier }}</div>
+        <div class="tier-bar-sub">{{ row.positive }} of {{ row.total }} stocks</div>
+      </div>
+      <div class="tier-bar-track" style="background:{{ row.colors[1] }};">
+        <div class="tier-bar-fill" style="width:{{ [row.pct, 100]|min }}%; background:{{ row.colors[0] }};"></div>
+      </div>
+      <div class="tier-bar-pct" style="color:{{ row.colors[2] }};">{{ row.pct }}%</div>
+    </div>
+    {% endfor %}
+  </div>
+  <button type="button" class="btn-secondary"
+          hx-get="{{ url_for('rankings.cap_tier_yahoo', refresh=1) }}"
+          hx-target="#cap-tier-yahoo-root" hx-swap="innerHTML"
+          hx-indicator="#cap-tier-yahoo-spinner-2">Refresh Yahoo Market Cap Data</button>
+  <span id="cap-tier-yahoo-spinner-2" class="htmx-indicator caption"> Fetching (~15s)...</span>
+{% else %}
+  <div class="banner">Yahoo Finance market cap data not yet loaded.</div>
+  <button type="button" class="btn-primary"
+          hx-get="{{ url_for('rankings.cap_tier_yahoo') }}"
+          hx-target="#cap-tier-yahoo-root" hx-swap="innerHTML"
+          hx-indicator="#cap-tier-yahoo-spinner">Load Yahoo Market Cap Data</button>
+  <span id="cap-tier-yahoo-spinner" class="htmx-indicator caption"> Fetching (~15s)...</span>
+{% endif %}

@@ -1,0 +1,96 @@
+{# The swap target for every mutating tradelog action (#tradelog-content). #}
+{% if error %}<div class="banner error">❌ {{ error }}</div>{% endif %}
+{% if success %}<div class="banner success">✅ {{ success }}</div>{% endif %}
+
+<div class="metric-row">
+  <div class="metric">
+    <p class="metric-label">Total Invested (Rs)</p>
+    <p class="metric-value">Rs {{ "{:,.2f}".format(total_invested) }}</p>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Current Market Value (Rs)</p>
+    <p class="metric-value">Rs {{ "{:,.2f}".format(total_market) }}</p>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Unrealized PnL (MTM)</p>
+    <p class="metric-value {{ 'value-pos' if total_unrealized >= 0 else 'value-neg' }}">
+      Rs {{ "{:,.2f}".format(total_unrealized) }}
+      <span class="metric-sub">({{ "%+.2f"|format(total_unrealized_pct) }}%)</span>
+    </p>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Realized PnL (Rs)</p>
+    <p class="metric-value {{ 'value-pos' if realized_pnl >= 0 else 'value-neg' }}">
+      Rs {{ "{:,.2f}".format(realized_pnl) }}
+    </p>
+  </div>
+</div>
+
+<h3>💼 Active Holdings</h3>
+{% if not holdings_rows %}
+  <div class="banner">No active holdings found. Log a BUY trade below to open a position.</div>
+{% else %}
+  <table class="data-table">
+    <thead>
+      <tr><th>Ticker</th><th>Qty</th><th>Avg Price</th><th>Current Price</th><th>Cost Value</th>
+          <th>Market Value</th><th>Unrealized PnL</th><th>Unrealized PnL %</th><th>First Buy Date</th></tr>
+    </thead>
+    <tbody>
+      {% for h in holdings_rows %}
+      <tr class="{{ h.row_class }} clickable-row"
+          hx-get="{{ url_for('tradelog.row_form', ticker=h.Ticker, qty=h.Qty|int, price=h['Current Price']) }}"
+          hx-target="#trade-form-wrapper" hx-swap="innerHTML" title="Click to prefill the trade form below">
+        <td>{{ h.Ticker }}</td>
+        <td>{{ "{:,.0f}".format(h.Qty) }}</td>
+        <td>Rs {{ "{:,.2f}".format(h['Avg Price']) }}</td>
+        <td>Rs {{ "{:,.2f}".format(h['Current Price']) }}</td>
+        <td>Rs {{ "{:,.2f}".format(h['Cost Value']) }}</td>
+        <td>Rs {{ "{:,.2f}".format(h['Market Value']) }}</td>
+        <td>Rs {{ "{:,.2f}".format(h['Unrealized PnL']) }}</td>
+        <td>{{ "%+.2f"|format(h['Unrealized PnL %']) }}%</td>
+        <td>{{ h['First Buy Date'] if h['First Buy Date'] else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="caption">Click a row to prefill the trade form below with that ticker, quantity and current price.</p>
+{% endif %}
+
+<div id="trade-form-wrapper">
+  {% include "_trade_form.html" %}
+</div>
+
+<h3>🕒 Transaction History &amp; Management</h3>
+{% if not history_rows %}
+  <div class="banner">No transactions logged yet.</div>
+{% else %}
+  <form hx-post="{{ url_for('tradelog.delete') }}" hx-target="#tradelog-content" hx-swap="innerHTML"
+        hx-confirm="Delete the selected transaction(s)? This cannot be undone.">
+    <table class="data-table">
+      <thead>
+        <tr><th></th><th>Date</th><th>Ticker</th><th>Action</th><th>Quantity</th>
+            <th>Price</th><th>Total Value</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for tx in history_rows %}
+        <tr class="{{ tx.row_class }}">
+          <td><input type="checkbox" name="tx_id" value="{{ tx.id }}"></td>
+          <td>{{ tx.date }}</td>
+          <td>{{ tx.ticker }}</td>
+          <td>{{ tx.action }}</td>
+          <td>{{ "{:,.0f}".format(tx.quantity) }}</td>
+          <td>Rs {{ "{:,.2f}".format(tx.price) }}</td>
+          <td>Rs {{ "{:,.2f}".format(tx.total_value) }}</td>
+          <td><a href="#" hx-get="{{ url_for('tradelog.edit_form', tx_id=tx.id) }}"
+                 hx-target="#edit-form-wrapper" hx-swap="innerHTML">Edit</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit" class="btn-secondary">🗑️ Delete Selected</button>
+  </form>
+{% endif %}
+
+<div id="edit-form-wrapper">
+  {% include "_edit_form.html" %}
+</div>
