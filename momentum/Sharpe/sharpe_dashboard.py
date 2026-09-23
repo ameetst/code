@@ -698,6 +698,85 @@ cash_ledger = load_cash_ledger(universe)
 cash_summary = compute_cash_ledger_summary(cash_ledger)
 ledger = load_ledger(LEDGER_FILE)
 
+# ── EXIT SIGNAL EVALUATION (drives the Actions Monitor tab + its status dot) ──
+if not ledger:
+    exit_df, exit_triggers, n_exits = pd.DataFrame(), pd.DataFrame(), 0
+else:
+    exit_rows = []
+    for ticker, rec in ledger.items():
+        held     = (TODAY - rec["entry_date"]).days
+        rank_val = result.loc[ticker, "RANK"]       if ticker in result.index else np.nan
+        pct52    = result.loc[ticker, "PCT_FROM_52H"] if ticker in result.index else np.nan
+        reldd    = result.loc[ticker, "REL_52H_DD"] if ticker in result.index else np.nan
+
+        # Determine explicit exit trigger category
+        is_52h_breach = pd.notna(pct52) and pct52 < -25
+        is_reldd_breach = pd.notna(reldd) and reldd < rel_dd_breach_threshold
+
+        is_circuit_breach = False
+        if circuit_filter_enabled and ticker in result.index and "TOTAL_CIRCUIT_HITS" in result.columns:
+            c_hits = result.loc[ticker, "TOTAL_CIRCUIT_HITS"]
+            if pd.notna(c_hits) and c_hits >= circuit_threshold:
+                is_circuit_breach = True
+
+        is_series_breach = False
+        if eq_series_filter and ticker in result.index and "SERIES" in result.columns:
+            series_val = result.loc[ticker, "SERIES"]
+            if pd.notna(series_val) and str(series_val).strip() != "EQ":
+                is_series_breach = True
+
+        is_adtv_breach = False
+        if ticker in result.index and "ADTV_ELIGIBLE" in result.columns:
+            if not bool(result.loc[ticker, "ADTV_ELIGIBLE"]):
+                is_adtv_breach = True
+
+        if is_52h_breach:
+            trigger = "52H_BREACH";      action = "⚠️ SELL IMMEDIATELY (52H drop)"
+        elif is_circuit_breach:
+            trigger = "CIRCUIT_BREACH";  action = "⚠️ SELL IMMEDIATELY (Circuit limit)"
+        elif is_series_breach:
+            trigger = "SERIES_BREACH";   action = "⚠️ SELL IMMEDIATELY (Non-EQ series)"
+        elif is_adtv_breach:
+            trigger = "ADTV_BREACH";     action = "⚠️ SELL IMMEDIATELY (Low ADTV)"
+        elif pd.isna(rank_val):
+            trigger = "FILTER_BREACH";   action = "⚠️ SELL IMMEDIATELY"
+        elif is_reldd_breach and held >= 28:
+            trigger = "REL_DD_BREACH";   action = "🔻 SELL (relative 52H drawdown)"
+        elif is_reldd_breach and held < 28:
+            trigger = "REL_DD_LOCK";     action = f"🔒 Locked (Rel DD, {held}/28d)"
+        elif pd.notna(rank_val) and rank_val > int(params["Rank Buffer"]) and held >= 28:
+            trigger = "RANK_EXIT";       action = "🔻 SELL (rank dropped)"
+        elif pd.notna(rank_val) and rank_val > int(params["Rank Buffer"]) and held < 28:
+            trigger = "HOLD_LOCK";       action = f"🔒 Locked ({held}/28d)"
+        else:
+            trigger = "HEALTHY";         action = "✅ HOLD"
+
+        # Current price & unrealised P&L from tradelog
+        curr_price = latest_prices.get(ticker, rec["entry_price"])
+        shares = 0
+        for hm in holdings_metrics:
+            if hm["Ticker"] == ticker:
+                shares = hm["Qty"]
+                curr_price = hm["Current Price"]
+                break
+        unrealised_pnl_val = (curr_price - rec["entry_price"]) * shares
+
+        exit_rows.append({
+            "Ticker":          ticker,
+            "Action":          action,
+            "Trigger":         trigger,
+            "Rank":            int(rank_val) if pd.notna(rank_val) else None,
+            "52H%":            round(pct52, 1) if pd.notna(pct52) else None,
+            "Rel_52H_DD":      round(reldd, 1) if pd.notna(reldd) else None,
+            "Days Held":       held,
+            "Entry Date":      rec["entry_date"].isoformat(),
+            "Unrealised P&L":  round(unrealised_pnl_val, 0),
+        })
+
+    exit_df = pd.DataFrame(exit_rows)
+    exit_triggers = exit_df[exit_df["Trigger"].str.contains("BREACH|RANK_EXIT")]
+    n_exits = len(exit_triggers)
+
 
 # ── REGIME HEADER ─────────────────────────────────────────────────────────────
 if regime_score >= 0.65:
@@ -931,7 +1010,8 @@ st.divider()
 # ── TABS ──────────────────────────────────────────────────────────────────────
 SHOW_CASH_LEDGER_TAB = True  # toggle to re-enable the Cash Ledger tab
 
-_tab_labels = [f"📊 Top {MAX_N} Rankings", "🚨 Actions Monitor", "📝 Tradelog & MTM"]
+_actions_dot = "🔴" if n_exits > 0 else "🟢"
+_tab_labels = [f"📊 Top {MAX_N} Rankings", f"{_actions_dot} Actions Monitor", "📝 Tradelog & MTM"]
 if SHOW_CASH_LEDGER_TAB:
     _tab_labels.append("💰 Cash Ledger")
 _tab_labels += ["📋 Full Rankings", "⚙️ Configuration", "📈 Performance Tracker"]
@@ -1026,90 +1106,16 @@ with tab_top:
 
 # ── TAB 2: ACTIONS MONITOR ────────────────────────────────────────────────────
 with tab_exits:
-    st.markdown("## 🚨 Actions Monitor")
+    st.markdown(f"## {_actions_dot} Actions Monitor")
 
     if not ledger:
         st.info(f"No open positions found in ledger `{Path(LEDGER_FILE).name}`. "
                 "Nothing to evaluate.")
     else:
-        # ── Build Exit Evaluation rows ────────────────────────────────────────
-        exit_rows = []
-        for ticker, rec in ledger.items():
-            held     = (TODAY - rec["entry_date"]).days
-            rank_val = result.loc[ticker, "RANK"]       if ticker in result.index else np.nan
-            pct52    = result.loc[ticker, "PCT_FROM_52H"] if ticker in result.index else np.nan
-            reldd    = result.loc[ticker, "REL_52H_DD"] if ticker in result.index else np.nan
-
-            # Determine explicit exit trigger category
-            is_52h_breach = pd.notna(pct52) and pct52 < -25
-            is_reldd_breach = pd.notna(reldd) and reldd < rel_dd_breach_threshold
-
-            is_circuit_breach = False
-            if circuit_filter_enabled and ticker in result.index and "TOTAL_CIRCUIT_HITS" in result.columns:
-                c_hits = result.loc[ticker, "TOTAL_CIRCUIT_HITS"]
-                if pd.notna(c_hits) and c_hits >= circuit_threshold:
-                    is_circuit_breach = True
-
-            is_series_breach = False
-            if eq_series_filter and ticker in result.index and "SERIES" in result.columns:
-                series_val = result.loc[ticker, "SERIES"]
-                if pd.notna(series_val) and str(series_val).strip() != "EQ":
-                    is_series_breach = True
-
-            is_adtv_breach = False
-            if ticker in result.index and "ADTV_ELIGIBLE" in result.columns:
-                if not bool(result.loc[ticker, "ADTV_ELIGIBLE"]):
-                    is_adtv_breach = True
-
-            if is_52h_breach:
-                trigger = "52H_BREACH";      action = "⚠️ SELL IMMEDIATELY (52H drop)"
-            elif is_circuit_breach:
-                trigger = "CIRCUIT_BREACH";  action = "⚠️ SELL IMMEDIATELY (Circuit limit)"
-            elif is_series_breach:
-                trigger = "SERIES_BREACH";   action = "⚠️ SELL IMMEDIATELY (Non-EQ series)"
-            elif is_adtv_breach:
-                trigger = "ADTV_BREACH";     action = "⚠️ SELL IMMEDIATELY (Low ADTV)"
-            elif pd.isna(rank_val):
-                trigger = "FILTER_BREACH";   action = "⚠️ SELL IMMEDIATELY"
-            elif is_reldd_breach and held >= 28:
-                trigger = "REL_DD_BREACH";   action = "🔻 SELL (relative 52H drawdown)"
-            elif is_reldd_breach and held < 28:
-                trigger = "REL_DD_LOCK";     action = f"🔒 Locked (Rel DD, {held}/28d)"
-            elif pd.notna(rank_val) and rank_val > int(params["Rank Buffer"]) and held >= 28:
-                trigger = "RANK_EXIT";       action = "🔻 SELL (rank dropped)"
-            elif pd.notna(rank_val) and rank_val > int(params["Rank Buffer"]) and held < 28:
-                trigger = "HOLD_LOCK";       action = f"🔒 Locked ({held}/28d)"
-            else:
-                trigger = "HEALTHY";         action = "✅ HOLD"
-
-            # Current price & unrealised P&L from tradelog
-            curr_price = latest_prices.get(ticker, rec["entry_price"])
-            shares = 0
-            for hm in holdings_metrics:
-                if hm["Ticker"] == ticker:
-                    shares = hm["Qty"]
-                    curr_price = hm["Current Price"]
-                    break
-            unrealised_pnl_val = (curr_price - rec["entry_price"]) * shares
-
-            exit_rows.append({
-                "Ticker":          ticker,
-                "Action":          action,
-                "Trigger":         trigger,
-                "Rank":            int(rank_val) if pd.notna(rank_val) else None,
-                "52H%":            round(pct52, 1) if pd.notna(pct52) else None,
-                "Rel_52H_DD":      round(reldd, 1) if pd.notna(reldd) else None,
-                "Days Held":       held,
-                "Entry Date":      rec["entry_date"].isoformat(),
-                "Unrealised P&L":  round(unrealised_pnl_val, 0),
-            })
-
-        exit_df = pd.DataFrame(exit_rows)
+        # exit_df / exit_triggers / n_exits are computed earlier (right after the
+        # ledger loads) so the Actions Monitor tab label can reflect them too.
 
         # ── Section 1: Exit Evaluation table ──────────────────────────────────
-        exit_triggers = exit_df[exit_df["Trigger"].str.contains("BREACH|RANK_EXIT")]
-        n_exits = len(exit_triggers)
-
         if n_exits > 0:
             st.error(f"🚨 **{n_exits} EXIT SIGNAL(S) — Action Required!**")
             st.markdown("#### Exits Required")

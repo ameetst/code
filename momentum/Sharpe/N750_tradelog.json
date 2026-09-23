@@ -745,5 +745,59 @@
     "action": "SELL",
     "quantity": 56,
     "price": 1727.5
+  },
+  {
+    "id": "e328b163-1a70-4919-bc42-579da73b6a8b",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:03:55.874248",
+    "ticker": "GRWRHITECH",
+    "action": "SELL",
+    "quantity": 10,
+    "price": 6516.0
+  },
+  {
+    "id": "06428b3f-321f-4d14-9218-c52246d0b30b",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:04:30.699802",
+    "ticker": "ASTRAMICRO",
+    "action": "SELL",
+    "quantity": 43,
+    "price": 1654.5
+  },
+  {
+    "id": "9eadf794-0b0f-44aa-bd2e-7f3506f33a21",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:16:42.416693",
+    "ticker": "SYRMA",
+    "action": "BUY",
+    "quantity": 58,
+    "price": 1703.0
+  },
+  {
+    "id": "57c8768c-8630-4aa8-ab79-321050c8e03b",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:17:09.440331",
+    "ticker": "ATHERENERG",
+    "action": "BUY",
+    "quantity": 62,
+    "price": 1590.5
+  },
+  {
+    "id": "f89fb488-bd02-4208-b352-2008334bd2be",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:17:33.252285",
+    "ticker": "DIACABS",
+    "action": "BUY",
+    "quantity": 268,
+    "price": 370.6
+  },
+  {
+    "id": "c3df8053-cfbd-408f-acb5-2befa60e7587",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:17:56.988842",
+    "ticker": "STLTECH",
+    "action": "BUY",
+    "quantity": 123,
+    "price": 807.9
   }
 ]

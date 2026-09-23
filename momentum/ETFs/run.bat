@@ -1,2 +1,2 @@
 python etf_momentum_ranking.py
-streamlit run etf_dashboard.py
+python .\etf_flask\app.py

@@ -627,7 +627,7 @@
     ]
   },
   "2026-W39": {
-    "run_date": "2026-09-21 11:10",
+    "run_date": "2026-09-23 11:26",
     "regime": "BEAR",
     "active_slots": 0,
     "allocation": [
@@ -637,9 +637,9 @@
         "etf_name": "Motilal Oswal BSE HC ETF",
         "sector": "HEALTHCARE",
         "weight": 0.2,
-        "inv_rank": "7",
+        "inv_rank": "6",
         "entry_price": 50.61,
-        "peak": 52.14
+        "peak": 52.65
       },
       {
         "slot": 2,
@@ -647,7 +647,7 @@
         "etf_name": "HDFC NIFTY Smallcap 250 ETF",
         "sector": "SMALLCAP",
         "weight": 0.2,
-        "inv_rank": "8",
+        "inv_rank": "12",
         "entry_price": 180.12,
         "peak": 185.46
       },
@@ -657,7 +657,7 @@
         "etf_name": "Motilal Oswal Nifty SC 250 ETF",
         "sector": "OTHER",
         "weight": 0.2,
-        "inv_rank": "15",
+        "inv_rank": "17",
         "entry_price": 17.97,
         "peak": 18.5
       },
