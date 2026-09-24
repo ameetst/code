@@ -159,13 +159,18 @@ def regime_badge(score: float) -> str:
     return "low"
 
 
-def top_rows(bundle: Bundle, limit: int, held: set) -> list[dict]:
+def top_rows(bundle: Bundle, limit: int, held: set, prices: dict | None = None) -> list[dict]:
+    """`prices` overrides bundle.latest_prices for the LTP column when given -- pass
+    dhan_client.apply_cached_prices(bundle.latest_prices) to reflect Tradelog's
+    "Refresh Live Market Prices" button here too, matching the dashboard's single
+    global price override."""
+    prices = prices if prices is not None else bundle.latest_prices
     rows = []
     for ticker, row in bundle.result.head(limit).iterrows():
         mean_vol = mean_volatility(ticker, bundle.prices_df)
         comp = finite(row["COMPOSITE"])
         vol_adj = round(comp / mean_vol, 3) if (comp is not None and mean_vol and mean_vol > 0) else None
-        ltp = bundle.latest_prices.get(ticker, 0.0)
+        ltp = prices.get(ticker, 0.0)
         rank = finite(row["RANK"])
         rows.append({
             "rank": int(rank) if rank is not None else None,

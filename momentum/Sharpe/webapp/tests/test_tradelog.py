@@ -174,3 +174,87 @@ def test_edit_form_shows_the_requested_transaction(client):
     html = client.get(f"/tradelog/edit-form/{tx['id']}").data.decode()
     assert tx["ticker"] in html
     assert f'value="{tx["quantity"]}"' in html
+
+
+# ── Refresh Live Market Prices ────────────────────────────────────────────────
+
+def test_effective_prices_merges_cached_live_prices_over_the_workbook_price(monkeypatch):
+    from webapp.blueprints.tradelog import _effective_prices
+    from webapp.core import dhan_client, rankings
+
+    bundle = rankings.Bundle(
+        prices_df=None, result=None, regime_score=0.0, regime_detail={}, dates=[],
+        latest_prices={"FOO": 100.0, "BAR": 200.0},
+    )
+    monkeypatch.setattr(dhan_client, "_live_price_cache",
+                         {"value": {"prices": {"FOO": 111.0}, "source": "Dhan", "unmatched": []}})
+    merged = _effective_prices(bundle)
+    assert merged == {"FOO": 111.0, "BAR": 200.0}  # FOO overridden, BAR untouched
+
+
+def test_effective_prices_ignores_a_cached_ticker_not_in_the_workbook(monkeypatch):
+    from webapp.blueprints.tradelog import _effective_prices
+    from webapp.core import dhan_client, rankings
+
+    bundle = rankings.Bundle(
+        prices_df=None, result=None, regime_score=0.0, regime_detail={}, dates=[],
+        latest_prices={"FOO": 100.0},
+    )
+    monkeypatch.setattr(dhan_client, "_live_price_cache",
+                         {"value": {"prices": {"DELISTED": 5.0}, "source": "Dhan", "unmatched": []}})
+    assert _effective_prices(bundle) == {"FOO": 100.0}
+
+
+def test_refresh_live_prices_returns_a_value_or_gracefully_fails():
+    """Live smoke check (Dhan then Yahoo Finance fallback), same pattern as get_live_vix
+    -- never raises, and a successful fetch populates the cache."""
+    from webapp.core import dhan_client
+
+    result = dhan_client.refresh_live_prices(["RELIANCE"])
+    assert set(result) == {"prices", "source", "unmatched"}
+    if result["prices"]:
+        assert result["source"] in ("Dhan", "Yahoo Finance")
+        assert dhan_client.get_cached_live_prices() == result
+    else:
+        assert result["source"] is None
+
+
+def test_refresh_prices_route_renders_and_is_not_gated_by_read_only(client):
+    """Not a write route (no file touched), so it must work even while READ_ONLY."""
+    assert settings.READ_ONLY is True
+    watched = list(settings.DATA_DIR.glob("*.json")) + list(settings.DATA_DIR.glob("*.bak"))
+    before = {p: p.stat().st_mtime_ns for p in watched}
+
+    r = client.post("/tradelog/refresh-prices")
+    assert r.status_code == 200
+    html = r.data.decode()
+    # The page always shows a static "submitting will show why it's blocked" caption on
+    # the trade form regardless of this route; what must NOT appear is the actual
+    # write-guard banner text used by add/edit/delete when they're blocked.
+    assert "webapp is read-only right now" not in html.lower()
+
+    after = {p: p.stat().st_mtime_ns for p in watched}
+    assert before == after  # a live price fetch never touches a data file
+
+
+def test_refresh_prices_button_and_source_caption_are_in_the_page(client):
+    html = client.get("/tradelog").data.decode()
+    assert "Refresh Live Market Prices" in html
+    assert 'hx-post="/tradelog/refresh-prices"' in html
+
+
+def test_cached_live_price_also_overrides_the_rankings_ltp_column(client, monkeypatch):
+    """The dashboard's price override was global (one button, effect visible everywhere
+    via st.session_state) -- confirms the webapp's shared cache reaches Top-N Rankings
+    too, not just Tradelog."""
+    from webapp.core import config_store, dhan_client, rankings
+
+    bundle = rankings.get_bundle(config_store.load_config())
+    ticker = bundle.prices_df.index[0]
+    fake_price = round(bundle.latest_prices.get(ticker, 100.0) * 2 + 1, 2)  # unmistakably not the real price
+
+    monkeypatch.setattr(dhan_client, "_live_price_cache",
+                         {"value": {"prices": {ticker: fake_price}, "source": "Dhan", "unmatched": []}})
+
+    html = client.get(f"/rankings/table?limit={len(bundle.result)}").data.decode()
+    assert f"Rs {fake_price:,.2f}" in html

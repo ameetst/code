@@ -26,7 +26,18 @@
   </div>
 </div>
 
-<h3>💼 Active Holdings</h3>
+<div class="section-header">
+  <h3>💼 Active Holdings</h3>
+  <div>
+    <button type="button" class="btn-primary" id="refresh-prices-btn"
+            hx-post="{{ url_for('tradelog.refresh_prices') }}" hx-target="#tradelog-content" hx-swap="innerHTML"
+            hx-indicator="#refresh-prices-spinner">🔄 Refresh Live Market Prices</button>
+    <span id="refresh-prices-spinner" class="htmx-indicator caption"> Fetching...</span>
+  </div>
+</div>
+{% if live_price_source %}
+  <p class="caption">💹 Live prices last refreshed from <strong>{{ live_price_source }}</strong>.</p>
+{% endif %}
 {% if not holdings_rows %}
   <div class="banner">No active holdings found. Log a BUY trade below to open a position.</div>
 {% else %}

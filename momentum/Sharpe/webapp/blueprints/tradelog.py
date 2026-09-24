@@ -18,17 +18,27 @@ import uuid
 from flask import Blueprint, render_template, request
 
 from webapp import settings
-from webapp.core import config_store, rankings, tradelog
+from webapp.core import config_store, dhan_client, rankings, tradelog
 
 bp = Blueprint("tradelog", __name__)
+
+
+def _effective_prices(bundle: rankings.Bundle) -> dict:
+    """bundle.latest_prices (the workbook's last close), overridden by whatever
+    the "Refresh Live Market Prices" button last fetched -- same override
+    semantics as the dashboard's st.session_state.live_prices. Shared with
+    Rankings' LTP column via dhan_client.apply_cached_prices()."""
+    return dhan_client.apply_cached_prices(bundle.latest_prices)
 
 
 def _build_context(universe: str, bundle: rankings.Bundle, *, form_ticker=None,
                     form_qty=None, form_price=None, error=None, success=None,
                     editing_id=None) -> dict:
+    live_prices = _effective_prices(bundle)
     tl = tradelog.load_tradelog(universe)
-    pnl = tradelog.calculate_holdings_and_pnl(tl, bundle.latest_prices)
+    pnl = tradelog.calculate_holdings_and_pnl(tl, live_prices)
     holdings_metrics = pnl["holdings_metrics"]
+    cached_live = dhan_client.get_cached_live_prices()
 
     total_invested = sum(h["Cost Value"] for h in holdings_metrics)
     total_market = sum(h["Market Value"] for h in holdings_metrics)
@@ -53,7 +63,7 @@ def _build_context(universe: str, bundle: rankings.Bundle, *, form_ticker=None,
     stock_tickers = list(bundle.prices_df.index)
     default_ticker = form_ticker if form_ticker in stock_tickers else (stock_tickers[0] if stock_tickers else "")
     default_qty = form_qty if form_qty else 10
-    default_price = form_price if form_price is not None else round(bundle.latest_prices.get(default_ticker, 0.0), 2)
+    default_price = form_price if form_price is not None else round(live_prices.get(default_ticker, 0.0), 2)
 
     editing_tx = next((tx for tx in tl if tx["id"] == editing_id), None) if editing_id else None
 
@@ -69,6 +79,7 @@ def _build_context(universe: str, bundle: rankings.Bundle, *, form_ticker=None,
         "error": error, "success": success,
         "editing_tx": editing_tx,
         "today": datetime.date.today().isoformat(),
+        "live_price_source": cached_live["source"] if cached_live else None,
     }
 
 
@@ -105,6 +116,34 @@ def edit_form(tx_id):
     return render_template("_edit_form.html", **ctx)
 
 
+@bp.route("/tradelog/refresh-prices", methods=["POST"])
+def refresh_prices():
+    """Fetches live LTP for currently-held tickers (Dhan, Yahoo Finance fallback) and
+    caches it -- overriding the workbook's last price everywhere in this tab until the
+    next refresh. Not gated by READ_ONLY: it's a live external read with no file write,
+    same category as the VIX/cap-tier fetches elsewhere."""
+    bundle, universe = _bundle_and_universe()
+    tl = tradelog.load_tradelog(universe)
+    pnl = tradelog.calculate_holdings_and_pnl(tl, _effective_prices(bundle))
+    held_tickers = [h["Ticker"] for h in pnl["holdings_metrics"]]
+
+    success, error = None, None
+    if not held_tickers:
+        error = "No active holdings to refresh."
+    else:
+        result = dhan_client.refresh_live_prices(held_tickers)
+        if result["prices"]:
+            success = f"Live prices refreshed from {result['source']}."
+            if result["unmatched"]:
+                success += (f" {len(result['unmatched'])} ticker(s) could not be resolved: "
+                            f"{', '.join(result['unmatched'])}.")
+        else:
+            error = "Could not fetch live prices from Dhan or Yahoo Finance. Try again shortly."
+
+    ctx = _build_context(universe, bundle, error=error, success=success)
+    return render_template("_tradelog_content.html", **ctx)
+
+
 @bp.route("/tradelog/add", methods=["POST"])
 def add():
     bundle, universe = _bundle_and_universe()
@@ -124,7 +163,7 @@ def add():
         qty, price = 0, 0.0
 
     tl = tradelog.load_tradelog(universe)
-    pnl = tradelog.calculate_holdings_and_pnl(tl, bundle.latest_prices)
+    pnl = tradelog.calculate_holdings_and_pnl(tl, _effective_prices(bundle))
     curr_qty = pnl["active_holdings"].get(ticker, {}).get("qty", 0.0)
 
     error = None
@@ -148,7 +187,7 @@ def add():
             error = f"Trade rejected — would cause inconsistent state: {err_msg}"
         else:
             tradelog.save_tradelog(universe, candidate)
-            new_calc = tradelog.calculate_holdings_and_pnl(candidate, bundle.latest_prices)
+            new_calc = tradelog.calculate_holdings_and_pnl(candidate, _effective_prices(bundle))
             tradelog.sync_to_positions_ledger(config_store.positions_ledger_path(universe),
                                                new_calc["active_holdings"])
             success = f"Recorded {action} {qty} shares of {ticker} @ Rs {price:.2f}."
@@ -194,7 +233,7 @@ def edit(tx_id):
                          f"The original transaction was not modified.")
             else:
                 tradelog.save_tradelog(universe, candidate)
-                new_calc = tradelog.calculate_holdings_and_pnl(candidate, bundle.latest_prices)
+                new_calc = tradelog.calculate_holdings_and_pnl(candidate, _effective_prices(bundle))
                 tradelog.sync_to_positions_ledger(config_store.positions_ledger_path(universe),
                                                    new_calc["active_holdings"])
                 success = "Transaction updated and positions ledger synced."
@@ -226,7 +265,7 @@ def delete():
                      f"inconsistent holdings: {err_msg}. No transactions were deleted.")
         else:
             tradelog.save_tradelog(universe, candidate)
-            new_calc = tradelog.calculate_holdings_and_pnl(candidate, bundle.latest_prices)
+            new_calc = tradelog.calculate_holdings_and_pnl(candidate, _effective_prices(bundle))
             tradelog.sync_to_positions_ledger(config_store.positions_ledger_path(universe),
                                                new_calc["active_holdings"])
             success = f"Deleted {len(ids_to_delete)} transaction(s) and synced positions ledger."

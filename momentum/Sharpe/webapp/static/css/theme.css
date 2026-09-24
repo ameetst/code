@@ -273,3 +273,7 @@ h4 { color: var(--accent); margin: 18px 0 6px; font-size: 15px; }
 .lc-t-key { width: 12px; height: 0; border-top: 2.5px solid; display: inline-block; }
 .lc-t-key.dashed { border-top-style: dashed; }
 .lc-t-v { font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ── Section header with an action button (Active Holdings + Refresh Live Market Prices) ── */
+.section-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.section-header h3 { margin: 0; }

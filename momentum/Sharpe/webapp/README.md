@@ -216,21 +216,32 @@ The Actions Monitor's exit-trigger and new-entry-candidate paths were similarly 
 an in-memory synthetic ledger during development (not committed as a test) since the live N750
 portfolio currently has zero exit signals to exercise those branches naturally.
 
+**Tradelog's "Refresh Live Market Prices"** (`core/dhan_client.refresh_live_prices`) is also
+done: Dhan's batched LTP first, per-ticker yfinance thread pool fallback, same as the
+dashboard's button. Cached in-process with no TTL (only refreshes on click, like the
+dashboard). `dhan_client.apply_cached_prices()` is the shared merge -- overrides the
+workbook's last price wherever it's applied, until the next click. Not gated by
+`SHARPE_READ_ONLY` -- it's a live external read with no file write, same category as the
+VIX/cap-tier fetches. **The override is global, matching the dashboard's own
+`st.session_state.live_prices` semantics**: Tradelog applies it via `_effective_prices()`,
+and Top-N Rankings' LTP column applies the exact same cache via
+`core.rankings.top_rows(..., prices=dhan_client.apply_cached_prices(...))` -- one button,
+one shared cache, both pages read it. Verified live: refreshing on Tradelog changed
+WELCORP to Rs 2,796.80 there, and the Top Rankings page (a full navigation away, no shared
+browser state involved) showed the identical Rs 2,796.80 in its LTP column.
+
 Next, in order:
 1. Before flipping `SHARPE_READ_ONLY=0` for real: write the end-to-end write test noted above
    against a scratch `SHARPE_DATA_DIR` copy, then use both UIs side by side for a few days
    with Streamlit as the only writer, before trusting the webapp with real trades
 2. All tabs from the Streamlit dashboard are now ported. Remaining polish: vendor HTMX locally
-   (see below), trim the equity-chart tooltip's HTML-string construction (see Known gaps),
-   consider a live-price refresh path (Dhan/yfinance) if the last-workbook-price gap matters
-   in practice
+   (see below), trim the equity-chart tooltip's HTML-string construction (see Known gaps)
 
-Known gaps: no live-price refresh anywhere (LTP is the last price in the workbook), the
-"held" flag reads the positions ledger rather than recomputing from the tradelog, and the
-equity chart tooltip builds HTML from equity_history.json fields via template strings —
-fine since that file is only ever written by `Sharpe.py`, not by any user input, but worth
-tightening if a write path ever feeds into it. HTMX and the emoji glyphs assume a browser
-with a decent font; no IE-era fallback.
+Known gaps: the "held" flag reads the positions ledger
+rather than recomputing from the tradelog, and the equity chart tooltip builds HTML from
+equity_history.json fields via template strings -- fine since that file is only ever written
+by `Sharpe.py`, not by any user input, but worth tightening if a write path ever feeds into
+it. HTMX and the emoji glyphs assume a browser with a decent font; no IE-era fallback.
 
 HTMX is loaded from a CDN for now — vendor `htmx.min.js` into `static/js/` before relying
 on this running without internet access.
