@@ -717,17 +717,33 @@ print(f"{'-'*60}")
 # -- ENTRY CANDIDATES ----------------------------------------------------------
 #
 # New entries this week:
-#   - Top dynamic_n stocks by SHARPE_ALL (not already held)
+#   - Best-ranked stocks not already held, enough to fill whatever slots are
+#     open after today's exits -- NOT simply "top dynamic_n minus held names",
+#     since a held stock can rank below dynamic_n without being exited (the
+#     exit rule uses the much looser HOLD_RANK_BUFFER). Scanning only
+#     result.head(dynamic_n) undercounts when held names have drifted below
+#     that cutoff, and overcounts (stages more notional ledger entries below
+#     than there are open slots) whenever fewer of them have. Confirmed via
+#     the 2026-09-21 rebalance: 15 held after exits, dynamic_n=18 (3 slots
+#     open), but the old head(dynamic_n)-based logic produced 8 "candidates".
 #   - Only when regime_score >= NEW_ENTRY_THRESHOLD
 #
 currently_held  = set(ledger.keys()) - {e["ticker"] for e in all_exits}
-top_n_tickers   = result.head(dynamic_n).index.tolist()
+top_n_tickers   = result.head(dynamic_n).index.tolist()  # used later for allocation weighting only
+n_new_positions = dynamic_n - len(currently_held)
 
-if allow_new:
-    entry_candidates = [t for t in top_n_tickers if t not in currently_held]
+if allow_new and n_new_positions > 0:
+    entry_candidates = []
+    for t in result.index:  # already RANK-sorted; walks past dynamic_n if it must
+        if t in currently_held:
+            continue
+        if len(entry_candidates) >= n_new_positions:
+            break
+        entry_candidates.append(t)
+
     if entry_candidates:
         print(f"\n  [NEW ENTRIES — REGIME SCORE {regime_score:.2f}]  {len(entry_candidates)} candidate(s) "
-              f"(Top {dynamic_n} slots):")
+              f"({n_new_positions} slot(s) open):")
         for t in entry_candidates:
             px = prices_df.loc[t].dropna()
             last_px = px.iloc[-1] if len(px) > 0 else np.nan
@@ -736,7 +752,11 @@ if allow_new:
             print(f"    {t:<14}  rank {rank_str}  "
                   f"last price: {last_px:,.2f}")
     else:
-        print(f"\n  [NEW ENTRIES]  All Top {dynamic_n} positions already held.")
+        print(f"\n  [NEW ENTRIES]  No eligible candidates found to fill {n_new_positions} open slot(s).")
+elif allow_new:
+    entry_candidates = []
+    print(f"\n  [NEW ENTRIES]  Portfolio already holds {len(currently_held)}/{dynamic_n} target "
+          f"position(s) after exits. No new buys.")
 else:
     entry_candidates = []
     print(f"\n  [NEW ENTRIES BLOCKED]  Regime score {regime_score:.2f} < threshold {NEW_ENTRY_THRESHOLD}")
