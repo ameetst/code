@@ -1121,7 +1121,7 @@ def compute_regime_score(
     Compute a continuous Regime Strength Score (0.0 to 1.0) from 4 signals.
 
     Regime score deliberately measures the WHOLE universe, not just the
-    ADTV/EQ/circuit-tradable subset — it answers "how healthy is the market",
+    MDTV/EQ/circuit-tradable subset — it answers "how healthy is the market",
     a different question from "what can I actually buy" (that's what the
     ranking eligibility gate in compute_universe_rankings is for; it is
     untouched by this function and still governs RANK/entries/exits).
@@ -1251,7 +1251,7 @@ def compute_universe_rankings(
       1. Compute Sharpe Ratios & Cross-sectional Z-Scores
       2. Compute PCT_FROM_52H, REL_52H_DD (vs benchmark) and Price Returns (1M, 3M, 12M)
       3. Compute Residual Momentum Z-Scores
-      4. Apply ADTV Turnover filter (if volume data present)
+      4. Apply MDTV Turnover filter (if volume data present)
       5. Apply Series EQ filter (excludes non-EQ series)
       6. Apply Circuit Hit Frequency filter
       7. Master eligibility gate → rank eligible stocks by COMPOSITE
@@ -1285,7 +1285,7 @@ def compute_universe_rankings(
         result["PCT_FROM_52H"], nifty_series,
         eligible_mask=result["PCT_FROM_52H"] >= -25)
 
-    # 2. ADTV Turnover Filter
+    # 2. MDTV Turnover Filter
     if volume_df is not None:
         turnover_df = compute_turnover(prices_df, volume_df, stock_tickers)
         result = result.join(turnover_df)
@@ -1348,7 +1348,7 @@ def compute_universe_rankings(
     result["BETA"] = beta_series
 
     # 6. Dynamic Regime Score — measures the WHOLE universe (Signals 1-4 all
-    # exclude the ADTV/EQ/circuit tradability gates), decoupled from the
+    # exclude the MDTV/EQ/circuit tradability gates), decoupled from the
     # `eligible`/RANK gate above, which still governs actual entries/exits.
     pct52h_mask = result["PCT_FROM_52H"] >= -25
     regime_score, regime_detail = compute_regime_score(

@@ -33,7 +33,7 @@
     position — used by both the dashboard's position sizing and Sharpe.py.
   </p>
 
-  <h4>📊 ADTV Liquidity Filter</h4>
+  <h4>📊 MDTV Liquidity Filter</h4>
   <div class="form-row">
     <label>Min Median Daily Turnover (₹ Cr)
       <input type="number" name="min_turnover" min="0" max="10" step="0.25" value="{{ cfg.min_turnover }}">
@@ -43,7 +43,7 @@
     <p class="caption">✅ Volume data available | 12M pass: {{ adtv.pass_12m }}/{{ adtv.total }} |
        6M pass: {{ adtv.pass_6m }}/{{ adtv.total }}</p>
   {% else %}
-    <p class="caption">⚠️ No VOLUME sheet in data file — ADTV filter inactive. Run
+    <p class="caption">⚠️ No VOLUME sheet in data file — MDTV filter inactive. Run
        <code>update_stock_price.py</code> with latest version to add volume data.</p>
   {% endif %}
 

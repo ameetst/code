@@ -84,7 +84,7 @@ def evaluate_exits(bundle: rankings.Bundle, cfg: dict, ledger: dict,
         elif is_series_breach:
             trigger, action = "SERIES_BREACH", "⚠️ SELL IMMEDIATELY (Non-EQ series)"
         elif is_adtv_breach:
-            trigger, action = "ADTV_BREACH", "⚠️ SELL IMMEDIATELY (Low ADTV)"
+            trigger, action = "ADTV_BREACH", "⚠️ SELL IMMEDIATELY (Low MDTV)"
         elif rank_val is None:
             trigger, action = "FILTER_BREACH", "⚠️ SELL IMMEDIATELY"
         elif is_reldd_breach and held_days >= HOLD_LOCK_DAYS:

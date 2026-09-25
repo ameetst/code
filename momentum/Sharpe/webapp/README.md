@@ -53,7 +53,7 @@ Tests (uses live data, read-only; ~15s because of the ranking compute):
       tradelog.py                load_tradelog + calculate_holdings_and_pnl (average-cost engine) +
                                     validate_tradelog_integrity + save_tradelog + sync_to_positions_ledger
       cash_ledger.py             load/save + summary/running-balance for the independent cash ledger
-      configuration.py           field bounds/clamping, ADTV/circuit informational counts,
+      configuration.py           field bounds/clamping, MDTV/circuit informational counts,
                                     the read-only Strategy Parameters block
       performance.py            equity_history.json → NAV/alpha/drawdown metrics + chart records
       config_store.py          dashboard_config.json + universe file resolution
@@ -141,7 +141,7 @@ Done:
   crosshair + tooltip as the Streamlit version, now `static/js/equity_chart.js` instead of a
   `components.html()` blob), and the collapsible daily-NAV table. Handles the 0/1/2+ day
   states the same way the dashboard does.
-- **Actions Monitor** — exit-signal evaluation (52H/circuit/series/ADTV/filter breaches, rank-drop
+- **Actions Monitor** — exit-signal evaluation (52H/circuit/series/MDTV/filter breaches, rank-drop
   and relative-52H-drawdown exits, the 28-day hold lock), the holdings/exits/new-positions metric
   row, inverse-vol-weighted new-entry candidates (capped at Max Position Size, pro-rata scaled if
   cash is short), and the full positions table with the dashboard's four row-highlight states
@@ -164,7 +164,7 @@ Done:
   **warning**, not a rejection — it's still recorded (a portfolio's real cash position can
   legitimately exceed the ledger's own running total via investment gains/proceeds outside it).
 - **Configuration** — Data Source, Capital & Sizing (with the derived Max Position Size shown
-  live), ADTV filter with pass-count captions, the Series-EQ and Circuit-Hit-Frequency toggles
+  live), MDTV filter with pass-count captions, the Series-EQ and Circuit-Hit-Frequency toggles
   (the latter's threshold field shows/hides via a couple lines of vanilla JS, not a round trip),
   the Rel-52H-DD and Rank-Buffer exit thresholds, one Save button, and the read-only Strategy
   Parameters summary. **Deliberate simplification vs. Streamlit**: this page does not

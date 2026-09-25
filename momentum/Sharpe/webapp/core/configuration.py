@@ -1,11 +1,11 @@
 """
 Configuration tab. Ported from the tab_config block of sharpe_dashboard_dhan.py:
-capital/sizing inputs, ADTV/circuit/series filter toggles, the relative-52H-drawdown
+capital/sizing inputs, MDTV/circuit/series filter toggles, the relative-52H-drawdown
 and rank-drop exit thresholds, and the read-only Strategy Parameters summary.
 
 Unlike the Streamlit dashboard, changes here do NOT live-preview the ranking impact
 as you type -- momentum_lib's ranking compute is cached and keyed on the *saved*
-config (see core.rankings.get_bundle), so the informational captions below (ADTV
+config (see core.rankings.get_bundle), so the informational captions below (MDTV
 pass counts, circuit-hit-exceeding count) reflect the currently saved values, and
 any change takes effect project-wide only after Save (and only on the next page load).
 """
@@ -88,7 +88,7 @@ def strategy_params(cfg: dict, universe: str) -> dict:
         "Hold Lock": "28 days",
         "52H Filter": ">= -25%",
         "Rel 52H DD Exit": f"< {float(cfg['rel_dd_breach_threshold']):.0f}% (respects hold lock)",
-        "ADTV Filter": f">= {cfg['min_turnover']} Cr (12M or 6M median)",
+        "MDTV Filter": f">= {cfg['min_turnover']} Cr (12M or 6M median)",
         "Series EQ Filter": "Enabled" if cfg["eq_series_filter"] else "Disabled",
         "Circuit Filter": (f"Enabled (>= {cfg['circuit_threshold']} days)"
                            if cfg["circuit_filter_enabled"] else "Disabled"),

@@ -62,8 +62,8 @@ Sheet 1: DATA
 Sheet 2: VOLUME
   Same layout as DATA — tickers in column A, date headers in row 1.
   Cell values are daily traded volume (number of shares).
-  Used for the ADTV turnover filter.
-  If this sheet is missing, the ADTV filter is skipped (backward compatible).
+  Used for the MDTV turnover filter.
+  If this sheet is missing, the MDTV filter is skipped (backward compatible).
 
 Special rows:
   - NIFTY500        : Must be present in DATA sheet — used as the market benchmark
@@ -128,8 +128,8 @@ HOW TO RUN
     python Sharpe.py N750
 
   This reads the existing N750_updated.xlsx and computes rankings.
-  If the file has a VOLUME sheet, the ADTV filter applies.
-  If no VOLUME sheet (old file), ADTV filter is skipped with a warning.
+  If the file has a VOLUME sheet, the MDTV filter applies.
+  If no VOLUME sheet (old file), MDTV filter is skipped with a warning.
 
 
 >>> OPTION 3: USE EXISTING DATA (no refresh) <<<
@@ -147,7 +147,7 @@ HOW TO RUN
     streamlit run sharpe_dashboard.py
 
   The dashboard reads from the same <UNIVERSE>_updated.xlsx file.
-  All settings (data source, capital, ADTV threshold) are configurable
+  All settings (data source, capital, MDTV threshold) are configurable
   in the ⚙️ Configuration tab.
 
 
@@ -196,7 +196,7 @@ WHAT THE SCRIPT COMPUTES (in order)
    Stocks outside this range receive no RANK (NaN); all scores are still computed.
    An existing held stock that fails this filter triggers an EXIT_52H signal.
 
-5. ADTV TURNOVER FILTER (new)
+5. MDTV TURNOVER FILTER (new)
    Requires a VOLUME sheet in the input file. If absent, filter is skipped.
 
    Method  : For each stock, compute median daily turnover (price × volume)
@@ -310,7 +310,7 @@ EXIT_RANK respects it.
        Existing positions are always evaluated for exit normally.
        Portfolio size scales with regime_score; unallocated weight -> Liquid Fund.
 
-  Note: A held stock that fails the ADTV filter will also have RANK = NaN,
+  Note: A held stock that fails the MDTV filter will also have RANK = NaN,
   triggering EXIT_52H logic (immediate sell). In practice this is unlikely —
   a stock's trading volume doesn't typically collapse overnight.
 
@@ -451,7 +451,7 @@ TROUBLESHOOTING
                                          input file before running
   Ledger not found                     → Script will create a new empty ledger
                                          automatically on first run
-  "No VOLUME sheet found"              → ADTV filter is skipped (not an error).
+  "No VOLUME sheet found"              → MDTV filter is skipped (not an error).
                                          Run update_stock_price.py to generate
                                          the VOLUME sheet, or add one to the
                                          template manually.

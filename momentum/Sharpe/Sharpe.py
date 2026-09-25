@@ -104,7 +104,6 @@ LEDGER_FILE       = _args.ledger or f"{UNIVERSE}_positions_ledger.json"
 PORTFOLIO_CAPITAL = _saved_cfg["capital"]    # INR — baseline for allocation display
 RFR_ANNUAL        = 0.07
 TRADING_DAYS      = 252
-TOP_N             = 20         # used for Excel sheet label only; actual N is dynamic
 MIN_HOLD_DAYS     = 28          # calendar days before rank-based exit is permitted
 LIQUID_YIELD_PA   = 0.06        # 6% p.a. on idle cash
 # CLI --min-turnover overrides saved config; use saved config as default
@@ -269,7 +268,7 @@ if volume_df is not None:
     print(f"  Turnover computed for {turnover_df['TURNOVER_12M'].notna().sum()} (12M) / "
           f"{turnover_df['TURNOVER_6M'].notna().sum()} (6M) tickers")
 else:
-    print("  ⚠  No VOLUME sheet found — ADTV filter will be skipped.")
+    print("  ⚠  No VOLUME sheet found — MDTV filter will be skipped.")
     print("    Run: python update_stock_price.py {universe} to generate volume data.")
     turnover_df = None
 
@@ -488,7 +487,7 @@ n_total    = len(result)
 n_non_eq   = int((result.get("SERIES", pd.Series("EQ", index=result.index)) != "EQ").sum())
 n_circuit  = int((result.get("TOTAL_CIRCUIT_HITS", pd.Series(0, index=result.index)) >= CIRCUIT_HIT_THRESHOLD).sum())
 print(f"  {n_eligible} / {n_total} stocks eligible "
-      f"(52H >= -25% AND ADTV >= {MIN_TURNOVER_CR} Cr"
+      f"(52H >= -25% AND MDTV >= {MIN_TURNOVER_CR} Cr"
       f"{' AND Series=EQ' if EQ_SERIES_FILTER else ''}"
       f"{' AND Circuit<' + str(CIRCUIT_HIT_THRESHOLD) if CIRCUIT_FILTER_ENABLED else ''})")
 if EQ_SERIES_FILTER:
@@ -514,7 +513,7 @@ print(f"  Dynamic N     : {dynamic_n}  "
 #   This overrides the 28-day hold lock unconditionally.
 #
 # EXIT_FILTER — Non-rank eligibility disqualification.
-#   The stock has no RANK for a non-52H reason, e.g. ADTV failure or missing data.
+#   The stock has no RANK for a non-52H reason, e.g. MDTV failure or missing data.
 #   This is kept separate so liquidity/data issues are not mislabeled as 52H breaches.
 #
 # EXIT_REL_DD — Relative 52H drawdown breach.
@@ -537,7 +536,7 @@ print(f"  Held positions   : {len(ledger)}")
 print(f"{'-'*60}")
 
 exit_52h_list    = []   # immediate exits — 52H breach (lock overridden)
-exit_filter_list = []   # non-52H eligibility exits — e.g. ADTV failure / missing rank
+exit_filter_list = []   # non-52H eligibility exits — e.g. MDTV failure / missing rank
 exit_reldd_list  = []   # relative 52H drawdown exits — respects hold lock
 exit_rank_list   = []   # rank exits — rank > 40 AND hold >= 28 days
 hold_list        = []   # retained positions
@@ -564,7 +563,7 @@ for ticker, rec in ledger.items():
             "exit_trigger": "52H_BREACH",
         })
 
-    # -- Trigger 1b: non-52H eligibility failure (Circuit / Series / ADTV / missing data)
+    # -- Trigger 1b: non-52H eligibility failure (Circuit / Series / MDTV / missing data)
     elif pd.isna(rank_val):
         is_circ_fail = False
         if CIRCUIT_FILTER_ENABLED and ticker in result.index and "TOTAL_CIRCUIT_HITS" in result.columns:
@@ -819,7 +818,8 @@ for ticker in top_n_tickers:
     result.loc[ticker, "TARGET_WT"] = capped_w
     result.loc[ticker, "ALLOC_INR"] = capped_alloc
 
-total_equity_weight = result.head(TOP_N)["TARGET_WT"].sum()
+total_equity_weight = result["TARGET_WT"].sum()   # TARGET_WT is NaN outside top_n_tickers, so this
+                                                    # correctly totals all dynamic_n target positions
 total_cash_weight   = max(0.0, 1.0 - total_equity_weight)
 total_cash_inr      = total_cash_weight * PORTFOLIO_CAPITAL
 
@@ -866,7 +866,7 @@ def fs(v, w=7): return f"{v:>{w}.3f}" if pd.notna(v) else f"{'--':>{w}}"
 def fp(v, w=7): return f"{v:>{w}.1f}" if pd.notna(v) else f"{'--':>{w}}"
 def fw(v, w=7): return f"{v*100:>{w}.1f}%" if pd.notna(v) else f"{'--':>{w}}"
 
-for i, (ticker, row) in enumerate(result.head(TOP_N).iterrows(), 1):
+for i, (ticker, row) in enumerate(result.head(dynamic_n).iterrows(), 1):
     status = ticker_status(ticker)
     print(f"{i:>4}  {ticker:<12}  {status:<10}  "
           f"{fw(row['TARGET_WT'],8)}     {row['ALLOC_INR']:9,.0f}  "
@@ -965,7 +965,7 @@ for c, (col_name, col_w) in enumerate(top20_cols, 1):
     ws1.column_dimensions[get_column_letter(c)].width = col_w
 ws1.row_dimensions[2].height = 18
 
-for i, (ticker, row) in enumerate(result.head(TOP_N).iterrows(), 3):
+for i, (ticker, row) in enumerate(result.head(dynamic_n).iterrows(), 3):
     row_fnt, row_bg = row_style(ticker)
     rank_v          = int(row["RANK"]) if pd.notna(row["RANK"]) else None
     pct52h          = row["PCT_FROM_52H"]
@@ -991,7 +991,7 @@ for i, (ticker, row) in enumerate(result.head(TOP_N).iterrows(), 3):
     ws1.row_dimensions[i].height = 16
 
 # Cash summary row
-summary_row = TOP_N + 3
+summary_row = dynamic_n + 3
 set_cell(ws1.cell(row=summary_row, column=1), "-",             GOLD_FONT, fill("FFFFFF"), None)
 set_cell(ws1.cell(row=summary_row, column=2), "CASH (LIQUID)", GOLD_FONT, fill("FFFFFF"), None, align="left")
 set_cell(ws1.cell(row=summary_row, column=3), "",              MUTED_FONT,fill("FFFFFF"), None)
@@ -1142,6 +1142,6 @@ for i, (ticker, row) in enumerate(result.iterrows(), 3):
 
 wb_out.save(OUTPUT_FILE)
 print(f"  +  Saved -> {OUTPUT_FILE}")
-print(f"     Sheet 'TOP20' : top {TOP_N} stocks with status (NEW BUY / HOLD / EXIT)")
+print(f"     Sheet 'TOP20' : top {dynamic_n} stocks with status (NEW BUY / HOLD / EXIT)")
 print(f"     Sheet 'EXITS' : {len(all_exits)} exit action(s) this rebalance")
 print(f"     Sheet 'CALCS' : all {len(stock_tickers)} stocks, full calculations")
