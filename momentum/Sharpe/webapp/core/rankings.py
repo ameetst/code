@@ -165,6 +165,17 @@ def top_rows(bundle: Bundle, limit: int, held: set, prices: dict | None = None) 
     "Refresh Live Market Prices" button here too, matching the dashboard's single
     global price override."""
     prices = prices if prices is not None else bundle.latest_prices
+    top_tickers = bundle.result.head(limit).index.tolist()
+
+    # Circuit-hit frequency (UC/LC over trailing 252 sessions) — always computed
+    # here regardless of the Circuit Hit Frequency Filter setting, matching the
+    # dashboard's New Entry Candidates precedent.
+    try:
+        circuit_df = ml.compute_circuit_hits(
+            bundle.prices_df, top_tickers, str(BAND_CSV), lookback_period=252)
+    except Exception:
+        circuit_df = None
+
     rows = []
     for ticker, row in bundle.result.head(limit).iterrows():
         mean_vol = mean_volatility(ticker, bundle.prices_df)
@@ -172,6 +183,10 @@ def top_rows(bundle: Bundle, limit: int, held: set, prices: dict | None = None) 
         vol_adj = round(comp / mean_vol, 3) if (comp is not None and mean_vol and mean_vol > 0) else None
         ltp = prices.get(ticker, 0.0)
         rank = finite(row["RANK"])
+        if circuit_df is not None and ticker in circuit_df.index:
+            circuit_hits = f"{int(circuit_df.loc[ticker, 'UC_COUNT'])} / {int(circuit_df.loc[ticker, 'LC_COUNT'])}"
+        else:
+            circuit_hits = None
         rows.append({
             "rank": int(rank) if rank is not None else None,
             "ticker": ticker,
@@ -180,6 +195,7 @@ def top_rows(bundle: Bundle, limit: int, held: set, prices: dict | None = None) 
             "volatility_pct": round(mean_vol * 100, 1) if mean_vol is not None else None,
             "vol_adj_score": vol_adj,
             "ltp": ltp if ltp > 0 else None,
+            "circuit_hits": circuit_hits,
             "held": ticker in held,
         })
     return rows
