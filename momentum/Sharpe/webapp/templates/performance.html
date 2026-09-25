@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% set active_tab = "performance" %}
+{% block content %}
+<h2>📈 Performance Tracker</h2>
+
+{% if view %}
+  <div class="metric-row">
+    <div class="metric">
+      <p class="metric-label">Portfolio NAV</p>
+      <p class="metric-value {{ 'value-pos' if view.port_ret_total >= 0 else 'value-neg' }}">
+        {{ "%.2f"|format(view.port_nav) }} <span class="metric-sub">({{ "%+.2f"|format(view.port_ret_total) }}%)</span>
+      </p>
+    </div>
+    <div class="metric">
+      <p class="metric-label">Benchmark NAV</p>
+      <p class="metric-value {{ 'value-pos' if view.bench_ret_total >= 0 else 'value-neg' }}">
+        {{ "%.2f"|format(view.bench_nav) }} <span class="metric-sub">({{ "%+.2f"|format(view.bench_ret_total) }}%)</span>
+      </p>
+    </div>
+    <div class="metric">
+      <p class="metric-label">Alpha</p>
+      <p class="metric-value {{ 'value-pos' if view.alpha >= 0 else 'value-neg' }}">{{ "%+.2f"|format(view.alpha) }}%</p>
+    </div>
+    <div class="metric">
+      <p class="metric-label">Max Drawdown</p>
+      <p class="metric-value value-neg">Port: {{ "%.2f"|format(view.max_dd) }}% | Bench: {{ "%.2f"|format(view.bench_max_dd) }}%</p>
+    </div>
+  </div>
+
+  <script id="equity-chart-data" type="application/json">{{ view.records_json|safe }}</script>
+  <div id="equity-chart-root"></div>
+  <script src="{{ url_for('static', filename='js/equity_chart.js') }}"></script>
+  <script>
+    initEquityChart('equity-chart-root', JSON.parse(document.getElementById('equity-chart-data').textContent));
+  </script>
+
+  <p class="caption">
+    📊 Tracking since {{ view.start_date }} | {{ view.n_days }} day(s) recorded |
+    Latest: {{ view.end_date }} | Portfolio includes cash drag (uninvested portion earns 6% p.a.)
+  </p>
+
+  <details class="expander">
+    <summary>📋 Daily NAV Details</summary>
+    <div class="expander-body">
+      <table class="data-table">
+        <thead>
+          <tr><th>Date</th><th>Port NAV</th><th>Bench NAV</th><th>Port Ret %</th>
+              <th>Bench Ret %</th><th># Held</th><th>Invested %</th></tr>
+        </thead>
+        <tbody>
+          {% for r in view.detail_rows %}
+          <tr>
+            <td>{{ r.date }}</td>
+            <td>{{ r.port_nav }}</td>
+            <td>{{ r.bench_nav }}</td>
+            <td>{{ r.port_ret if r.port_ret is not none else "—" }}</td>
+            <td>{{ r.bench_ret if r.bench_ret is not none else "—" }}</td>
+            <td>{{ r.n_held if r.n_held is not none else "—" }}</td>
+            <td>{{ r.invested_pct if r.invested_pct is not none else "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+{% elif single_day %}
+  <div class="banner">📅 Tracking started on {{ single_day_date }}. The equity curve chart will appear
+    after 2+ days of data. Run <code>Sharpe.py</code> again tomorrow!</div>
+{% else %}
+  <div class="banner">⚠️ No equity history found. Run <code>Sharpe.py</code> once to initialise the
+    performance tracker.</div>
+{% endif %}
+{% endblock %}

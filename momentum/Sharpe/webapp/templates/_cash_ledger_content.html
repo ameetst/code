@@ -1,0 +1,80 @@
+{# The swap target for every mutating cash-ledger action (#cash-content). #}
+{% if error %}<div class="banner error">❌ {{ error }}</div>{% endif %}
+{% if warning %}<div class="banner">⚠️ {{ warning }}</div>{% endif %}
+{% if success %}<div class="banner success">✅ {{ success }}</div>{% endif %}
+
+<div class="metric-row">
+  <div class="metric">
+    <p class="metric-label">Total Deposits</p>
+    <p class="metric-value">Rs {{ "{:,.2f}".format(summary.by_type['Deposit']) }}</p>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Total Withdrawals</p>
+    <p class="metric-value">Rs {{ "{:,.2f}".format(summary.by_type['Withdrawal']) }}</p>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Dividends + Interest</p>
+    <p class="metric-value">Rs {{ "{:,.2f}".format(summary.by_type['Dividend'] + summary.by_type['Interest']) }}</p>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Net Cash Contributed</p>
+    <p class="metric-value {{ 'value-pos' if summary.net >= 0 else 'value-neg' }}">
+      Rs {{ "{:,.2f}".format(summary.net) }}
+    </p>
+  </div>
+</div>
+<p class="caption">Fees/Charges paid to date: Rs {{ "{:,.2f}".format(summary.by_type['Fees/Charges']) }}</p>
+
+<h3>➕ Log New Cash Entry</h3>
+<form class="trade-form" hx-post="{{ url_for('cash_ledger.add') }}" hx-target="#cash-content" hx-swap="innerHTML">
+  <div class="form-row form-row-nowrap">
+    <label>Type
+      <select name="type">
+        {% for t in entry_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Date <input type="date" name="date" value="{{ today }}"></label>
+    <label>Amount (INR) <input type="number" name="amount" min="0" step="1000" value="0"></label>
+  </div>
+  <div class="form-row">
+    <label style="flex:1;">Note (optional)
+      <input type="text" name="note" placeholder="e.g. Salary top-up, broker payout, AMC fee">
+    </label>
+  </div>
+  <div>
+    <button type="submit" class="btn-primary">💾 Record Cash Entry</button>
+  </div>
+</form>
+
+<h3>🕒 Cash Transaction History</h3>
+{% if not history_rows %}
+  <div class="banner">No cash transactions logged yet.</div>
+{% else %}
+  <form hx-post="{{ url_for('cash_ledger.delete') }}" hx-target="#cash-content" hx-swap="innerHTML"
+        hx-confirm="Delete the selected cash entries? This cannot be undone.">
+    <table class="data-table">
+      <thead>
+        <tr><th></th><th>Date</th><th>Type</th><th>Amount</th><th>Balance</th><th>Note</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for e in history_rows %}
+        <tr class="{{ e.row_class }}">
+          <td><input type="checkbox" name="entry_id" value="{{ e.id }}"></td>
+          <td>{{ e.date }}</td>
+          <td>{{ e.type }}</td>
+          <td>Rs {{ "{:,.2f}".format(e.amount) }}</td>
+          <td>Rs {{ "{:,.2f}".format(e.balance) }}</td>
+          <td>{{ e.note or "—" }}</td>
+          <td><a href="#" hx-get="{{ url_for('cash_ledger.edit_form', entry_id=e.id) }}"
+                 hx-target="#cash-edit-form-wrapper" hx-swap="innerHTML">Edit</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit" class="btn-secondary">🗑️ Delete Selected</button>
+  </form>
+{% endif %}
+
+<div id="cash-edit-form-wrapper">
+  {% include "_cash_edit_form.html" %}
+</div>

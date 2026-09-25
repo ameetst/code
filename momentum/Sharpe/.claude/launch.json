@@ -6,6 +6,12 @@
       "runtimeExecutable": "streamlit",
       "runtimeArgs": ["run", "sharpe_dashboard.py", "--server.headless", "true", "--server.port", "8502"],
       "port": 8502
+    },
+    {
+      "name": "sharpe-webapp-flask",
+      "runtimeExecutable": "webapp/.venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "waitress", "--host=127.0.0.1", "--port=8000", "webapp.app:app"],
+      "port": 8000
     }
   ]
 }

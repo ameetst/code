@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% set active_tab = "cash" %}
+{% block content %}
+<h2>💰 Cash Ledger</h2>
+<p class="caption">Track every deposit, withdrawal, dividend, interest credit and fee moving into or
+   out of the portfolio — independent of stock trades.</p>
+<div id="cash-content">
+  {% include "_cash_ledger_content.html" %}
+</div>
+{% endblock %}

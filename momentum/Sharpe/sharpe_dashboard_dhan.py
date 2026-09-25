@@ -636,7 +636,7 @@ params = {
         "Hold Lock":        "28 days",
         "52H Filter":       ">= -25%",
         "Rel 52H DD Exit":  f"< {rel_dd_breach_threshold:.0f}% (respects hold lock)",
-        "ADTV Filter":      f">= {min_turnover_cr} Cr (12M or 6M median)",
+        "MDTV Filter":      f">= {min_turnover_cr} Cr (12M or 6M median)",
         "Series EQ Filter": "Enabled" if eq_series_filter else "Disabled",
         "Circuit Filter":   f"Enabled (>= {circuit_threshold} days)" if circuit_filter_enabled else "Disabled",
         "Rank Buffer":      str(hold_rank_buffer),   # manual, stored in dashboard_config.json — shared with Sharpe.py's HOLD_RANK_BUFFER
@@ -799,7 +799,7 @@ else:
         elif is_series_breach:
             trigger = "SERIES_BREACH";   action = "⚠️ SELL IMMEDIATELY (Non-EQ series)"
         elif is_adtv_breach:
-            trigger = "ADTV_BREACH";     action = "⚠️ SELL IMMEDIATELY (Low ADTV)"
+            trigger = "ADTV_BREACH";     action = "⚠️ SELL IMMEDIATELY (Low MDTV)"
         elif pd.isna(rank_val):
             trigger = "FILTER_BREACH";   action = "⚠️ SELL IMMEDIATELY"
         elif is_reldd_breach and held >= 28:
@@ -1097,8 +1097,22 @@ with tab_top:
     held_tickers = set(active_holdings.keys())
     rows = []
 
+    # Circuit-hit frequency (UC/LC over trailing 252 sessions) — always computed
+    # here regardless of the Circuit Hit Frequency Filter setting, same as the
+    # New Entry Candidates section below.
+    try:
+        _top_circuit_df = ml.compute_circuit_hits(
+            prices_df, result.head(DISPLAY_N).index.tolist(), str(band_csv), lookback_period=252)
+    except Exception:
+        _top_circuit_df = None
+
     for ticker, row in result.head(DISPLAY_N).iterrows():
         ltp = latest_prices.get(ticker, 0.0)
+
+        if _top_circuit_df is not None and ticker in _top_circuit_df.index:
+            circuit_hits_str = f"{int(_top_circuit_df.loc[ticker, 'UC_COUNT'])} / {int(_top_circuit_df.loc[ticker, 'LC_COUNT'])}"
+        else:
+            circuit_hits_str = "—"
 
         # Compute annualised volatility — mean across 4 windows (same as weight-sizing engine)
         mean_vol = None
@@ -1125,6 +1139,7 @@ with tab_top:
             "Volatility %":  round(mean_vol * 100, 1) if mean_vol is not None else None,
             "Vol-Adj Score": vol_adj,
             "LTP":           ltp if ltp > 0 else None,
+            "Circuit Hits (UC/LC)": circuit_hits_str,
         })
 
     top25_df = pd.DataFrame(rows)
@@ -1984,7 +1999,7 @@ with tab_config:
                "dashboard's position sizing and Sharpe.py.")
 
     st.divider()
-    st.markdown("#### 📊 ADTV Liquidity Filter")
+    st.markdown("#### 📊 MDTV Liquidity Filter")
     st.number_input("Min Median Daily Turnover (₹ Cr)",
                     min_value=0.0, max_value=10.0, step=0.25, format="%.2f",
                     key="cfg_min_turnover",
@@ -1999,7 +2014,7 @@ with tab_config:
         st.caption(f"✅ Volume data available | 12M pass: {_n_pass_12m}/{_n_total} | "
                    f"6M pass: {_n_pass_6m}/{_n_total}")
     else:
-        st.caption("⚠️ No VOLUME sheet in data file — ADTV filter inactive. "
+        st.caption("⚠️ No VOLUME sheet in data file — MDTV filter inactive. "
                    "Run `update_stock_price.py` with latest version to add volume data.")
 
     st.divider()

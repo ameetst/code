@@ -1,0 +1,21 @@
+{# Rendered standalone (HTMX swap target) and on first load of full_rankings.html. #}
+<table class="data-table">
+  <thead>
+    <tr><th>Ticker</th>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr class="{{ row.row_class }}">
+      <td>{{ row.ticker }}</td>
+      {% for value in row.cells %}<td>{{ value }}</td>{% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="caption">
+  Universe: {{ summary.universe_count }} &nbsp;|&nbsp;
+  Eligible: {{ summary.eligible_count }} &nbsp;|&nbsp;
+  Disqualified: {{ summary.disqualified_count }} &nbsp;|&nbsp;
+  Rel_52H_DD &lt; {{ "%.0f"|format(rel_dd_breach_threshold) }}%: {{ summary.breach_count }} &nbsp;|&nbsp;
+  Regime N (green rows): {{ summary.dynamic_n }}
+</p>

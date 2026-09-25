@@ -1,0 +1,121 @@
+{# The swap target after Save (#config-content). #}
+{% if error %}<div class="banner error">❌ {{ error }}</div>{% endif %}
+{% if success %}<div class="banner success">✅ {{ success }}</div>{% endif %}
+
+<form class="trade-form" hx-post="{{ url_for('configuration.save') }}" hx-target="#config-content" hx-swap="innerHTML">
+
+  <h4>📁 Data Source</h4>
+  <div class="form-row">
+    <label>Input File
+      <select name="file">
+        {% for f in files %}
+        <option value="{{ f }}" {{ "selected" if f == cfg.file }}>{{ f }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  <h4>💰 Capital &amp; Sizing</h4>
+  <div class="form-row form-row-nowrap">
+    <label>Portfolio Capital (INR)
+      <input type="number" name="capital" min="100000" step="100000" value="{{ cfg.capital|int }}">
+    </label>
+    <label>Min Positions
+      <input type="number" name="min_n" min="3" max="10" step="1" value="{{ cfg.min_n }}">
+    </label>
+    <label>Max Positions
+      <input type="number" name="max_n" min="15" max="30" step="1" value="{{ cfg.max_n }}">
+    </label>
+  </div>
+  <p class="caption">
+    <strong>{{ params['Max Position Size'] }}</strong> Max Position Size (INR) — auto-computed as
+    Portfolio Capital ÷ Max Positions. This is the hard cap on capital allocated to any single
+    position — used by both the dashboard's position sizing and Sharpe.py.
+  </p>
+
+  <h4>📊 ADTV Liquidity Filter</h4>
+  <div class="form-row">
+    <label>Min Median Daily Turnover (₹ Cr)
+      <input type="number" name="min_turnover" min="0" max="10" step="0.25" value="{{ cfg.min_turnover }}">
+    </label>
+  </div>
+  {% if adtv %}
+    <p class="caption">✅ Volume data available | 12M pass: {{ adtv.pass_12m }}/{{ adtv.total }} |
+       6M pass: {{ adtv.pass_6m }}/{{ adtv.total }}</p>
+  {% else %}
+    <p class="caption">⚠️ No VOLUME sheet in data file — ADTV filter inactive. Run
+       <code>update_stock_price.py</code> with latest version to add volume data.</p>
+  {% endif %}
+
+  <h4>🚦 Universe Eligibility Filters</h4>
+  <div class="form-row">
+    <label class="checkbox-label">
+      <input type="checkbox" name="eq_series_filter" {{ "checked" if cfg.eq_series_filter }}>
+      Restrict to Series EQ only
+    </label>
+  </div>
+  <p class="caption">When enabled, only stocks in the NSE 'EQ' (rolling settlement) series are
+     included in rankings. Stocks not found in Price_Band_List.csv default to EQ.</p>
+
+  <div class="form-row">
+    <label class="checkbox-label">
+      <input type="checkbox" name="circuit_filter_enabled" id="circuit-toggle"
+             onchange="document.getElementById('circuit-threshold-row').style.display = this.checked ? '' : 'none';"
+             {{ "checked" if cfg.circuit_filter_enabled }}>
+      Circuit Hit Frequency Filter
+    </label>
+  </div>
+  <div class="form-row" id="circuit-threshold-row" style="{{ '' if cfg.circuit_filter_enabled else 'display:none;' }}">
+    <label>Max Circuit Hit Days (in 252 trading days)
+      <input type="number" name="circuit_threshold" min="5" max="100" step="5" value="{{ cfg.circuit_threshold }}">
+    </label>
+  </div>
+  {% if circuit_exceed is not none %}
+    <p class="caption">ℹ️ {{ circuit_exceed }} stocks currently exceed the {{ cfg.circuit_threshold }}-day
+       threshold and will be excluded from rankings.</p>
+  {% endif %}
+
+  <h4>📉 Relative 52H Drawdown Exit</h4>
+  <p class="caption">Additive Spread Approach: Rel_52H_DD = Stock's % distance from its 52W high minus
+     the benchmark's % distance from its 52W high. A held stock whose Rel_52H_DD falls below the
+     threshold below is flagged REL_DD_BREACH in the Actions Monitor (respects the 28-day hold lock).</p>
+  <div class="form-row">
+    <label>Rel_52H_DD Breach Threshold (%)
+      <input type="number" name="rel_dd_breach_threshold" min="-50" max="0" step="1"
+             value="{{ cfg.rel_dd_breach_threshold }}">
+    </label>
+  </div>
+
+  <h4>🚪 Rank-Drop Exit</h4>
+  <div class="form-row">
+    <label>Rank Buffer (exit rank threshold)
+      <input type="number" name="hold_rank_buffer" min="1" max="5000" step="5" value="{{ cfg.hold_rank_buffer }}">
+    </label>
+  </div>
+  <p class="caption">A held stock whose rank falls beyond this value is flagged for exit once the
+     28-day hold lock has passed. Entered manually — it does not scale with Max Positions. Shared
+     with Sharpe.py once saved.</p>
+
+  <div class="save-row">
+    <button type="submit" class="btn-primary">💾 Save Configuration</button>
+    {% if last_saved %}
+      <span class="caption">📄 Last saved: {{ last_saved }}</span>
+    {% else %}
+      <span class="caption">⚠️ No saved config found — using defaults.</span>
+    {% endif %}
+  </div>
+</form>
+
+<h4>📋 Strategy Parameters (Read-only)</h4>
+<table class="data-table">
+  <tbody>
+    {% for k, v in params.items() %}
+    {% if k != "Max Position Size" %}
+    <tr><td><strong>{{ k }}</strong></td><td>{{ v }}</td></tr>
+    {% endif %}
+    {% endfor %}
+  </tbody>
+</table>
+<p class="caption">Sharpe Momentum Strategy v3.0 — Dynamic Regime</p>
+<div class="banner info">Changes take effect on the next page load after Save — this webapp does not
+   live-preview ranking impact as you type, unlike the Streamlit dashboard.</div>

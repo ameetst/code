@@ -1,0 +1,33 @@
+{# Included by _tradelog_content.html on full-page load, and re-rendered standalone
+   by GET /tradelog/row-form when an Active Holdings row is clicked. #}
+<h3>➕ Log New Transaction</h3>
+<form class="trade-form" hx-post="{{ url_for('tradelog.add') }}" hx-target="#tradelog-content" hx-swap="innerHTML">
+  <div class="form-row form-row-nowrap">
+    <label>Ticker
+      <select name="ticker">
+        {% for t in stock_tickers %}
+        <option value="{{ t }}" {{ "selected" if t == form.ticker }}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Action
+      <select name="action">
+        <option value="BUY">BUY</option>
+        <option value="SELL">SELL</option>
+      </select>
+    </label>
+    <label>Transaction Date
+      <input type="date" name="date" value="{{ today }}">
+    </label>
+    <label>Quantity
+      <input type="number" name="quantity" min="1" step="1" value="{{ form.qty }}">
+    </label>
+    <label>Price per Share (INR)
+      <input type="number" name="price" min="0.01" step="0.01" value="{{ form.price }}">
+    </label>
+  </div>
+  <div>
+    <button type="submit" class="btn-primary">💾 Record Transaction</button>
+    {% if read_only %}<span class="caption">Read-only preview — submitting will show why it's blocked.</span>{% endif %}
+  </div>
+</form>

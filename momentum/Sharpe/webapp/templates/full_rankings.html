@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% set active_tab = "full" %}
+{% block content %}
+<h2>📋 Full Universe Rankings</h2>
+
+<form class="filter-row" hx-get="{{ url_for('rankings.full_table_partial') }}"
+      hx-target="#full-table" hx-trigger="change" hx-swap="innerHTML">
+  <label>Eligibility
+    <select name="eligibility">
+      {% for opt in eligibility_options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Show top N
+    <input type="range" name="top_n" min="10" max="{{ total }}" step="10" value="{{ default_top_n }}"
+           oninput="this.nextElementSibling.textContent = this.value">
+    <output>{{ default_top_n }}</output>
+  </label>
+  <label>Sort by
+    <select name="sort_col">
+      {% for opt in sort_options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
+
+<div id="full-table" hx-get="{{ url_for('rankings.full_table_partial') }}?top_n={{ default_top_n }}"
+     hx-trigger="load" hx-swap="innerHTML">
+  <p class="caption">Loading…</p>
+</div>
+{% endblock %}
