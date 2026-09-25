@@ -222,15 +222,15 @@ def fmt_date(d) -> str:
 # ── Full Universe Rankings (ported from the tab_calcs block) ─────────────────
 
 FULL_DISPLAY_COLUMNS = ["RANK", "SERIES", "COMPOSITE", "SHARPE_3", "RES_MOM",
-                         "1M%", "3M%", "12M%", "PCT_FROM_52H", "REL_52H_DD", "BETA"]
+                         "3M%", "12M%", "PCT_FROM_52H", "REL_52H_DD", "BETA"]
 FULL_COLUMN_LABELS = {
     "RANK": "Rank", "SERIES": "Series", "COMPOSITE": "Composite", "SHARPE_3": "Sharpe 3M",
-    "RES_MOM": "Res Mom", "1M%": "1M %", "3M%": "3M %", "12M%": "12M %",
+    "RES_MOM": "Res Mom", "3M%": "3M %", "12M%": "12M %",
     "PCT_FROM_52H": "% From 52H", "REL_52H_DD": "Rel 52H DD", "BETA": "Beta",
 }
 SORT_OPTIONS = ["RANK", "COMPOSITE", "RES_MOM", "PCT_FROM_52H", "REL_52H_DD"]
 ELIGIBILITY_OPTIONS = ["All", "Eligible only", "Disqualified only"]
-_ONE_DECIMAL_COLS = {"PCT_FROM_52H", "REL_52H_DD", "1M%", "3M%", "12M%"}
+_ONE_DECIMAL_COLS = {"PCT_FROM_52H", "REL_52H_DD", "3M%", "12M%"}
 _TWO_DECIMAL_COLS = {"BETA"}
 
 

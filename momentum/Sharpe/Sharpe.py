@@ -1081,7 +1081,7 @@ calcs_cols = [
     ("RS_12M",     9), ("RS_9M",      9), ("RS_6M",    9), ("RS_3M",   9),
     ("RZ_12M",     9), ("RZ_9M",      9), ("RZ_6M",    9), ("RZ_3M",   9),
     ("RES_MOM",   10),
-    ("1M%",        8), ("3M%",        8), ("12M%",     8),
+    ("3M%",        8), ("12M%",     8),
     ("52H%",      10), ("REL_DD",    10), ("BETA",      8),
 ]
 for c, (col_name, col_w) in enumerate(calcs_cols, 1):
@@ -1128,7 +1128,6 @@ for i, (ticker, row) in enumerate(result.iterrows(), 3):
         (row["RZ_6M"],       MUTED_FONT, bg,        "0.000"),
         (row["RZ_3M"],       MUTED_FONT, bg,        "0.000"),
         (row["RES_MOM"],     CYAN_FONT,  bg,        "0.000"),
-        (row["1M%"],         TEXT_FONT,  bg,        "0.0"),
         (row["3M%"],         TEXT_FONT,  bg,        "0.0"),
         (row["12M%"],        TEXT_FONT,  bg,        "0.0"),
         (pct52h,             pct52h_fnt, pct52h_bg, "0.0"),

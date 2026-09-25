@@ -1926,7 +1926,7 @@ with tab_calcs:
                                  ["RANK", "COMPOSITE", "RES_MOM", "PCT_FROM_52H", "REL_52H_DD"])
 
     display_cols = ["RANK", "SERIES", "COMPOSITE", "SHARPE_3"]
-    for c in ["RES_MOM", "1M%", "3M%", "12M%", "PCT_FROM_52H", "REL_52H_DD", "BETA"]:
+    for c in ["RES_MOM", "3M%", "12M%", "PCT_FROM_52H", "REL_52H_DD", "BETA"]:
         if c in result.columns: display_cols.append(c)
 
     calcs_df = result[[c for c in display_cols if c in result.columns]].copy()
@@ -1946,7 +1946,7 @@ with tab_calcs:
            if c not in ["RANK", "TICKER", "SERIES"]}
     fmt["PCT_FROM_52H"] = "{:.1f}"
     fmt["REL_52H_DD"]   = "{:.1f}"
-    for c in ["1M%", "3M%", "12M%"]:
+    for c in ["3M%", "12M%"]:
         if c in fmt: fmt[c] = "{:.1f}"
     if "BETA" in fmt: fmt["BETA"] = "{:.2f}"
 
