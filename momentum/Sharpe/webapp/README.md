@@ -164,10 +164,36 @@ Done:
   **warning**, not a rejection — it's still recorded (a portfolio's real cash position can
   legitimately exceed the ledger's own running total via investment gains/proceeds outside it).
 - **Configuration** — Data Source, Capital & Sizing (with the derived Max Position Size shown
-  live), MDTV filter with pass-count captions, the Series-EQ and Circuit-Hit-Frequency toggles
+  live), MDTV filter with pass-count captions, a **Min CMP filter** and a **Min Market Cap
+  filter**, each with its own pass-count caption, the Series-EQ and Circuit-Hit-Frequency toggles
   (the latter's threshold field shows/hides via a couple lines of vanilla JS, not a round trip),
   the Rel-52H-DD and Rank-Buffer exit thresholds, one Save button, and the read-only Strategy
-  Parameters summary. **Deliberate simplification vs. Streamlit**: this page does not
+  Parameters summary. **Min CMP and Min Market Cap are architecturally different from every
+  other filter here**: neither feeds the master `eligible`/`RANK` gate in
+  `momentum_lib.compute_universe_rankings` (unlike MDTV/EQ-series/circuit), so neither nulls a
+  held position's RANK or triggers a forced exit — a ticker failing either still ranks normally,
+  it's only skipped when `entry_candidates()` (here and in Sharpe.py) fills open slots for NEW
+  buys. This was a deliberate choice: MDTV/EQ/circuit failures already force an immediate exit on
+  a held position with no 28-day hold-lock grace period, and both a raw price threshold and a
+  market-cap threshold were judged too noisy day-to-day (or, for market cap, too dependent on a
+  manually-maintained CSV) to carry that same immediate-exit behavior — existing holdings are
+  grandfathered regardless of price or market cap.
+  **Min Market Cap's data source**: `STOCKDB.csv`'s `MARKETCAP_CR` column — despite the name, this
+  holds absolute Rs, not Rs Cr (divide by 1e7; verified against the file's own LARGECAP/MIDCAP/
+  SMALLCAP/MICROCAP tier boundaries, which line up exactly once converted). A ticker missing from
+  `STOCKDB.csv` entirely fails the filter; a value of exactly 0 is treated as "not yet populated"
+  and passes rather than fails, since the file uses 0 as a placeholder (e.g. SCI, SBICARD) rather
+  than a genuine zero market cap.
+  **`Price_Band_List.csv` is fully retired** as of this change — `momentum_lib.py`'s
+  `compute_universe_rankings()`/`compute_circuit_hits()` now read Series/Band from `STOCKDB.csv`
+  instead (param renamed `band_csv_path` → `stockdb_csv_path`, columns `Symbol`/`Series`/`Band` →
+  `SYMBOL`/`SERIES`/`BAND`). The two files' data genuinely differ for some tickers (not just
+  formatting) — e.g. HFCL (a live holding) is `EQ` in the old file, `BE` in `STOCKDB.csv` — so this
+  changes real EQ-Series/Circuit-Hit filter outcomes if either is enabled, though both are off by
+  default today. A redundant `result["SERIES"]` recomputation that existed separately in both
+  Streamlit dashboards (duplicating what `compute_universe_rankings()` already sets) was deleted
+  rather than migrated, since it was dead weight even before this change.
+  **Deliberate simplification vs. Streamlit**: this page does not
   live-preview ranking impact as you type — the ranking cache is keyed on the *saved* config,
   so a change takes effect project-wide only after Save (and the next page load). Streamlit's
   live preview is a side effect of its rerun-everything-on-every-widget-change model, which
@@ -198,10 +224,12 @@ Done:
   error unless you opened devtools. Fixed by nesting that registration inside the
   `DOMContentLoaded` handler.
 
-59 tests pass: Tradelog's and Cash Ledger's pure-logic tests (average-cost accounting, oversell
+68 tests pass: Tradelog's and Cash Ledger's pure-logic tests (average-cost accounting, oversell
 rejection, inflow/outflow summation, chronological running balance, atomic save/backup — all
-against `tmp_path`, never live files), Configuration's clamping/params/ADTV/circuit-count tests
-against the live bundle (read-only), and HTTP-level tests everywhere that prefill/edit-form
+against `tmp_path`, never live files), Configuration's clamping/params/ADTV/circuit-count/Min-CMP-
+and Min-Market-Cap-pass-count tests against the live bundle (read-only) — including a regression
+test that HFCL's SERIES resolves to `BE` (STOCKDB.csv) rather than the old `EQ` (Price_Band_List.csv)
+to prove the source actually switched — and HTTP-level tests everywhere that prefill/edit-form
 loaders return the exact requested values and that every mutating route is blocked with a
 200 + banner (not a silent 403) and touches no data file while read-only.
 

@@ -83,6 +83,8 @@ CONFIG_DEFAULTS = {
     "min_n":                   5,     # minimum holdings at lowest regime score
     "max_n":                   25,    # maximum holdings at highest regime score
     "min_turnover":            1.0,
+    "min_cmp":                 10.0,  # min current market price (Rs); 0 disables
+    "min_market_cap":          500.0, # min market cap (Rs Cr, from STOCKDB.csv); 0 disables
     "eq_series_filter":        True,
     "circuit_filter_enabled":  True,
     "circuit_threshold":       20,
@@ -1004,7 +1006,7 @@ def normalise_composite(v: float) -> float:
 def compute_circuit_hits(
     prices_df: pd.DataFrame,
     stock_tickers: list,
-    band_csv_path: str = "Price_Band_List.csv",
+    stockdb_csv_path: str = "STOCKDB.csv",
     lookback_period: int = 252,
     default_circuit_percent: float = 5.0,
     upper_buffer: float = 0.998,
@@ -1014,7 +1016,7 @@ def compute_circuit_hits(
     Python implementation of Pine Script 'Circuit Close Highlighter & Counter'.
 
     Calculates upper and lower circuit close counts over `lookback_period` (default 252 bars).
-    Reads price band per stock from Price_Band_List.csv if available.
+    Reads price band per stock from STOCKDB.csv if available.
 
     Formula (matches Pine Script v6):
       prev_close   = close[1]
@@ -1031,13 +1033,13 @@ def compute_circuit_hits(
     from pathlib import Path
 
     band_map = {}
-    if band_csv_path and Path(band_csv_path).exists():
+    if stockdb_csv_path and Path(stockdb_csv_path).exists():
         try:
-            b_df = pd.read_csv(band_csv_path)
+            b_df = pd.read_csv(stockdb_csv_path)
             for _, row in b_df.iterrows():
-                sym = str(row["Symbol"]).strip()
+                sym = str(row["SYMBOL"]).strip()
                 try:
-                    band_map[sym] = float(row["Band"])
+                    band_map[sym] = float(row["BAND"])
                 except (ValueError, TypeError):
                     pass
         except Exception:
@@ -1231,10 +1233,12 @@ def compute_universe_rankings(
     stock_tickers: list,
     volume_df: pd.DataFrame = None,
     min_turnover_cr: float = 1.0,
+    min_cmp: float = 0.0,
+    min_market_cap: float = 0.0,
     eq_series_filter: bool = True,
     circuit_filter_enabled: bool = True,
     circuit_threshold: int = 20,
-    band_csv_path: str = "Price_Band_List.csv",
+    stockdb_csv_path: str = "STOCKDB.csv",
     windows: dict = None,
     trading_days: int = 252,
     rfr_annual: float = 0.07,
@@ -1252,10 +1256,14 @@ def compute_universe_rankings(
       2. Compute PCT_FROM_52H, REL_52H_DD (vs benchmark) and Price Returns (1M, 3M, 12M)
       3. Compute Residual Momentum Z-Scores
       4. Apply MDTV Turnover filter (if volume data present)
-      5. Apply Series EQ filter (excludes non-EQ series)
-      6. Apply Circuit Hit Frequency filter
-      7. Master eligibility gate → rank eligible stocks by COMPOSITE
-      8. Compute Dynamic Market Regime Score & dynamic N
+      5. Flag Min CMP (current price) and Min Market Cap eligibility —
+         informational only; neither gates RANK, they only exclude
+         candidates from NEW entries
+      6. Apply Series EQ filter (excludes non-EQ series) — sourced from
+         STOCKDB.csv
+      7. Apply Circuit Hit Frequency filter — band % also from STOCKDB.csv
+      8. Master eligibility gate → rank eligible stocks by COMPOSITE
+      9. Compute Dynamic Market Regime Score & dynamic N
 
     Returns
     -------
@@ -1297,14 +1305,35 @@ def compute_universe_rankings(
         adtv_ok = pd.Series(True, index=result.index)
         result["ADTV_ELIGIBLE"] = True
 
-    # 3. Series EQ Filter & Mapping
+    # 2b. Min CMP (current market price) Filter — informational only. Unlike
+    # MDTV/EQ/circuit, this does NOT feed the master `eligible` gate below, so
+    # it never nulls RANK for a currently-held position and never triggers a
+    # forced exit. It only marks candidates as ineligible for NEW entries
+    # (see entry_candidates() in Sharpe.py / webapp/core/actions.py).
+    if min_cmp and min_cmp > 0:
+        latest_px = pd.Series({
+            t: (prices_df.loc[t].dropna().iloc[-1]
+                if not prices_df.loc[t].dropna().empty else np.nan)
+            for t in stock_tickers
+        })
+        result["CMP_ELIGIBLE"] = (latest_px >= min_cmp).reindex(result.index).fillna(False)
+    else:
+        result["CMP_ELIGIBLE"] = True
+
+    # 3. Series EQ Filter & Mapping (from STOCKDB.csv)
     series_map = {}
-    csv_p = Path(band_csv_path) if band_csv_path else None
+    mcap_raw_map = {}   # ticker -> raw Rs market cap (absolute, NOT Cr) from STOCKDB.csv
+    csv_p = Path(stockdb_csv_path) if stockdb_csv_path else None
     if csv_p and csv_p.exists():
         try:
             b_df = pd.read_csv(csv_p)
             for _, r in b_df.iterrows():
-                series_map[str(r["Symbol"]).strip()] = str(r["Series"]).strip()
+                sym = str(r["SYMBOL"]).strip()
+                series_map[sym] = str(r["SERIES"]).strip()
+                try:
+                    mcap_raw_map[sym] = float(r["MARKETCAP_CR"])
+                except (ValueError, TypeError, KeyError):
+                    pass
         except Exception:
             pass
 
@@ -1315,6 +1344,24 @@ def compute_universe_rankings(
             [s == "EQ" for s in result["SERIES"]], index=result.index)
     else:
         eq_ok = pd.Series(True, index=result.index)
+
+    # 3b. Min Market Cap Filter — informational only, same non-gating pattern as
+    # Min CMP above. A missing STOCKDB.csv row fails the filter; a value of
+    # exactly 0 is treated as "unknown data" and passes (STOCKDB.csv uses 0 as
+    # a not-yet-populated placeholder, not a genuine zero market cap).
+    # mcap_raw_map values are absolute Rs (despite the MARKETCAP_CR column
+    # name) — divide by 1e7 to get Rs Cr before comparing to the threshold.
+    if min_market_cap and min_market_cap > 0:
+        def _mcap_ok(t):
+            raw = mcap_raw_map.get(t)
+            if raw is None:
+                return False
+            if raw == 0:
+                return True
+            return (raw / 1e7) >= min_market_cap
+        result["MCAP_ELIGIBLE"] = [_mcap_ok(t) for t in result.index]
+    else:
+        result["MCAP_ELIGIBLE"] = True
 
     # 4. Circuit Hit Frequency Filter
     if circuit_filter_enabled and csv_p and csv_p.exists():

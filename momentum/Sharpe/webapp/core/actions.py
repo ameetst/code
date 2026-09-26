@@ -144,6 +144,10 @@ def entry_candidates(bundle: rankings.Bundle, cfg: dict, ledger: dict,
     for ticker in result.index:
         if ticker in held_tickers:
             continue
+        if "CMP_ELIGIBLE" in result.columns and not bool(result.loc[ticker, "CMP_ELIGIBLE"]):
+            continue  # below Min CMP -- blocked for new entries only, held positions unaffected
+        if "MCAP_ELIGIBLE" in result.columns and not bool(result.loc[ticker, "MCAP_ELIGIBLE"]):
+            continue  # below Min Market Cap -- blocked for new entries only, held positions unaffected
         if len(candidates) >= n_new_positions:
             break
         candidates.append(ticker)
@@ -179,7 +183,7 @@ def entry_candidates(bundle: rankings.Bundle, cfg: dict, ledger: dict,
         scale = 1.0
 
     try:
-        circuit_df = ml.compute_circuit_hits(bundle.prices_df, candidates, str(rankings.BAND_CSV), lookback_period=252)
+        circuit_df = ml.compute_circuit_hits(bundle.prices_df, candidates, str(rankings.STOCKDB_CSV), lookback_period=252)
     except Exception:
         circuit_df = None
 

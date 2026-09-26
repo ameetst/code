@@ -23,6 +23,8 @@ FIELD_BOUNDS = {
     "min_n":                   (3, 10),
     "max_n":                   (15, 30),
     "min_turnover":            (0.0, 10.0),
+    "min_cmp":                 (0, 1000),
+    "min_market_cap":          (0, 2_000_000),
     "circuit_threshold":       (5, 100),
     "rel_dd_breach_threshold": (-50, 0),
     "hold_rank_buffer":        (1, 5000),
@@ -60,15 +62,59 @@ def adtv_pass_counts(bundle: rankings.Bundle, min_turnover_cr: float) -> dict | 
     }
 
 
+def cmp_pass_count(bundle: rankings.Bundle, min_cmp: float) -> dict | None:
+    """None when the filter is disabled (min_cmp <= 0). Otherwise counts how many
+    tickers pass (current price >= min_cmp) vs the universe total, recomputed
+    fresh from bundle.latest_prices against the given threshold (mirrors
+    adtv_pass_counts' recompute-from-raw-values pattern, rather than reusing
+    CMP_ELIGIBLE, which reflects whatever min_cmp the bundle itself was built
+    with). Existing holdings are never excluded by this filter -- see
+    CMP_ELIGIBLE in momentum_lib.compute_universe_rankings."""
+    if not min_cmp or min_cmp <= 0:
+        return None
+    result = bundle.result
+    passed = sum(1 for t in result.index if bundle.latest_prices.get(t, 0.0) >= min_cmp)
+    return {
+        "total": len(result),
+        "pass": passed,
+    }
+
+
+def mcap_pass_count(bundle: rankings.Bundle, min_market_cap: float) -> dict | None:
+    """None when the filter is disabled (min_market_cap <= 0). Otherwise counts how many
+    tickers pass vs the universe total, recomputed fresh from bundle.market_caps_raw
+    against the given threshold (same recompute-from-raw-values pattern as
+    cmp_pass_count/adtv_pass_counts). A ticker missing from STOCKDB.csv fails; a raw
+    value of exactly 0 is treated as unknown data and passes -- mirrors the same rule
+    in momentum_lib.compute_universe_rankings's MCAP_ELIGIBLE."""
+    if not min_market_cap or min_market_cap <= 0:
+        return None
+    result = bundle.result
+
+    def _ok(t):
+        raw = bundle.market_caps_raw.get(t)
+        if raw is None:
+            return False
+        if raw == 0:
+            return True
+        return (raw / 1e7) >= min_market_cap
+
+    passed = sum(1 for t in result.index if _ok(t))
+    return {
+        "total": len(result),
+        "pass": passed,
+    }
+
+
 def circuit_hit_exceed_count(bundle: rankings.Bundle, circuit_threshold: int) -> int | None:
     """Stocks whose trailing-252-day circuit-hit count is at/above the given threshold.
     Recomputed fresh (not read off `result`) so it reflects circuit_threshold even when
     circuit_filter_enabled is currently off in the saved config."""
-    if not rankings.BAND_CSV.exists():
+    if not rankings.STOCKDB_CSV.exists():
         return None
     try:
         c_df = ml.compute_circuit_hits(bundle.prices_df, list(bundle.prices_df.index),
-                                        str(rankings.BAND_CSV), lookback_period=252)
+                                        str(rankings.STOCKDB_CSV), lookback_period=252)
     except Exception:
         return None
     return int((c_df["TOTAL_CIRCUIT_HITS"] >= circuit_threshold).sum())
@@ -89,6 +135,10 @@ def strategy_params(cfg: dict, universe: str) -> dict:
         "52H Filter": ">= -25%",
         "Rel 52H DD Exit": f"< {float(cfg['rel_dd_breach_threshold']):.0f}% (respects hold lock)",
         "MDTV Filter": f">= {cfg['min_turnover']} Cr (12M or 6M median)",
+        "Min CMP Filter": (f">= Rs {cfg['min_cmp']:.0f} (new entries only, holdings unaffected)"
+                           if cfg.get("min_cmp") else "Disabled"),
+        "Min Market Cap Filter": (f">= Rs {cfg['min_market_cap']:.0f} Cr (new entries only, holdings unaffected)"
+                                  if cfg.get("min_market_cap") else "Disabled"),
         "Series EQ Filter": "Enabled" if cfg["eq_series_filter"] else "Disabled",
         "Circuit Filter": (f"Enabled (>= {cfg['circuit_threshold']} days)"
                            if cfg["circuit_filter_enabled"] else "Disabled"),

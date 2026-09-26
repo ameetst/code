@@ -582,6 +582,10 @@ if "cfg_max_n" not in st.session_state:
     st.session_state.cfg_max_n = _saved_cfg["max_n"]
 if "cfg_min_turnover" not in st.session_state:
     st.session_state.cfg_min_turnover = _saved_cfg["min_turnover"]
+if "cfg_min_cmp" not in st.session_state:
+    st.session_state.cfg_min_cmp = _saved_cfg["min_cmp"]
+if "cfg_min_market_cap" not in st.session_state:
+    st.session_state.cfg_min_market_cap = _saved_cfg["min_market_cap"]
 if "cfg_eq_series_filter" not in st.session_state:
     st.session_state.cfg_eq_series_filter = _saved_cfg["eq_series_filter"]
 if "cfg_circuit_filter_enabled" not in st.session_state:
@@ -615,6 +619,8 @@ max_wt_pct = max_wt * 100.0
 max_position_size_inr = capital / MAX_N   # max INR allocatable to a single position
 
 min_turnover_cr       = st.session_state.cfg_min_turnover
+min_cmp               = st.session_state.cfg_min_cmp
+min_market_cap        = st.session_state.cfg_min_market_cap
 eq_series_filter      = st.session_state.cfg_eq_series_filter
 circuit_filter_enabled = st.session_state.cfg_circuit_filter_enabled
 circuit_threshold     = int(st.session_state.cfg_circuit_threshold)
@@ -637,6 +643,8 @@ params = {
         "52H Filter":       ">= -25%",
         "Rel 52H DD Exit":  f"< {rel_dd_breach_threshold:.0f}% (respects hold lock)",
         "MDTV Filter":      f">= {min_turnover_cr} Cr (12M or 6M median)",
+        "Min CMP Filter":   f">= Rs {min_cmp:.0f} (new entries only, holdings unaffected)" if min_cmp else "Disabled",
+        "Min Market Cap Filter": f">= Rs {min_market_cap:.0f} Cr (new entries only, holdings unaffected)" if min_market_cap else "Disabled",
         "Series EQ Filter": "Enabled" if eq_series_filter else "Disabled",
         "Circuit Filter":   f"Enabled (>= {circuit_threshold} days)" if circuit_filter_enabled else "Disabled",
         "Rank Buffer":      str(hold_rank_buffer),   # manual, stored in dashboard_config.json — shared with Sharpe.py's HOLD_RANK_BUFFER
@@ -655,17 +663,19 @@ def load_volume_data(filepath):
 
 @st.cache_data(show_spinner="Computing Sharpe rankings...")
 def compute_all(_prices_df, _nifty_series, _stock_tickers, _volume_df,
-                _min_turnover_cr, _eq_series_filter, _circuit_filter_enabled,
-                _circuit_threshold, _band_csv, signal_weights, min_n, max_n,
+                _min_turnover_cr, _min_cmp, _min_market_cap, _eq_series_filter, _circuit_filter_enabled,
+                _circuit_threshold, _stockdb_csv, signal_weights, min_n, max_n,
                 new_entry_threshold):
     return ml.compute_universe_rankings(
         _prices_df, _nifty_series, _stock_tickers,
         volume_df=_volume_df,
         min_turnover_cr=_min_turnover_cr,
+        min_cmp=_min_cmp,
+        min_market_cap=_min_market_cap,
         eq_series_filter=_eq_series_filter,
         circuit_filter_enabled=_circuit_filter_enabled,
         circuit_threshold=_circuit_threshold,
-        band_csv_path=_band_csv,
+        stockdb_csv_path=_stockdb_csv,
         windows=WINDOWS,
         trading_days=TRADING_DAYS,
         rfr_annual=RFR_ANNUAL,
@@ -710,27 +720,19 @@ try:
 except Exception:
     volume_df = None
 
+band_csv = SCRIPT_DIR / "STOCKDB.csv"  # Series/Band/Market-Cap source (retired Price_Band_List.csv)
+
 try:
     result, regime_score, regime_detail = compute_all(
-        prices_df, nifty_series, stock_tickers, volume_df, min_turnover_cr,
+        prices_df, nifty_series, stock_tickers, volume_df, min_turnover_cr, min_cmp, min_market_cap,
         eq_series_filter, circuit_filter_enabled, circuit_threshold,
-        str(SCRIPT_DIR / "Price_Band_List.csv"),
+        str(band_csv),
         SIGNAL_WEIGHTS, MIN_N, MAX_N, NEW_ENTRY_THRESHOLD)
 except Exception as e:
     st.error(f"Error computing rankings: {e}"); st.stop()
 
-# Load Series mapping from Price_Band_List.csv
-series_map = {}
-band_csv = SCRIPT_DIR / "Price_Band_List.csv"
-if band_csv.exists():
-    try:
-        b_df = pd.read_csv(band_csv)
-        for _, r in b_df.iterrows():
-            series_map[str(r["Symbol"]).strip()] = str(r["Series"]).strip()
-    except Exception:
-        pass
-
-result["SERIES"] = [series_map.get(t, "EQ") for t in result.index]
+# NOTE: result["SERIES"] is already set by ml.compute_universe_rankings() above
+# (from STOCKDB.csv) -- no need to redundantly recompute it here.
 
 
 # Record today's regime score and load full history for trend chart
@@ -1241,6 +1243,10 @@ with tab_exits:
             for ticker in result.index:
                 if ticker in held_tickers:
                     continue
+                if "CMP_ELIGIBLE" in result.columns and not bool(result.loc[ticker, "CMP_ELIGIBLE"]):
+                    continue  # below Min CMP -- blocked for new entries only, held positions unaffected
+                if "MCAP_ELIGIBLE" in result.columns and not bool(result.loc[ticker, "MCAP_ELIGIBLE"]):
+                    continue  # below Min Market Cap -- blocked for new entries only, held positions unaffected
                 if len(entry_candidates) >= n_new_positions:
                     break
                 entry_candidates.append(ticker)
@@ -2018,18 +2024,44 @@ with tab_config:
                    "Run `update_stock_price.py` with latest version to add volume data.")
 
     st.divider()
+    st.markdown("#### 💵 Min CMP Filter")
+    st.number_input("Min Current Market Price (₹)",
+                    min_value=0, max_value=1000, step=1, format="%d",
+                    key="cfg_min_cmp",
+                    help="Blocks stocks priced below this from NEW entries only. "
+                         "Currently held positions are never force-exited if their price "
+                         "drops below it. Set to 0 to disable.")
+    if min_cmp and min_cmp > 0 and "CMP_ELIGIBLE" in result.columns:
+        _n_cmp_pass = int(result["CMP_ELIGIBLE"].sum())
+        st.caption(f"ℹ️ {_n_cmp_pass}/{len(result)} stocks currently pass (price >= ₹{min_cmp:.0f})")
+
+    st.divider()
+    st.markdown("#### 🏢 Min Market Cap Filter")
+    st.number_input("Min Market Cap (₹ Cr)",
+                    min_value=0, max_value=2_000_000, step=50, format="%d",
+                    key="cfg_min_market_cap",
+                    help="Blocks stocks with market cap below this from NEW entries only "
+                         "(sourced from STOCKDB.csv). Currently held positions are never "
+                         "force-exited if their market cap drops below it. A ticker missing "
+                         "from STOCKDB.csv also fails this filter. Set to 0 to disable.")
+    if min_market_cap and min_market_cap > 0 and "MCAP_ELIGIBLE" in result.columns:
+        _n_mcap_pass = int(result["MCAP_ELIGIBLE"].sum())
+        st.caption(f"ℹ️ {_n_mcap_pass}/{len(result)} stocks currently pass "
+                   f"(market cap >= ₹{min_market_cap:.0f} Cr)")
+
+    st.divider()
     st.markdown("#### 🚦 Universe Eligibility Filters")
 
     st.toggle("Restrict to Series EQ only",
               key="cfg_eq_series_filter",
               help="When enabled, only stocks in the NSE 'EQ' (rolling settlement) series are "
                    "included in rankings. Non-EQ series stocks (e.g. BE / Trade-for-Trade) are "
-                   "excluded. Stocks not found in Price_Band_List.csv default to EQ.")
+                   "excluded. Stocks not found in STOCKDB.csv default to EQ.")
 
     st.toggle("Circuit Hit Frequency Filter",
               key="cfg_circuit_filter_enabled",
               help="When enabled, stocks that close at their upper or lower circuit limit too "
-                   "frequently are excluded from rankings. Uses Price_Band_List.csv for band limits.")
+                   "frequently are excluded from rankings. Uses STOCKDB.csv for band limits.")
 
     if st.session_state.cfg_circuit_filter_enabled:
         st.number_input(
@@ -2039,11 +2071,11 @@ with tab_config:
             help="Stocks that closed at their upper or lower circuit limit on >= this many days "
                  "in the past 252 trading days will be excluded from rankings. Default: 20.")
         # Show how many stocks currently exceed the threshold
-        band_csv_path = SCRIPT_DIR / "Price_Band_List.csv"
-        if band_csv_path.exists():
+        stockdb_csv_path = SCRIPT_DIR / "STOCKDB.csv"
+        if stockdb_csv_path.exists():
             try:
                 _c_df = ml.compute_circuit_hits(
-                    prices_df, stock_tickers, str(band_csv_path), lookback_period=252)
+                    prices_df, stock_tickers, str(stockdb_csv_path), lookback_period=252)
                 _n_excluded = int((_c_df["TOTAL_CIRCUIT_HITS"] >= circuit_threshold).sum())
                 st.caption(f"ℹ️ {_n_excluded} stocks currently exceed the {circuit_threshold}-day "
                            f"threshold and will be excluded from rankings.")
@@ -2093,6 +2125,8 @@ with tab_config:
                 "min_n":                  int(st.session_state.cfg_min_n),
                 "max_n":                  int(st.session_state.cfg_max_n),
                 "min_turnover":           float(st.session_state.cfg_min_turnover),
+                "min_cmp":                float(st.session_state.cfg_min_cmp),
+                "min_market_cap":         float(st.session_state.cfg_min_market_cap),
                 "eq_series_filter":       st.session_state.cfg_eq_series_filter,
                 "circuit_filter_enabled": st.session_state.cfg_circuit_filter_enabled,
                 "circuit_threshold":      int(st.session_state.cfg_circuit_threshold),

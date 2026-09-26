@@ -26,6 +26,8 @@ def _build_context(cfg: dict = None, *, error=None, success=None) -> dict:
         pass
 
     adtv = configuration.adtv_pass_counts(bundle, float(cfg["min_turnover"])) if bundle else None
+    cmp_pass = configuration.cmp_pass_count(bundle, float(cfg["min_cmp"])) if bundle else None
+    mcap_pass = configuration.mcap_pass_count(bundle, float(cfg["min_market_cap"])) if bundle else None
     circuit_exceed = (configuration.circuit_hit_exceed_count(bundle, int(cfg["circuit_threshold"]))
                        if bundle and cfg["circuit_filter_enabled"] else None)
 
@@ -35,7 +37,7 @@ def _build_context(cfg: dict = None, *, error=None, success=None) -> dict:
 
     return {
         "cfg": cfg, "files": files, "universe": universe,
-        "adtv": adtv, "circuit_exceed": circuit_exceed,
+        "adtv": adtv, "cmp_pass": cmp_pass, "mcap_pass": mcap_pass, "circuit_exceed": circuit_exceed,
         "params": configuration.strategy_params(cfg, universe),
         "last_saved": last_saved,
         "error": error, "success": success,
@@ -81,6 +83,8 @@ def save():
     if new_cfg["min_n"] > new_cfg["max_n"]:  # keep the pair sane regardless of what was posted
         new_cfg["min_n"], new_cfg["max_n"] = new_cfg["max_n"], new_cfg["min_n"]
     new_cfg["min_turnover"] = configuration.clamp("min_turnover", get_float("min_turnover", cfg["min_turnover"]))
+    new_cfg["min_cmp"] = configuration.clamp("min_cmp", get_float("min_cmp", cfg["min_cmp"]))
+    new_cfg["min_market_cap"] = configuration.clamp("min_market_cap", get_float("min_market_cap", cfg["min_market_cap"]))
     new_cfg["eq_series_filter"] = form.get("eq_series_filter") == "on"
     new_cfg["circuit_filter_enabled"] = form.get("circuit_filter_enabled") == "on"
     new_cfg["circuit_threshold"] = int(configuration.clamp("circuit_threshold",

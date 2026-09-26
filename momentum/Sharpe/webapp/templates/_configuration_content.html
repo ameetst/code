@@ -47,6 +47,32 @@
        <code>update_stock_price.py</code> with latest version to add volume data.</p>
   {% endif %}
 
+  <h4>💵 Min CMP Filter</h4>
+  <div class="form-row">
+    <label>Min Current Market Price (₹)
+      <input type="number" name="min_cmp" min="0" max="1000" step="1" value="{{ cfg.min_cmp|int }}">
+    </label>
+  </div>
+  <p class="caption">Set to 0 to disable. Unlike the other filters here, this only blocks NEW entries
+     below the threshold — currently held positions are never force-exited if their price drops
+     below it.</p>
+  {% if cmp_pass %}
+    <p class="caption">ℹ️ {{ cmp_pass.pass }}/{{ cmp_pass.total }} stocks currently pass (price >= ₹{{ cfg.min_cmp|int }})</p>
+  {% endif %}
+
+  <h4>🏢 Min Market Cap Filter</h4>
+  <div class="form-row">
+    <label>Min Market Cap (₹ Cr)
+      <input type="number" name="min_market_cap" min="0" max="2000000" step="50" value="{{ cfg.min_market_cap|int }}">
+    </label>
+  </div>
+  <p class="caption">Sourced from STOCKDB.csv. Set to 0 to disable. Like Min CMP, this only blocks
+     NEW entries below the threshold — currently held positions are never force-exited if their
+     market cap drops below it. A ticker missing from STOCKDB.csv also fails this filter.</p>
+  {% if mcap_pass %}
+    <p class="caption">ℹ️ {{ mcap_pass.pass }}/{{ mcap_pass.total }} stocks currently pass (market cap >= ₹{{ cfg.min_market_cap|int }} Cr)</p>
+  {% endif %}
+
   <h4>🚦 Universe Eligibility Filters</h4>
   <div class="form-row">
     <label class="checkbox-label">
@@ -55,7 +81,7 @@
     </label>
   </div>
   <p class="caption">When enabled, only stocks in the NSE 'EQ' (rolling settlement) series are
-     included in rankings. Stocks not found in Price_Band_List.csv default to EQ.</p>
+     included in rankings. Stocks not found in STOCKDB.csv default to EQ.</p>
 
   <div class="form-row">
     <label class="checkbox-label">

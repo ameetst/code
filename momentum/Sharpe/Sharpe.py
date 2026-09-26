@@ -87,6 +87,12 @@ _parser.add_argument("--update", action="store_true",
                      help="Run update_stock_price.py to refresh data before computing rankings")
 _parser.add_argument("--min-turnover", type=float, default=1.0,
                      help="Minimum median daily turnover in Rs Cr (default: 1.0)")
+_parser.add_argument("--min-cmp", type=float, default=None,
+                     help="Minimum current market price in Rs for NEW entries; "
+                          "0 disables (default: saved config)")
+_parser.add_argument("--min-market-cap", type=float, default=None,
+                     help="Minimum market cap in Rs Cr for NEW entries (from STOCKDB.csv); "
+                          "0 disables (default: saved config)")
 _parser.add_argument("--dry-run", action="store_true",
                      help="Generate rankings/exits without saving changes to the positions ledger")
 _args = _parser.parse_args()
@@ -108,6 +114,10 @@ MIN_HOLD_DAYS     = 28          # calendar days before rank-based exit is permit
 LIQUID_YIELD_PA   = 0.06        # 6% p.a. on idle cash
 # CLI --min-turnover overrides saved config; use saved config as default
 MIN_TURNOVER_CR   = _args.min_turnover if _args.min_turnover != 1.0 else _saved_cfg["min_turnover"]
+# CLI --min-cmp overrides saved config when explicitly passed; else use saved config
+MIN_CMP           = _args.min_cmp if _args.min_cmp is not None else _saved_cfg["min_cmp"]
+# CLI --min-market-cap overrides saved config when explicitly passed; else use saved config
+MIN_MARKET_CAP    = _args.min_market_cap if _args.min_market_cap is not None else _saved_cfg["min_market_cap"]
 DRY_RUN           = _args.dry_run
 
 # -- UNIVERSE ELIGIBILITY FILTERS (from shared config) -------------------------
@@ -115,7 +125,7 @@ EQ_SERIES_FILTER        = _saved_cfg["eq_series_filter"]
 CIRCUIT_FILTER_ENABLED  = _saved_cfg["circuit_filter_enabled"]
 CIRCUIT_HIT_THRESHOLD   = _saved_cfg["circuit_threshold"]
 REL_DD_BREACH_THRESHOLD = _saved_cfg["rel_dd_breach_threshold"]  # Rel_52H_DD exit trigger
-BAND_CSV                = _SCRIPT_DIR / "Price_Band_List.csv"
+STOCKDB_CSV             = _SCRIPT_DIR / "STOCKDB.csv"  # Series/Band/Market-Cap source (retired Price_Band_List.csv)
 
 # -- DYNAMIC REGIME PARAMETERS -------------------------------------------------
 MIN_N               = _saved_cfg["min_n"]   # minimum holdings at lowest regime score
@@ -466,10 +476,12 @@ result, regime_score, regime_detail = ml.compute_universe_rankings(
     prices_df, nifty_series, stock_tickers,
     volume_df=volume_df,
     min_turnover_cr=MIN_TURNOVER_CR,
+    min_cmp=MIN_CMP,
+    min_market_cap=MIN_MARKET_CAP,
     eq_series_filter=EQ_SERIES_FILTER,
     circuit_filter_enabled=CIRCUIT_FILTER_ENABLED,
     circuit_threshold=CIRCUIT_HIT_THRESHOLD,
-    band_csv_path=str(BAND_CSV),
+    stockdb_csv_path=str(STOCKDB_CSV),
     windows=SHARPE_WINDOWS,
     trading_days=TRADING_DAYS,
     rfr_annual=RFR_ANNUAL,
@@ -486,6 +498,8 @@ n_eligible = int(result["RANK"].notna().sum())
 n_total    = len(result)
 n_non_eq   = int((result.get("SERIES", pd.Series("EQ", index=result.index)) != "EQ").sum())
 n_circuit  = int((result.get("TOTAL_CIRCUIT_HITS", pd.Series(0, index=result.index)) >= CIRCUIT_HIT_THRESHOLD).sum())
+n_cmp_fail = int((~result.get("CMP_ELIGIBLE", pd.Series(True, index=result.index))).sum())
+n_mcap_fail = int((~result.get("MCAP_ELIGIBLE", pd.Series(True, index=result.index))).sum())
 print(f"  {n_eligible} / {n_total} stocks eligible "
       f"(52H >= -25% AND MDTV >= {MIN_TURNOVER_CR} Cr"
       f"{' AND Series=EQ' if EQ_SERIES_FILTER else ''}"
@@ -494,6 +508,12 @@ if EQ_SERIES_FILTER:
     print(f"  Series EQ filter: {n_non_eq} non-EQ stocks excluded")
 if CIRCUIT_FILTER_ENABLED:
     print(f"  Circuit hit filter (>= {CIRCUIT_HIT_THRESHOLD} days): {n_circuit} stocks excluded")
+if MIN_CMP and MIN_CMP > 0:
+    print(f"  Min CMP filter (>= Rs {MIN_CMP}): {n_cmp_fail} stocks excluded from NEW entries "
+          f"(existing holdings unaffected)")
+if MIN_MARKET_CAP and MIN_MARKET_CAP > 0:
+    print(f"  Min Market Cap filter (>= Rs {MIN_MARKET_CAP} Cr): {n_mcap_fail} stocks excluded "
+          f"from NEW entries (existing holdings unaffected)")
 
 print(f"\nDynamic Regime Score ...")
 print(f"  Regime Score  : {regime_score:.2f}  "
@@ -572,7 +592,7 @@ for ticker, rec in ledger.items():
                 is_circ_fail = True
 
         is_seq_fail = False
-        if EQ_SERIES_FILTER and BAND_CSV.exists() and ticker in result.index:
+        if EQ_SERIES_FILTER and STOCKDB_CSV.exists() and ticker in result.index:
             s_val = result.loc[ticker, "SERIES"] if "SERIES" in result.columns else None
             if pd.notna(s_val) and str(s_val).strip() != "EQ":
                 is_seq_fail = True
@@ -736,6 +756,10 @@ if allow_new and n_new_positions > 0:
     for t in result.index:  # already RANK-sorted; walks past dynamic_n if it must
         if t in currently_held:
             continue
+        if not bool(result.loc[t].get("CMP_ELIGIBLE", True)):
+            continue  # below Min CMP — blocked for new entries only, held positions unaffected
+        if not bool(result.loc[t].get("MCAP_ELIGIBLE", True)):
+            continue  # below Min Market Cap — blocked for new entries only, held positions unaffected
         if len(entry_candidates) >= n_new_positions:
             break
         entry_candidates.append(t)

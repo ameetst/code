@@ -11,7 +11,7 @@ import datetime
 import json
 import math
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -27,7 +27,7 @@ TRADING_DAYS = 252
 WINDOWS = {"12M": 252, "9M": 189, "6M": 126, "3M": 63}
 VOL_WINDOWS = (252, 189, 126, 63)
 ELIGIBLE_52H_FLOOR = -25  # matches the "Eligible (52H)" metric and the master eligibility gate
-BAND_CSV = DATA_DIR / "Price_Band_List.csv"
+STOCKDB_CSV = DATA_DIR / "STOCKDB.csv"  # Series/Band/Market-Cap source (retired Price_Band_List.csv)
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,7 @@ class Bundle:
     regime_detail: dict
     dates: list
     latest_prices: dict
+    market_caps_raw: dict = field(default_factory=dict)  # ticker -> raw Rs market cap from STOCKDB.csv (NOT Cr); see configuration.mcap_pass_count
 
 
 _cache: dict = {}
@@ -60,6 +61,24 @@ def _latest_price(ticker, prices_df) -> float:
     return 0.0
 
 
+def _load_market_caps_raw() -> dict:
+    """{ticker: raw Rs market cap} from STOCKDB.csv's MARKETCAP_CR column (misnamed --
+    it's absolute Rs, not Cr; divide by 1e7 to get Rs Cr). Empty dict if unavailable."""
+    if not STOCKDB_CSV.exists():
+        return {}
+    try:
+        df = pd.read_csv(STOCKDB_CSV)
+        caps = {}
+        for _, row in df.iterrows():
+            try:
+                caps[str(row["SYMBOL"]).strip()] = float(row["MARKETCAP_CR"])
+            except (ValueError, TypeError, KeyError):
+                pass
+        return caps
+    except Exception:
+        return {}
+
+
 def get_bundle(cfg: dict) -> Bundle:
     filename = config_store.resolve_file(cfg)
     path = DATA_DIR / filename
@@ -67,9 +86,9 @@ def get_bundle(cfg: dict) -> Bundle:
         raise FileNotFoundError(f"Data file not found: {path}")
 
     key = (
-        str(path), _mtime(path), _mtime(BAND_CSV),
-        cfg["min_turnover"], cfg["eq_series_filter"], cfg["circuit_filter_enabled"],
-        cfg["circuit_threshold"], cfg["min_n"], cfg["max_n"],
+        str(path), _mtime(path), _mtime(STOCKDB_CSV),
+        cfg["min_turnover"], cfg["min_cmp"], cfg["min_market_cap"], cfg["eq_series_filter"],
+        cfg["circuit_filter_enabled"], cfg["circuit_threshold"], cfg["min_n"], cfg["max_n"],
     )
     with _cache_lock:  # also stops two first-requests from both paying the 11s compute
         if key in _cache:
@@ -85,10 +104,12 @@ def get_bundle(cfg: dict) -> Bundle:
             prices_df, nifty_series, stock_tickers,
             volume_df=volume_df,
             min_turnover_cr=cfg["min_turnover"],
+            min_cmp=cfg["min_cmp"],
+            min_market_cap=cfg["min_market_cap"],
             eq_series_filter=cfg["eq_series_filter"],
             circuit_filter_enabled=cfg["circuit_filter_enabled"],
             circuit_threshold=int(cfg["circuit_threshold"]),
-            band_csv_path=str(BAND_CSV),
+            stockdb_csv_path=str(STOCKDB_CSV),
             windows=WINDOWS,
             trading_days=TRADING_DAYS,
             rfr_annual=RFR_ANNUAL,
@@ -104,6 +125,7 @@ def get_bundle(cfg: dict) -> Bundle:
             regime_detail=regime_detail,
             dates=list(dates),
             latest_prices={t: _latest_price(t, prices_df) for t in stock_tickers},
+            market_caps_raw=_load_market_caps_raw(),
         )
         if len(_cache) >= _CACHE_MAX_ENTRIES:
             _cache.pop(next(iter(_cache)))
@@ -172,7 +194,7 @@ def top_rows(bundle: Bundle, limit: int, held: set, prices: dict | None = None) 
     # dashboard's New Entry Candidates precedent.
     try:
         circuit_df = ml.compute_circuit_hits(
-            bundle.prices_df, top_tickers, str(BAND_CSV), lookback_period=252)
+            bundle.prices_df, top_tickers, str(STOCKDB_CSV), lookback_period=252)
     except Exception:
         circuit_df = None
 
