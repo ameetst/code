@@ -95,7 +95,7 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
     <span class="legend-item"><span class="legend-dot" style="background:#B8860B"></span>Equal-weight fallback / legacy day</span>
   </div>
   <div style="position:relative;">
-    <svg id="eqsvg" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
+    <svg id="eqsvg" preserveAspectRatio="xMidYMid meet"></svg>
     <div class="tooltip" id="eqtooltip"></div>
   </div>
 </div>
@@ -105,23 +105,40 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
   const data = {data_json};
   const n = data.length;
   const svg = document.getElementById('eqsvg');
-  const W = 900, H = 320;
-  const M = {{ top: 14, right: 58, bottom: 26, left: 40 }};
-  const plotW = W - M.left - M.right;
-  const plotH = H - M.top - M.bottom;
+  const tooltip = document.getElementById('eqtooltip');
+  const wrap = tooltip.parentElement;
 
   const allVals = data.flatMap(d => [d.port, d.bench]);
   const yMin = Math.floor(Math.min(...allVals, 100) / 2) * 2 - 1;
   const yMax = Math.ceil(Math.max(...allVals) / 2) * 2 + 1;
-
-  const xPos = i => M.left + (n === 1 ? 0 : (i / (n - 1)) * plotW);
-  const yPos = v => M.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
 
   const ns = 'http://www.w3.org/2000/svg';
   function el(tag, attrs) {{
     const e = document.createElementNS(ns, tag);
     for (const k in attrs) e.setAttribute(k, attrs[k]);
     return e;
+  }}
+
+  function fmtDate(s) {{
+    return new Date(s).toLocaleDateString('en-US', {{ weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }});
+  }}
+
+  // Redrawn on init and on window resize so the chart's own aspect ratio
+  // adapts to the container's actual width -- a fixed ratio either overflows
+  // this iframe's fixed height on a wide (layout="wide") window -- silently
+  // clipped since scrolling=False -- or cramps on a narrow one. Height is
+  // clamped to [220, 380] so it flattens out on wide screens instead of
+  // growing without bound.
+  let W = 900, H = 320, M, plotW, plotH, xPos, yPos;
+
+  function layout() {{
+    W = Math.max(320, Math.round(wrap.clientWidth || 900));
+    H = Math.max(220, Math.min(380, Math.round(W / 2.8)));
+    M = {{ top: 14, right: 58, bottom: 26, left: 40 }};
+    plotW = W - M.left - M.right;
+    plotH = H - M.top - M.bottom;
+    xPos = i => M.left + (n === 1 ? 0 : (i / (n - 1)) * plotW);
+    yPos = v => M.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
   }}
 
   function pathFor(key) {{
@@ -132,61 +149,62 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
     return d.trim();
   }}
 
-  const yTicks = 5;
-  for (let t = 0; t <= yTicks; t++) {{
-    const v = yMin + (t / yTicks) * (yMax - yMin);
-    const y = yPos(v);
-    svg.appendChild(el('line', {{ x1: M.left, x2: W - M.right, y1: y, y2: y, class: Math.abs(v - 100) < 0.6 ? 'baseline' : 'gridline' }}));
-    const lbl = el('text', {{ x: M.left - 8, y: y + 3, class: 'axis-label', 'text-anchor': 'end' }});
-    lbl.textContent = v.toFixed(0);
-    svg.appendChild(lbl);
-  }}
+  function render() {{
+    layout();
+    svg.setAttribute('viewBox', `0 0 ${{W}} ${{H}}`);
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-  const xTickCount = Math.min(7, n);
-  for (let t = 0; t < xTickCount; t++) {{
-    const i = Math.round((t / Math.max(xTickCount - 1, 1)) * (n - 1));
-    const lbl = el('text', {{ x: xPos(i), y: H - M.bottom + 16, class: 'axis-label', 'text-anchor': 'middle' }});
-    const d = new Date(data[i].date);
-    lbl.textContent = d.toLocaleDateString('en-US', {{ month: 'short', day: 'numeric' }});
-    svg.appendChild(lbl);
-  }}
-
-  svg.appendChild(el('path', {{ d: pathFor('bench'), class: 'series-path', stroke: '{_BENCH}', 'stroke-dasharray': '6 4' }}));
-  svg.appendChild(el('path', {{ d: pathFor('port'), class: 'series-path', stroke: '{_ACCENT}' }}));
-
-  // flag non-weighted days with a small dot on the portfolio line
-  data.forEach((d, i) => {{
-    if (d.method !== 'weighted') {{
-      svg.appendChild(el('circle', {{ cx: xPos(i), cy: yPos(d.port), r: 2.75, fill: '#B8860B', class: 'fallback-dot' }}));
+    const yTicks = 5;
+    for (let t = 0; t <= yTicks; t++) {{
+      const v = yMin + (t / yTicks) * (yMax - yMin);
+      const y = yPos(v);
+      svg.appendChild(el('line', {{ x1: M.left, x2: W - M.right, y1: y, y2: y, class: Math.abs(v - 100) < 0.6 ? 'baseline' : 'gridline' }}));
+      const lbl = el('text', {{ x: M.left - 8, y: y + 3, class: 'axis-label', 'text-anchor': 'end' }});
+      lbl.textContent = v.toFixed(0);
+      svg.appendChild(lbl);
     }}
-  }});
 
-  function endMark(key, color, label, dy) {{
-    const cx = xPos(n - 1), cy = yPos(data[n - 1][key]);
-    svg.appendChild(el('circle', {{ cx, cy, r: 4.5, fill: color, stroke: '#ffffff', 'stroke-width': 2 }}));
-    const t = el('text', {{ x: cx + 8, y: cy + dy, class: 'axis-label', fill: color, 'font-weight': 650 }});
-    t.textContent = label;
-    svg.appendChild(t);
-  }}
-  endMark('port', '{_ACCENT}', data[n-1].port.toFixed(1), -8);
-  endMark('bench', '{_BENCH}', data[n-1].bench.toFixed(1), 14);
+    const xTickCount = Math.min(7, n);
+    for (let t = 0; t < xTickCount; t++) {{
+      const i = Math.round((t / Math.max(xTickCount - 1, 1)) * (n - 1));
+      const lbl = el('text', {{ x: xPos(i), y: H - M.bottom + 16, class: 'axis-label', 'text-anchor': 'middle' }});
+      const d = new Date(data[i].date);
+      lbl.textContent = d.toLocaleDateString('en-US', {{ month: 'short', day: 'numeric' }});
+      svg.appendChild(lbl);
+    }}
 
-  const hit = el('rect', {{ x: M.left, y: M.top, width: plotW, height: plotH, fill: 'transparent' }});
-  svg.appendChild(hit);
-  const crosshair = el('line', {{ class: 'crosshair', y1: M.top, y2: M.top + plotH, visibility: 'hidden' }});
-  svg.appendChild(crosshair);
-  const dotPort = el('circle', {{ r: 4, fill: '{_ACCENT}', stroke: '#ffffff', class: 'hover-dot', visibility: 'hidden' }});
-  const dotBench = el('circle', {{ r: 4, fill: '{_BENCH}', stroke: '#ffffff', class: 'hover-dot', visibility: 'hidden' }});
-  svg.appendChild(dotPort); svg.appendChild(dotBench);
+    svg.appendChild(el('path', {{ d: pathFor('bench'), class: 'series-path', stroke: '{_BENCH}', 'stroke-dasharray': '6 4' }}));
+    svg.appendChild(el('path', {{ d: pathFor('port'), class: 'series-path', stroke: '{_ACCENT}' }}));
 
-  const tooltip = document.getElementById('eqtooltip');
-  const wrap = tooltip.parentElement;
+    // flag non-weighted days with a small dot on the portfolio line
+    data.forEach((d, i) => {{
+      if (d.method !== 'weighted') {{
+        svg.appendChild(el('circle', {{ cx: xPos(i), cy: yPos(d.port), r: 2.75, fill: '#B8860B', class: 'fallback-dot' }}));
+      }}
+    }});
 
-  function fmtDate(s) {{
-    return new Date(s).toLocaleDateString('en-US', {{ weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }});
-  }}
+    function endMark(key, color, label, dy) {{
+      const cx = xPos(n - 1), cy = yPos(data[n - 1][key]);
+      svg.appendChild(el('circle', {{ cx, cy, r: 4.5, fill: color, stroke: '#ffffff', 'stroke-width': 2 }}));
+      const t = el('text', {{ x: cx + 8, y: cy + dy, class: 'axis-label', fill: color, 'font-weight': 650 }});
+      t.textContent = label;
+      svg.appendChild(t);
+    }}
+    endMark('port', '{_ACCENT}', data[n-1].port.toFixed(1), -8);
+    endMark('bench', '{_BENCH}', data[n-1].bench.toFixed(1), 14);
 
-  function onMove(evt) {{
+    const hit = el('rect', {{ x: M.left, y: M.top, width: plotW, height: plotH, fill: 'transparent' }});
+    svg.appendChild(hit);
+    const crosshair = el('line', {{ class: 'crosshair', y1: M.top, y2: M.top + plotH, visibility: 'hidden' }});
+    svg.appendChild(crosshair);
+    const dotPort = el('circle', {{ r: 4, fill: '{_ACCENT}', stroke: '#ffffff', class: 'hover-dot', visibility: 'hidden' }});
+    const dotBench = el('circle', {{ r: 4, fill: '{_BENCH}', stroke: '#ffffff', class: 'hover-dot', visibility: 'hidden' }});
+    svg.appendChild(dotPort); svg.appendChild(dotBench);
+
+    hit.addEventListener('pointermove', onMove);
+    hit.addEventListener('pointerleave', onLeave);
+
+    function onMove(evt) {{
     const pt = svg.createSVGPoint();
     pt.x = evt.clientX; pt.y = evt.clientY;
     const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
@@ -234,15 +252,22 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
     tooltip.style.left = Math.max(0, left) + 'px';
     tooltip.style.top = '4px';
     tooltip.style.display = 'block';
+    }}
+    function onLeave() {{
+      crosshair.setAttribute('visibility', 'hidden');
+      dotPort.setAttribute('visibility', 'hidden');
+      dotBench.setAttribute('visibility', 'hidden');
+      tooltip.style.display = 'none';
+    }}
   }}
-  function onLeave() {{
-    crosshair.setAttribute('visibility', 'hidden');
-    dotPort.setAttribute('visibility', 'hidden');
-    dotBench.setAttribute('visibility', 'hidden');
-    tooltip.style.display = 'none';
-  }}
-  hit.addEventListener('pointermove', onMove);
-  hit.addEventListener('pointerleave', onLeave);
+
+  render();
+
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {{
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(render, 120);
+  }});
 }})();
 </script>
 """
