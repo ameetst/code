@@ -26,13 +26,16 @@ practical:
 
 Run:  streamlit run sharpe_dashboard_dhan.py
 """
-import sys, json, datetime, uuid, shutil, tempfile
+import sys, json, datetime, uuid, shutil, tempfile, io
 from pathlib import Path
 import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
 import yfinance as yf
+import openpyxl
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -530,6 +533,38 @@ def calculate_holdings_and_pnl(transactions, latest_prices=None):
         "realized_pnl_by_ticker": realized_pnl_by_ticker,
         "unrealized_pnl": unrealized_pnl
     }
+
+def export_tradelog_to_xlsx_bytes(transactions):
+    """Builds an .xlsx workbook of the full transaction history (chronological, oldest
+    first) and returns it as raw bytes for st.download_button. Columns match the
+    Transaction History & Management table."""
+    try:
+        sorted_txs = sorted(transactions, key=lambda x: (x.get("date", ""), x.get("timestamp", "")))
+    except Exception:
+        sorted_txs = transactions
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Transaction History"
+
+    headers = ["Date", "Ticker", "Action", "Quantity", "Price", "Total Value"]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+
+    for tx in sorted_txs:
+        qty = float(tx["quantity"])
+        price = float(tx["price"])
+        ws.append([tx.get("date", ""), tx.get("ticker", ""), tx.get("action", ""),
+                   qty, price, qty * price])
+
+    widths = [12, 14, 8, 10, 12, 14]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 def sync_to_positions_ledger(ledger_path, active_holdings):
     serialisable = {}
@@ -1600,10 +1635,17 @@ with tab_tradelog:
     st.divider()
 
     # 4. Chronological Transaction Table & Deletion
-    st.markdown("### 🕒 Transaction History & Management")
+    th_col1, th_col2 = st.columns([3, 1])
+    with th_col1:
+        st.markdown("### 🕒 Transaction History & Management")
     if not tradelog:
         st.info("No transactions logged yet.")
     else:
+        with th_col2:
+            st.download_button(
+                "📥 Download Excel", export_tradelog_to_xlsx_bytes(tradelog),
+                file_name=f"{universe}_tradelog.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         display_tx = []
         for tx in reversed(tradelog):
             display_tx.append({

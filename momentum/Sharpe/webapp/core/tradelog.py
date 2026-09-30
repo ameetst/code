@@ -8,7 +8,12 @@ when it's missing (that write happens on first use, gated behind require_writabl
 at the call site instead of implicitly on every read).
 """
 import datetime
+import io
 import json
+
+import openpyxl
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 
 from webapp.core.storage import safe_write_json
 from webapp.settings import DATA_DIR
@@ -150,3 +155,37 @@ def sync_to_positions_ledger(ledger_path, active_holdings: dict) -> None:
                 "qty": float(h["qty"]),
             }
     safe_write_json(ledger_path, serialisable)
+
+
+def export_to_xlsx_bytes(transactions: list[dict]) -> bytes:
+    """Builds an .xlsx workbook of the full transaction history (chronological, oldest
+    first -- a more useful order for further analysis than the UI's newest-first table)
+    and returns it as raw bytes, ready to hand to Flask's send_file or Streamlit's
+    download_button. Columns match the Transaction History & Management table."""
+    try:
+        sorted_txs = sorted(transactions, key=lambda x: (x.get("date", ""), x.get("timestamp", "")))
+    except Exception:
+        sorted_txs = transactions
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Transaction History"
+
+    headers = ["Date", "Ticker", "Action", "Quantity", "Price", "Total Value"]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+
+    for tx in sorted_txs:
+        qty = float(tx["quantity"])
+        price = float(tx["price"])
+        ws.append([tx.get("date", ""), tx.get("ticker", ""), tx.get("action", ""),
+                   qty, price, qty * price])
+
+    widths = [12, 14, 8, 10, 12, 14]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

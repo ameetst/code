@@ -13,9 +13,10 @@ edit, delete) swaps the whole #tradelog-content div, since it can change
 holdings, history and the form's ticker list all at once.
 """
 import datetime
+import io
 import uuid
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template, request, send_file
 
 from webapp import settings
 from webapp.core import config_store, dhan_client, rankings, tradelog
@@ -114,6 +115,21 @@ def edit_form(tx_id):
     bundle, universe = _bundle_and_universe()
     ctx = _build_context(universe, bundle, editing_id=tx_id)
     return render_template("_edit_form.html", **ctx)
+
+
+@bp.route("/tradelog/export")
+def export():
+    """Downloads the full transaction history as .xlsx. Read-only export, not gated
+    behind settings.READ_ONLY -- it writes nothing to any data file."""
+    _, universe = _bundle_and_universe()
+    tl = tradelog.load_tradelog(universe)
+    xlsx_bytes = tradelog.export_to_xlsx_bytes(tl)
+    return send_file(
+        io.BytesIO(xlsx_bytes),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"{universe}_tradelog.xlsx",
+    )
 
 
 @bp.route("/tradelog/refresh-prices", methods=["POST"])

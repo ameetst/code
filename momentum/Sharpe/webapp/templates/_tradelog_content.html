@@ -71,7 +71,12 @@
   {% include "_trade_form.html" %}
 </div>
 
-<h3>🕒 Transaction History &amp; Management</h3>
+<div class="section-header">
+  <h3>🕒 Transaction History &amp; Management</h3>
+  {% if history_rows %}
+    <a href="{{ url_for('tradelog.export') }}" class="btn-secondary">📥 Download Excel</a>
+  {% endif %}
+</div>
 {% if not history_rows %}
   <div class="banner">No transactions logged yet.</div>
 {% else %}

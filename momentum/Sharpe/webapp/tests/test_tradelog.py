@@ -11,6 +11,7 @@ Two layers, deliberately:
      flipping SHARPE_READ_ONLY=0 for real, but isn't needed to prove the read-only
      guard itself, which is what layer 2 checks here.
 """
+import io
 import json
 
 import pytest
@@ -73,6 +74,25 @@ def test_save_and_load_tradelog_round_trip(tmp_path, monkeypatch):
     # a second save must back up the first version, not clobber silently
     tradelog.save_tradelog("TESTUNIV", txs + [_tx("FOO", "SELL", 5, 110.0, "2026-01-02")])
     assert json.loads((tmp_path / "TESTUNIV_tradelog.bak").read_text()) == txs
+
+
+def test_export_to_xlsx_bytes_contains_all_rows_chronologically():
+    import openpyxl
+
+    txs = [
+        _tx("FOO", "SELL", 5, 130.0, "2026-01-03"),   # deliberately out of order
+        _tx("FOO", "BUY", 10, 100.0, "2026-01-01"),
+        _tx("BAR", "BUY", 3, 50.0, "2026-01-02"),
+    ]
+    xlsx_bytes = tradelog.export_to_xlsx_bytes(txs)
+    wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes))
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    assert rows[0] == ("Date", "Ticker", "Action", "Quantity", "Price", "Total Value")
+    # chronological (oldest first), not the input order
+    assert [r[0] for r in rows[1:]] == ["2026-01-01", "2026-01-02", "2026-01-03"]
+    assert rows[1] == ("2026-01-01", "FOO", "BUY", 10.0, 100.0, 1000.0)
+    assert rows[3] == ("2026-01-03", "FOO", "SELL", 5.0, 130.0, 650.0)
 
 
 def test_sync_to_positions_ledger_writes_only_open_positions(tmp_path):
@@ -235,6 +255,34 @@ def test_refresh_prices_route_renders_and_is_not_gated_by_read_only(client):
 
     after = {p: p.stat().st_mtime_ns for p in watched}
     assert before == after  # a live price fetch never touches a data file
+
+
+def test_export_route_returns_an_xlsx_attachment_not_gated_by_read_only(client):
+    """Read-only export (no file write), so it must work even while READ_ONLY."""
+    assert settings.READ_ONLY is True
+    r = client.get("/tradelog/export")
+    assert r.status_code == 200
+    assert r.mimetype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    disposition = r.headers.get("Content-Disposition", "")
+    assert "attachment" in disposition
+    assert "_tradelog.xlsx" in disposition
+
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(r.data))
+    ws = wb.active
+    header = next(ws.iter_rows(values_only=True))
+    assert header == ("Date", "Ticker", "Action", "Quantity", "Price", "Total Value")
+
+
+def test_download_excel_link_is_in_the_page_when_history_exists(client):
+    from webapp.core import config_store
+    universe = config_store.universe_name(config_store.resolve_file(config_store.load_config()))
+    if not tradelog.load_tradelog(universe):
+        pytest.skip("no transactions in the live tradelog")
+
+    html = client.get("/tradelog").data.decode()
+    assert 'href="/tradelog/export"' in html
+    assert "Download Excel" in html
 
 
 def test_refresh_prices_button_and_source_caption_are_in_the_page(client):
