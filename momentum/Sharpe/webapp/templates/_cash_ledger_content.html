@@ -13,8 +13,10 @@
     <p class="metric-value">Rs {{ "{:,.2f}".format(summary.by_type['Withdrawal']) }}</p>
   </div>
   <div class="metric">
-    <p class="metric-label">Dividends + Interest</p>
-    <p class="metric-value">Rs {{ "{:,.2f}".format(summary.by_type['Dividend'] + summary.by_type['Interest']) }}</p>
+    <p class="metric-label">Realized PnL (Rs)</p>
+    <p class="metric-value {{ 'value-pos' if realized_pnl >= 0 else 'value-neg' }}">
+      Rs {{ "{:,.2f}".format(realized_pnl) }}
+    </p>
   </div>
   <div class="metric">
     <p class="metric-label">Net Cash Contributed</p>

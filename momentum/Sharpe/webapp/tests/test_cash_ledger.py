@@ -28,7 +28,21 @@ def test_compute_summary_splits_inflows_and_outflows():
     summary = cash_ledger.compute_summary(entries)
     assert summary["total_in"] == pytest.approx(100_500)
     assert summary["total_out"] == pytest.approx(20_100)
-    assert summary["net"] == pytest.approx(80_400)
+    # Net Cash Contributed = Total Deposits + Realized PnL, not total_in - total_out --
+    # withdrawals/fees/dividends/interest don't factor into it, only deposits + trading PnL.
+    assert summary["net"] == pytest.approx(100_000)
+
+
+def test_compute_summary_net_is_deposits_plus_realized_pnl():
+    entries = [
+        _entry("Deposit", 100_000, "2026-01-01"),
+        _entry("Withdrawal", 20_000, "2026-01-10"),
+    ]
+    summary = cash_ledger.compute_summary(entries, realized_pnl=15_000)
+    assert summary["net"] == pytest.approx(115_000)
+
+    summary_loss = cash_ledger.compute_summary(entries, realized_pnl=-15_000)
+    assert summary_loss["net"] == pytest.approx(85_000)
 
 
 def test_running_balance_is_chronological_and_signed():

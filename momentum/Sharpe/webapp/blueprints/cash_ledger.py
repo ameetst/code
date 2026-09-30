@@ -11,14 +11,18 @@ import uuid
 from flask import Blueprint, render_template, request
 
 from webapp import settings
-from webapp.core import cash_ledger, config_store
+from webapp.core import cash_ledger, config_store, tradelog
 
 bp = Blueprint("cash_ledger", __name__)
 
 
 def _build_context(universe: str, *, error=None, warning=None, success=None, editing_id=None) -> dict:
     entries = cash_ledger.load_cash_ledger(universe)
-    summary = cash_ledger.compute_summary(entries)
+    # Realized PnL is purely a replay of BUY/SELL transactions at average cost -- it
+    # doesn't depend on live prices, so this is exactly the same value Tradelog & MTM's
+    # Realized PnL box shows, without needing the rankings bundle here.
+    realized_pnl = tradelog.calculate_holdings_and_pnl(tradelog.load_tradelog(universe))["realized_pnl"]
+    summary = cash_ledger.compute_summary(entries, realized_pnl)
     with_balance = cash_ledger.running_balance(entries)
 
     history_rows = []
@@ -33,6 +37,7 @@ def _build_context(universe: str, *, error=None, warning=None, success=None, edi
     return {
         "universe": universe,
         "summary": summary,
+        "realized_pnl": realized_pnl,
         "history_rows": history_rows,
         "entry_types": cash_ledger.CASH_ENTRY_TYPES,
         "editing_entry": editing_entry,
@@ -82,7 +87,8 @@ def add():
         error = "Amount must be greater than zero. Entry not recorded."
     else:
         entries = cash_ledger.load_cash_ledger(universe)
-        summary = cash_ledger.compute_summary(entries)
+        realized_pnl = tradelog.calculate_holdings_and_pnl(tradelog.load_tradelog(universe))["realized_pnl"]
+        summary = cash_ledger.compute_summary(entries, realized_pnl)
         if entry_type in cash_ledger.CASH_OUTFLOW_TYPES and amount > summary["net"] + 1e-9:
             warning = (f"This {entry_type.lower()} of Rs {amount:,.2f} exceeds the current net cash "
                        f"contributed (Rs {summary['net']:,.2f}). Recorded anyway — investment "

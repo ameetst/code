@@ -38,13 +38,17 @@ def save_cash_ledger(universe: str, entries: list[dict]) -> None:
     safe_write_json(DATA_DIR / f"{universe}_cash_ledger.json", entries)
 
 
-def compute_summary(entries: list[dict]) -> dict:
+def compute_summary(entries: list[dict], realized_pnl: float = 0.0) -> dict:
+    """Net Cash Contributed = Total Deposits + Realized PnL (from the tradelog's
+    average-cost accounting, same figure shown in Tradelog & MTM's Realized PnL box) --
+    not netted against withdrawals/fees/dividends/interest."""
     totals = {t: 0.0 for t in CASH_ENTRY_TYPES}
     for e in entries:
         totals[e["type"]] = totals.get(e["type"], 0.0) + float(e["amount"])
     total_in = totals["Deposit"] + totals["Dividend"] + totals["Interest"]
     total_out = totals["Withdrawal"] + totals["Fees/Charges"]
-    return {"by_type": totals, "total_in": total_in, "total_out": total_out, "net": total_in - total_out}
+    return {"by_type": totals, "total_in": total_in, "total_out": total_out,
+            "net": totals["Deposit"] + realized_pnl}
 
 
 def running_balance(entries: list[dict]) -> list[dict]:

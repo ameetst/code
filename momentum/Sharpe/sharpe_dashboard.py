@@ -305,8 +305,10 @@ def save_cash_ledger(universe_name, cash_ledger):
     except Exception as e:
         st.error(f"Error saving cash ledger: {e}")
 
-def compute_cash_ledger_summary(cash_ledger):
-    """Sum inflows/outflows by category and return running net cash contributed."""
+def compute_cash_ledger_summary(cash_ledger, realized_pnl=0.0):
+    """Sum inflows/outflows by category. Net Cash Contributed = Total Deposits + Realized
+    PnL (from the tradelog's average-cost accounting, same figure shown in Tradelog & MTM's
+    Realized PnL box) -- not netted against withdrawals/fees/dividends/interest."""
     totals = {t: 0.0 for t in CASH_ENTRY_TYPES}
     for e in cash_ledger:
         totals[e["type"]] = totals.get(e["type"], 0.0) + float(e["amount"])
@@ -316,7 +318,7 @@ def compute_cash_ledger_summary(cash_ledger):
         "by_type":   totals,
         "total_in":  total_in,
         "total_out": total_out,
-        "net":       total_in - total_out,
+        "net":       totals["Deposit"] + realized_pnl,
     }
 
 def compute_cash_ledger_running_balance(cash_ledger):
@@ -697,7 +699,7 @@ unrealized_pnl = tradelog_result["unrealized_pnl"]
 sync_to_positions_ledger(LEDGER_FILE, active_holdings)
 
 cash_ledger = load_cash_ledger(universe)
-cash_summary = compute_cash_ledger_summary(cash_ledger)
+cash_summary = compute_cash_ledger_summary(cash_ledger, realized_pnl)
 ledger = load_ledger(LEDGER_FILE)
 
 # ── EXIT SIGNAL EVALUATION (drives the Actions Monitor tab + its status dot) ──
@@ -1660,9 +1662,7 @@ if SHOW_CASH_LEDGER_TAB:
         with cc2:
             st.metric("Total Withdrawals", f"Rs {cash_summary['by_type']['Withdrawal']:,.2f}")
         with cc3:
-            _other_in = cash_summary['by_type']['Dividend'] + cash_summary['by_type']['Interest']
-            _other_out = cash_summary['by_type']['Fees/Charges']
-            st.metric("Dividends + Interest", f"Rs {_other_in:,.2f}")
+            st.metric("Realized PnL (Rs)", f"Rs {realized_pnl:,.2f}")
         with cc4:
             st.metric("Net Cash Contributed", f"Rs {cash_summary['net']:,.2f}")
 
