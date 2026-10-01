@@ -1,0 +1,177 @@
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+[load] C:\Users\ameet\Documents\Github\dhan_datahq\base files\History_ETFs.xlsx
+       283 tickers (non-empty) | 2609 trading days (2016-09-12 -> 2026-09-10)
+[clean] 70 bad-print fixes applied (same as earlier runs); EXIT_MAX_RANK=40, TOP_N=5, SECTOR_CAP=1
+[regime/benchmark] Fetching ^CRSLDX (Nifty 500 Index) via yfinance ...
+       2462 rows (2016-09-12 -> 2026-09-11)
+[self-test] numpy Clenow vs scipy (Clenow.py maths) on 24 ETFs: max abs diff = 2.84e-14
+
+=== running LIVE (6M/3M Sharpe) ===
+=== running CLENOW-90 ===
+
+Comparison window (first decision date -> end): 2017-09-11 -> 2026-09-10  (9.0 yrs). All three series start at the same date/capital.
+
+### 1. HEADLINE METRICS (same window)
+                  LIVE (6M/3M Sharpe)  CLENOW-90 Buy&Hold Nifty500
+CAGR                           12.43%     12.20%            11.23%
+Total return                   187.0%     181.6%            160.5%
+Max drawdown                  -20.87%    -18.00%           -38.30%
+Volatility                     12.86%     13.85%            16.16%
+Sharpe (CAGR/vol)                0.97       0.88              0.69
+Final equity (Rs)           2,911,406  2,856,656         3,093,104
+
+### 2. 2018-2020 STRESS WINDOW
+                  LIVE (6M/3M Sharpe)  CLENOW-90 Buy&Hold Nifty500
+CAGR                            9.00%      5.78%             6.88%
+Total return                    29.5%      18.4%             22.1%
+Max drawdown                  -11.97%    -16.00%           -38.30%
+Volatility                     10.31%     11.18%            19.81%
+Sharpe (CAGR/vol)                0.87       0.52              0.35
+Final equity (Rs)           1,345,719  1,271,957         1,552,227
+
+### 3. CALENDAR-YEAR RETURNS (first year is partial, from the start date)
+       LIVE CLENOW-90 Buy&Hold
+2017   3.5%      6.2%     7.7%
+2018  -0.6%     -3.9%    -3.4%
+2019   6.0%     -1.0%     7.7%
+2020  21.7%     24.0%    16.7%
+2021  20.0%      4.7%    30.2%
+2022   1.5%     12.5%     3.0%
+2023  29.8%     35.4%    25.8%
+2024  26.0%     12.1%    15.2%
+2025   5.2%     14.4%     6.7%
+2026   3.2%      9.9%    -3.9%
+
+### 4. TRADE & PORTFOLIO STATISTICS
+                                 LIVE  CLENOW-90
+Buys                              177        211
+Closed trades                     172        206
+Win rate                        51.7%      48.1%
+Avg win                         10.5%      10.9%
+Avg loss                        -4.3%      -4.5%
+Profit factor                    2.35       2.15
+Avg hold (days)                 77.20      61.71
+Median hold (days)              56.00      49.00
+Best trade                      74.2%      98.0%
+Worst trade                    -22.3%     -22.3%
+Closed net P&L (Rs)         1,822,789  1,833,625
+Open at end                         5          5
+Open unrealized (Rs)           44,771    -24,875
+Distinct ETFs traded               86         88
+Avg holdings                     4.11       3.91
+% weeks risk-off                31.1%      31.1%
+% weeks < 5 held                26.2%      31.5%
+Exit: TSL                         108        128
+Exit: 52wk-high DD                  2          1
+Exit: Rank > 40                    74         47
+Exit: Dropped from ranking          2         33
+
+### 5. ETF-LEVEL STATS -- LIVE
+Top 6 ETFs by net P&L (Rs):
+            Trades   NetPnL WinRate AvgHold      Sector
+TICKER                                                 
+SILVERIETF       3  355,955     67%     47d      SILVER
+AUTOBEES         4  252,742    100%    135d  NIFTY AUTO
+ICICIB22         3  223,718     67%    184d      SENSEX
+CPSEETF          7  182,245     71%     73d    CPSE ETF
+MID150BEES       4  161,777     50%    140d      MIDCAP
+AUTOIETF         4  157,970    100%    117d        AUTO
+Bottom 4 ETFs by net P&L (Rs):
+            Trades    NetPnL WinRate AvgHold           Sector
+TICKER                                                       
+MAHKTECH         4  -200,468      0%     21d            OTHER
+HNGSNGBEES       7  -122,397     29%     55d  HANG SENG INDEX
+TNIDETF          2   -65,646      0%     46d          DIGITAL
+MODEFENCE        2   -61,251      0%     28d    NIFTY DEFENCE
+Most-traded 5 ETFs:
+            Trades    NetPnL WinRate AvgHold            Sector
+TICKER                                                        
+CPSEETF          7   182,245     71%     73d          CPSE ETF
+HNGSNGBEES       7  -122,397     29%     55d   HANG SENG INDEX
+LICNETFGSC       6    52,444     67%     66d  GSEC10 NSE INDEX
+PSUBANK          6   -32,180     33%     30d    NIFTY PSU BANK
+CONSUMBEES       6    33,448     33%     72d       CONSUMPTION
+Sector view (top 6 by net P&L):
+            Trades   NetPnL
+SECTOR                     
+SILVER           4  487,547
+SENSEX           9  414,329
+NIFTY AUTO       4  252,742
+CPSE ETF         7  182,245
+MIDCAP           7  175,646
+GOLD            15  169,481
+
+### 5. ETF-LEVEL STATS -- CLENOW-90
+Top 6 ETFs by net P&L (Rs):
+            Trades   NetPnL WinRate AvgHold         Sector
+TICKER                                                    
+TATSILV          3  462,751     67%     35d         SILVER
+ICICIB22         5  155,130     40%    101d         SENSEX
+GOLDETF          1  135,079    100%    189d           GOLD
+ALPHA            2  128,503     50%    158d    NIFTY ALPHA
+HDFCMOMENT       1  127,503    100%    280d      NIFTY 200
+ABSLNN50ET       3  126,009    100%    114d  NIFTY NEXT 50
+Bottom 4 ETFs by net P&L (Rs):
+            Trades    NetPnL WinRate AvgHold           Sector
+TICKER                                                       
+HNGSNGBEES      13  -114,402     23%     44d  HANG SENG INDEX
+MAHKTECH         5   -92,316     40%     21d            OTHER
+GOLDIETF         2   -89,924      0%     24d             GOLD
+LICNETFN50       1   -46,503      0%     14d         NIFTY 50
+Most-traded 5 ETFs:
+            Trades    NetPnL WinRate AvgHold            Sector
+TICKER                                                        
+HNGSNGBEES      13  -114,402     23%     44d   HANG SENG INDEX
+PSUBANK         11    44,813     36%     34d    NIFTY PSU BANK
+CPSEETF          9   112,408     67%     80d          CPSE ETF
+PSUBNKBEES       9   -35,325     33%     26d        NIFTY BANK
+LICNETFGSC       9    11,003     56%     40d  GSEC10 NSE INDEX
+Sector view (top 6 by net P&L):
+             Trades   NetPnL
+SECTOR                      
+SILVER            8  478,725
+MIDCAP            8  255,875
+SENSEX           11  229,446
+GOLD             16  198,055
+NIFTY 200         5  164,616
+NIFTY ALPHA       3  159,835
+
+### 6. OVERLAP BETWEEN THE TWO STRATEGIES
+Distinct ETFs traded -- LIVE 86, CLENOW-90 88, in both 58 (Jaccard 50%)
+Days both hold >=1 ETF: 2064; avg names held in common on those days: 1.66; identical portfolios on 1.2% of those days
+
+### 7. UNIVERSE & ELIGIBILITY (avg per weekly decision, by year)
+
+CLENOW-90:
+      ETFs w/ data  fail 52wk  stale feed  gap>15%  <MA100  score<=0  ranked pool  held
+year                                                                                   
+2017          47.5        0.0         5.1      0.9     5.0       0.8         35.8   4.9
+2018          50.2        1.8         2.4      1.3    18.3       5.9         20.5   3.0
+2019          56.7        1.6         2.4      0.8    17.1       4.6         30.2   3.7
+2020          64.2       12.2         2.0      3.8     9.4       2.0         34.8   3.9
+2021          73.8        0.1         3.2      1.1    12.3       3.9         53.2   4.6
+2022          90.8        3.0         4.3      0.5    34.5      14.1         34.4   3.5
+2023         118.7        0.2         4.8      0.2    30.5       8.3         74.8   3.8
+2024         156.5        0.0         1.4      1.0    30.5       6.5        117.0   4.5
+2025         204.5        3.8         0.3      0.7    58.2      18.3        123.2   3.7
+2026         262.1       18.8         0.1      1.6    95.7      30.1        115.8   4.2
+weeks with ranked pool < 5: 1.5%; avg pool 64.4
+
+LIVE:
+      ETFs w/ data  fail 52wk  stale feed  gap>15%  <MA100  score<=0  ranked pool  held
+year                                                                                   
+2017          47.0        0.0         4.8      0.0     0.0       0.0         42.2   4.9
+2018          49.6        1.6         3.4      0.0     0.0       0.0         44.6   3.5
+2019          55.7        1.5         2.6      0.0     0.0       0.0         51.7   4.2
+2020          63.2       11.6         2.4      0.0     0.0       0.0         49.2   4.1
+2021          72.1        0.1         3.2      0.0     0.0       0.0         68.8   4.7
+2022          87.9        2.8         4.3      0.0     0.0       0.0         80.8   3.5
+2023         115.0        0.2         4.9      0.0     0.0       0.0        109.9   4.0
+2024         149.0        0.0         1.9      0.0     0.0       0.0        147.0   4.6
+2025         197.0        3.6         0.4      0.0     0.0       0.0        193.0   3.9
+2026         251.4       18.5         0.1      0.0     0.0       0.0        232.8   4.2
+weeks with ranked pool < 5: 0.0%; avg pool 102.1
+
+Chart -> C:\Users\ameet\Documents\Github\code\momentum\ETFs\backtest\clenow90_vs_live_equity_curve.png
+[check] LIVE: residual daily equity moves > 15%: 0
+[check] CLENOW-90: residual daily equity moves > 15%: 0

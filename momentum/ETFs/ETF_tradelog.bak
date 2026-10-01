@@ -124,5 +124,23 @@
     "action": "BUY",
     "quantity": 4436,
     "price": 11.27
+  },
+  {
+    "id": "f15f5e6e-e6ab-4937-a49b-7b36ce4e568b",
+    "date": "2026-09-01",
+    "timestamp": "2026-09-01T14:23:12.294360",
+    "ticker": "SELECTIPO",
+    "action": "BUY",
+    "quantity": 1030,
+    "price": 48.54
+  },
+  {
+    "id": "ce47677b-32e2-4937-8bcb-04d4a399dce1",
+    "timestamp": "2026-09-28T14:32:34.434870",
+    "ticker": "INTERNET",
+    "action": "SELL",
+    "date": "2026-09-28",
+    "quantity": 3436,
+    "price": 13.81
   }
 ]

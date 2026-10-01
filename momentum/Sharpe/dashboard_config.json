@@ -4,6 +4,8 @@
   "min_n": 5,
   "max_n": 25,
   "min_turnover": 1.0,
+  "min_cmp": 10.0,
+  "min_market_cap": 1000.0,
   "eq_series_filter": false,
   "circuit_filter_enabled": false,
   "circuit_threshold": 20,

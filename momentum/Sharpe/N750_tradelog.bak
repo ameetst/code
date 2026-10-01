@@ -790,5 +790,41 @@
     "action": "BUY",
     "quantity": 268,
     "price": 370.6
+  },
+  {
+    "id": "c3df8053-cfbd-408f-acb5-2befa60e7587",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:17:56.988842",
+    "ticker": "STLTECH",
+    "action": "BUY",
+    "quantity": 123,
+    "price": 807.9
+  },
+  {
+    "id": "c1de328c-847f-4cd8-bb26-23de8ef9833b",
+    "date": "2026-09-25",
+    "timestamp": "2026-09-28T09:40:38.577555",
+    "ticker": "SHILPAMED",
+    "action": "SELL",
+    "quantity": 70,
+    "price": 1014.0
+  },
+  {
+    "id": "2bb09ec1-7445-4ac6-aa73-9cbcf7ace02c",
+    "date": "2026-09-25",
+    "timestamp": "2026-09-28T09:41:07.303512",
+    "ticker": "SANSERA",
+    "action": "SELL",
+    "quantity": 15,
+    "price": 4664.0
+  },
+  {
+    "id": "51f23c18-dadc-4eb4-ac4d-57844f7bd6e3",
+    "date": "2026-09-28",
+    "timestamp": "2026-09-28T14:45:04.711708",
+    "ticker": "SANSERA",
+    "action": "BUY",
+    "quantity": 22,
+    "price": 4500.0
   }
 ]

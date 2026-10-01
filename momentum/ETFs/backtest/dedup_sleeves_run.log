@@ -1,0 +1,76 @@
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+[load] C:\Users\ameet\Documents\Github\dhan_datahq\base files\History_ETFs.xlsx
+       283 tickers (non-empty) | 2609 trading days (2016-09-12 -> 2026-09-10)
+[clean] 70 bad-print fixes (same as earlier runs); EXIT_MAX_RANK=40
+[regime/benchmark] Fetching ^CRSLDX (Nifty 500 Index) via yfinance ...
+       2462 rows (2016-09-12 -> 2026-09-11)
+=== independent LIVE ===
+=== independent CLENOW ===
+=== de-dup sleeves, priority = alt ===
+=== de-dup sleeves, priority = live_first ===
+=== de-dup sleeves, priority = clenow_first ===
+[integrity] no ETF is ever held by both sleeves on the same day (all 3 orderings)
+Window: 2017-09-11 -> 2026-09-10. Regression check: LIVE 12.43% (was 12.43%), CLENOW 12.20% (was 12.20%), independent sleeves 12.32% (was 12.32%)
+
+### 1. HEADLINE METRICS (same window)
+                        LIVE  CLENOW-90 Sleeves independent De-dup (alternating) De-dup (LIVE first) De-dup (CLENOW first) Buy&Hold N500
+CAGR                  12.43%     12.20%              12.32%               13.83%              13.07%                14.09%        11.23%
+Total return          187.0%     181.6%              184.3%               220.7%              201.9%                227.3%        160.5%
+Max drawdown         -20.87%    -18.00%             -18.30%              -13.96%             -13.67%               -14.09%       -38.30%
+Volatility            12.86%     13.85%              12.50%               11.87%              11.73%                11.91%        16.16%
+Sharpe (CAGR/vol)       0.97       0.88                0.99                 1.17                1.11                  1.18          0.69
+Final equity (Rs)  2,911,406  2,856,656           2,884,031            3,252,375           3,061,554             3,319,533     3,093,104
+
+### 2. 2018-2020 STRESS WINDOW
+                        LIVE  CLENOW-90 Sleeves independent De-dup (alternating) De-dup (LIVE first) De-dup (CLENOW first) Buy&Hold N500
+CAGR                   9.00%      5.78%               7.39%                7.62%               6.52%                 7.62%         6.88%
+Total return           29.5%      18.4%               23.8%                24.6%               20.9%                 24.6%         22.1%
+Max drawdown         -11.97%    -16.00%             -11.21%              -11.64%             -13.50%               -11.64%       -38.30%
+Volatility            10.31%     11.18%               9.89%                9.09%               8.77%                 9.09%        19.81%
+Sharpe (CAGR/vol)       0.87       0.52                0.75                 0.84                0.74                  0.84          0.35
+Final equity (Rs)  1,345,719  1,271,957           1,308,838            1,325,618           1,277,263             1,325,618     1,552,227
+
+### 3. CALENDAR-YEAR RETURNS (first year partial)
+       LIVE CLENOW-90 Sleeves independent De-dup (alternating) Buy&Hold N500
+2017   3.5%      6.2%                4.9%                 5.2%          7.7%
+2018  -0.6%     -3.9%               -2.3%                -3.0%         -3.4%
+2019   6.0%     -1.0%                2.5%                 2.0%          7.7%
+2020  21.7%     24.0%               22.8%                25.6%         16.7%
+2021  20.0%      4.7%               12.5%                17.8%         30.2%
+2022   1.5%     12.5%                6.5%                 6.8%          3.0%
+2023  29.8%     35.4%               32.4%                30.8%         25.8%
+2024  26.0%     12.1%               19.2%                18.0%         15.2%
+2025   5.2%     14.4%                9.4%                17.4%          6.7%
+2026   3.2%      9.9%                6.4%                 7.7%         -3.9%
+
+### 4. WHAT DE-DUP CHANGED
+Independent sleeves: same ETF in both on 73.4% of days (avg 1.46 names); avg positions 8.02 of 10
+[alt] avg positions 8.02 of 10; de-dup skips 197 (by sleeve: {'CLENOW': 92, 'LIVE': 105}); buys made after >=1 skip: 191 of 398 (48.0%); daily-return corr between sleeves 0.67 (independent 0.76)
+        LIVE sleeve standalone-vs-dedup CAGR: 12.43% -> 12.78%; CLENOW sleeve: 12.20% -> 14.80%
+[live_first] avg positions 7.92 of 10; de-dup skips 224 (by sleeve: {'CLENOW': 176, 'LIVE': 48}); buys made after >=1 skip: 170 of 386 (44.0%); daily-return corr between sleeves 0.70 (independent 0.76)
+        LIVE sleeve standalone-vs-dedup CAGR: 12.43% -> 11.66%; CLENOW sleeve: 12.20% -> 14.35%
+[clenow_first] avg positions 8.02 of 10; de-dup skips 195 (by sleeve: {'CLENOW': 73, 'LIVE': 122}); buys made after >=1 skip: 185 of 397 (46.6%); daily-return corr between sleeves 0.67 (independent 0.76)
+        LIVE sleeve standalone-vs-dedup CAGR: 12.43% -> 14.19%; CLENOW sleeve: 12.20% -> 13.99%
+
+### 5. TRADE & PORTFOLIO STATISTICS (combined book)
+                           Sleeves independent De-dup (alt) De-dup (LIVE 1st) De-dup (CLENOW 1st)
+Buys                                       388          398               386                 397
+Closed trades                              378          388               376                 387
+Win rate                                 49.7%        51.5%             51.3%               51.7%
+Avg win                                  10.7%        10.1%             10.3%               10.3%
+Avg loss                                 -4.4%        -4.0%             -4.1%               -4.0%
+Profit factor                             2.24         2.57              2.47                2.64
+Avg hold (days)                          68.76        66.72             67.91               66.89
+Closed net P&L (Rs)                  3,656,414    2,166,678         1,972,778           2,227,977
+Open unrealized (Rs)                    19,896       42,505            45,518              48,307
+Distinct ETFs traded                       116          132               131                 127
+Avg positions held (of 10)                8.02         8.02              7.92                8.02
+% days with <5 positions                 17.9%        17.9%             17.7%               17.9%
+Exit: TSL                                  236          210               207                 211
+Exit: Rank > 40                            121          156               143                 153
+Exit: Dropped from ranking                  35           40                42                  40
+
+Chart -> C:\Users\ameet\Documents\Github\code\momentum\ETFs\backtest\dedup_sleeves_equity_curve.png
+[check] De-dup (alternating): residual daily equity moves > 15%: 0
+[check] De-dup (LIVE first): residual daily equity moves > 15%: 0
+[check] De-dup (CLENOW first): residual daily equity moves > 15%: 0
