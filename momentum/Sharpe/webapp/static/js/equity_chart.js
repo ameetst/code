@@ -32,11 +32,14 @@
     const portDelta = last.port - 100.0;
     const benchDelta = last.bench - 100.0;
 
+    // Only advertise the fallback/legacy dot when at least one such day exists.
+    const hasFlaggedDays = data.some((d) => d.method !== "weighted");
+
     root.innerHTML = `
       <div class="eq-legend">
         <span class="eq-legend-item"><span class="eq-legend-line" style="border-color:${ACCENT}"></span>Portfolio (${last.port.toFixed(2)}, ${fmtDelta(portDelta)}%)</span>
         <span class="eq-legend-item"><span class="eq-legend-line dashed" style="border-color:${BENCH}"></span>Benchmark — NIFTY 500 (${last.bench.toFixed(2)}, ${fmtDelta(benchDelta)}%)</span>
-        <span class="eq-legend-item"><span class="eq-legend-dot"></span>Equal-weight fallback / legacy day</span>
+        ${hasFlaggedDays ? '<span class="eq-legend-item"><span class="eq-legend-dot"></span>Equal-weight fallback / legacy day</span>' : ""}
       </div>
       <div class="eq-wrap">
         <svg id="${containerId}-svg" class="eq-svg" preserveAspectRatio="xMidYMid meet"></svg>

@@ -56,6 +56,11 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
     last = records[-1]
     port_delta = last["port"] - 100.0
     bench_delta = last["bench"] - 100.0
+    # Only advertise the fallback/legacy dot when at least one such day exists.
+    has_flagged_days = any(r["method"] != "weighted" for r in records)
+    flagged_legend = (
+        f'<span class="legend-item"><span class="legend-dot" style="background:#B8860B"></span>'
+        f'Equal-weight fallback / legacy day</span>' if has_flagged_days else "")
 
     html = f"""
 <div id="eqroot" style="font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; box-sizing:border-box;">
@@ -92,7 +97,7 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
   <div class="legend">
     <span class="legend-item"><span class="legend-line" style="border-color:{_ACCENT}"></span>Portfolio ({last["port"]:.2f}, {port_delta:+.2f}%)</span>
     <span class="legend-item"><span class="legend-line dashed" style="border-color:{_BENCH}"></span>Benchmark — NIFTY 500 ({last["bench"]:.2f}, {bench_delta:+.2f}%)</span>
-    <span class="legend-item"><span class="legend-dot" style="background:#B8860B"></span>Equal-weight fallback / legacy day</span>
+    {flagged_legend}
   </div>
   <div style="position:relative;">
     <svg id="eqsvg" preserveAspectRatio="xMidYMid meet"></svg>
