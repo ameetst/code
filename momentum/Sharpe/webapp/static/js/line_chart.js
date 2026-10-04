@@ -17,7 +17,7 @@
   }
 
   function fmtDate(s) {
-    return new Date(s).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+    return new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   }
 
   window.initLineChart = function (containerId, data, seriesSpec) {

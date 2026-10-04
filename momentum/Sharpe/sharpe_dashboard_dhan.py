@@ -953,11 +953,22 @@ with st.expander("📡 Regime Score Breakdown", expanded=False):
         hist_df = hist_df.set_index("date").sort_index()
         chart_df = hist_df[["Composite", "Breadth", "Momentum"]].copy()
         chart_df["Entry Threshold"] = NEW_ENTRY_THRESHOLD
-        # Keep a real DatetimeIndex (no strftime-to-string) so Streamlit/Altair
-        # encodes the x-axis as temporal and sorts chronologically — a string
-        # index gets encoded as nominal and sorted alphabetically instead
-        # (e.g. "Nov" < "Oct" < "Sep"), scrambling the date order.
-        st.line_chart(chart_df, height=260)
+        # Keep a real datetime x field (no strftime-to-string) so Altair encodes the
+        # axis as temporal and sorts chronologically — a string field gets encoded
+        # as nominal and sorted alphabetically instead (e.g. "Nov" < "Oct" < "Sep").
+        # Explicit "%b %d" format: st.line_chart's auto format shows weekday + date.
+        plot_df = chart_df.reset_index().melt("date", var_name="Series", value_name="Score")
+        trend_chart = (
+            alt.Chart(plot_df).mark_line()
+            .encode(
+                x=alt.X("date:T", title=None, axis=alt.Axis(format="%b %d", labelAngle=0)),
+                y=alt.Y("Score:Q", title=None),
+                color=alt.Color("Series:N", title=None, legend=alt.Legend(orient="right")),
+                tooltip=[alt.Tooltip("date:T", title="Date", format="%b %d, %Y"),
+                         alt.Tooltip("Series:N"),
+                         alt.Tooltip("Score:Q", format=".3f")])
+            .properties(height=260))
+        st.altair_chart(trend_chart, use_container_width=True)
         st.caption(
             f"📊 {len(regime_history)} day(s) recorded  |  "
             f"Latest: {hist_df.index[-1].strftime('%d-%b-%Y')}  |  "
