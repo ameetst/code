@@ -3,7 +3,7 @@ pandas
 numpy
 matplotlib
 datetime
-yfinance
+yfinance  # fallback data source (Sharpe.py --data-source yfinance) + dashboard live prices
 numpy_financial
 mftool
 tqdm

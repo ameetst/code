@@ -84,7 +84,10 @@ _parser.add_argument("universe", nargs="?", default="N500",
 _parser.add_argument("ledger", nargs="?", default=None,
                      help="Path to positions ledger JSON (optional)")
 _parser.add_argument("--update", action="store_true",
-                     help="Run update_stock_price.py to refresh data before computing rankings")
+                     help="Refresh price + volume data (see --data-source) before computing rankings")
+_parser.add_argument("--data-source", choices=["dhan", "yfinance"], default="dhan",
+                     help="Provider used by --update (default: dhan). Has no effect without --update; "
+                          "rankings always read <UNIVERSE>_updated.xlsx")
 _parser.add_argument("--min-turnover", type=float, default=1.0,
                      help="Minimum median daily turnover in Rs Cr (default: 1.0)")
 _parser.add_argument("--min-cmp", type=float, default=None,
@@ -228,13 +231,41 @@ def days_held(ticker: str, ledger: dict) -> int:
 
 
 # -- RUN DATA UPDATE (optional) ------------------------------------------------
+# Both fetchers read a template workbook and write <UNIVERSE>_updated.xlsx into
+# this folder in the same DATA/VOLUME shape, so everything downstream is
+# provider-agnostic. Dhan is the default; yfinance is kept as a fallback.
+#   dhan     : adjusted closes, NIFTY500 = plain price index (Dhan has no TRI)
+#   yfinance : adjusted closes, NIFTY500 = ^CRSLDX Total Return Index
+_GITHUB_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+_DATA_SOURCES = {
+    "dhan": {
+        "script":   _GITHUB_ROOT / "dhan_datahq" / "update_stock_price_dhan.py",
+        "cwd":      _GITHUB_ROOT / "dhan_datahq",
+        "template": _GITHUB_ROOT / "dhan_datahq" / "base files",
+        "universes": {"N750", "NSEAll"},
+    },
+    "yfinance": {
+        "script":   _GITHUB_ROOT / "code" / "yfinance data scripts" / "update_stock_price.py",
+        "cwd":      _GITHUB_ROOT / "code" / "yfinance data scripts",
+        "template": _GITHUB_ROOT / "code" / "yfinance data scripts",
+        "universes": None,   # any universe with a template file
+    },
+}
+
 if _args.update:
-    UPDATE_SCRIPT = Path(__file__).resolve().parent.parent.parent / "yfinance data scripts" / "update_stock_price.py"
-    TEMPLATE_DIR  = Path(__file__).resolve().parent.parent.parent / "yfinance data scripts"
+    _src          = _DATA_SOURCES[_args.data_source]
+    UPDATE_SCRIPT = _src["script"]
+    TEMPLATE_DIR  = _src["template"]
     SHARPE_DIR    = Path(__file__).resolve().parent
 
     if not UPDATE_SCRIPT.exists():
-        print(f"ERROR: update_stock_price.py not found at {UPDATE_SCRIPT}")
+        print(f"ERROR: {UPDATE_SCRIPT.name} not found at {UPDATE_SCRIPT}")
+        sys.exit(1)
+
+    if _src["universes"] is not None and UNIVERSE not in _src["universes"]:
+        print(f"ERROR: --data-source {_args.data_source} supports "
+              f"{sorted(_src['universes'])}, not {UNIVERSE}. "
+              f"Use --data-source yfinance or skip --update.")
         sys.exit(1)
 
     template_file = TEMPLATE_DIR / f"{UNIVERSE}.xlsx"
@@ -243,16 +274,17 @@ if _args.update:
         sys.exit(1)
 
     print(f"\n{'='*70}")
-    print(f"STEP 1: Refreshing price + volume data via update_stock_price.py")
+    print(f"STEP 1: Refreshing price + volume data via {UPDATE_SCRIPT.name} "
+          f"[{_args.data_source}]")
     print(f"{'='*70}\n")
 
-    ret = subprocess.run(
-        [sys.executable, str(UPDATE_SCRIPT), UNIVERSE,
-         "--output-dir", str(SHARPE_DIR)],
-        cwd=str(TEMPLATE_DIR)
-    )
+    _cmd = [sys.executable, str(UPDATE_SCRIPT), UNIVERSE,
+            "--output-dir", str(SHARPE_DIR)]
+    if _args.data_source == "dhan":
+        _cmd += ["--template-dir", str(TEMPLATE_DIR)]
+    ret = subprocess.run(_cmd, cwd=str(_src["cwd"]))
     if ret.returncode != 0:
-        print(f"\nERROR: update_stock_price.py failed (exit code {ret.returncode})")
+        print(f"\nERROR: {UPDATE_SCRIPT.name} failed (exit code {ret.returncode})")
         sys.exit(1)
 
     print(f"\n{'='*70}")

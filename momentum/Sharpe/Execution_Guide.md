@@ -7,7 +7,9 @@ OVERVIEW
 Three Python scripts work together to fetch data, compute momentum scores, and
 output a ranked Excel workbook with exit recommendations and position management.
 
-  update_stock_price.py   Data fetcher — downloads prices + volume from Yahoo Finance
+  update_stock_price_dhan.py  Data fetcher (default) — prices + volume from Dhan
+                              (lives in ../dhan_datahq/, N750 and NSEAll only)
+  update_stock_price.py       Data fetcher (fallback) — prices + volume from Yahoo Finance
   momentum_lib.py         Library of reusable scoring functions (do not run directly)
   Sharpe.py               Main script — loads data, evaluates exits, writes output
   sharpe_dashboard.py     Streamlit dashboard — interactive UI for rankings & analysis
@@ -45,6 +47,11 @@ DEPENDENCIES
 Install once using pip:
 
   pip install pandas numpy openpyxl scipy yfinance
+
+For the default Dhan data source also install the shared library once:
+  cd ../dhan_datahq && pip install -e .
+and make sure dhan_datahq\.dhan_token_cache.json holds a valid token
+(see dhan_datahq/README.md).
 
 Python version: 3.9 or higher recommended.
 
@@ -94,16 +101,29 @@ HOW TO RUN
   Run Sharpe.py with the --update flag to automatically fetch fresh data
   and compute rankings in a single command:
 
-    cd "momentum/Sharpe Score"
-    python Sharpe.py N750 --update
+    cd "momentum/Sharpe"
+    python Sharpe.py N750 --update                          # Dhan (default)
+    python Sharpe.py N750 --update --data-source yfinance   # Yahoo fallback
 
-  What happens:
-    1. Sharpe.py calls update_stock_price.py in "yfinance data scripts/"
-    2. update_stock_price.py reads the template N750.xlsx
-    3. Downloads 1 year of daily Close prices + Volume from Yahoo Finance
+  What happens (--data-source dhan, the default):
+    1. Sharpe.py calls update_stock_price_dhan.py in ../dhan_datahq/
+    2. It reads the template dhan_datahq/base files/N750.xlsx
+    3. Downloads daily Close prices + Volume from Dhan
     4. Writes prices to DATA sheet, volume to VOLUME sheet
-    5. Saves N750_updated.xlsx locally AND copies it to Sharpe Score folder
+    5. Saves N750_updated.xlsx into the Sharpe folder
     6. Sharpe.py then loads the updated file and computes rankings
+
+  With --data-source yfinance, steps 1-5 use update_stock_price.py in
+  "yfinance data scripts/" instead (Yahoo Finance data).
+
+  DATA SOURCE DIFFERENCES (rankings read the same file shape either way):
+    dhan      Dhan has no Nifty 500 Total Return Index, so the NIFTY500
+              benchmark row is the plain price index. ~1% of tickers may not
+              resolve (renames/demergers) and are reported as unmatched.
+              Only N750 and NSEAll are supported.
+    yfinance  NIFTY500 = ^CRSLDX (Total Return Index). Any universe with a
+              template in "yfinance data scripts/".
+  Do not mix sources inside one _updated.xlsx; re-run --update to switch.
 
   Optional — custom turnover threshold:
     python Sharpe.py N750 --update --min-turnover 2.0    # Rs 2 Cr minimum
@@ -154,14 +174,18 @@ HOW TO RUN
 COMMAND-LINE ARGUMENTS
 -----------------------
 Sharpe.py:
-  python Sharpe.py [UNIVERSE] [LEDGER] [--update] [--min-turnover VALUE]
+  python Sharpe.py [UNIVERSE] [LEDGER] [--update] [--data-source SRC] [--min-turnover VALUE]
 
   UNIVERSE        N500 | N750 | NSEAll              (default: N500)
   LEDGER          Path to positions ledger JSON      (optional)
   --update        Fetch fresh data before computing  (optional)
+  --data-source   dhan | yfinance, used with --update (default: dhan)
   --min-turnover  Min median daily turnover in Rs Cr (default: 1.0)
 
-update_stock_price.py:
+update_stock_price_dhan.py (run from ../dhan_datahq):
+  python update_stock_price_dhan.py {NSEAll|N750|ETF} [--template-dir PATH] [--output-dir PATH]
+
+update_stock_price.py (yfinance fallback):
   python update_stock_price.py {NSEAll|N750|N500} [--output-dir PATH]
 
   UNIVERSE        N500 | N750 | NSEAll              (required)
@@ -432,7 +456,7 @@ The library functions can be imported and called independently:
 
 TYPICAL RUNTIME
 ---------------
-  update_stock_price.py : ~5-10 minutes for 750 tickers (network-bound)
+  update_stock_price*.py: ~5-10 minutes for 750 tickers (network-bound)
   Sharpe.py             : ~30-60 seconds (compute-bound)
   Combined (--update)   : ~6-11 minutes total
 
@@ -455,9 +479,11 @@ TROUBLESHOOTING
                                          Run update_stock_price.py to generate
                                          the VOLUME sheet, or add one to the
                                          template manually.
-  update_stock_price.py not found      → When using --update flag, the script
-                                         looks for update_stock_price.py at:
-                                         ../yfinance data scripts/
+  update_stock_price*.py not found     → --update looks for the fetcher at:
+                                         dhan   : ../dhan_datahq/update_stock_price_dhan.py
+                                         yfinance: ../yfinance data scripts/update_stock_price.py
                                          Ensure the folder structure is correct.
+  --data-source dhan supports ...      → Dhan fetcher handles N750 / NSEAll only;
+                                         use --data-source yfinance for N500.
 
 ===============================================================================
