@@ -835,5 +835,59 @@
     "action": "BUY",
     "quantity": 98,
     "price": 1017.05
+  },
+  {
+    "id": "e0d46321-9cb2-4130-920d-1ca19cde0dd8",
+    "date": "2026-10-07",
+    "timestamp": "2026-10-07T15:24:02.699792",
+    "ticker": "HFCL",
+    "action": "SELL",
+    "quantity": 415,
+    "price": 271.64
+  },
+  {
+    "id": "cfc8ca55-e970-41be-a245-36bd2e8b3b7f",
+    "date": "2026-10-07",
+    "timestamp": "2026-10-07T15:24:21.621171",
+    "ticker": "CUPID",
+    "action": "SELL",
+    "quantity": 225,
+    "price": 343.6
+  },
+  {
+    "id": "7a59ddc7-2736-41ea-a971-d015608e4927",
+    "date": "2026-10-07",
+    "timestamp": "2026-10-07T15:24:57.980144",
+    "ticker": "SKYGOLD",
+    "action": "SELL",
+    "quantity": 75,
+    "price": 875.8
+  },
+  {
+    "id": "9a4df93e-e340-4f11-9a16-f4bd9774e714",
+    "date": "2026-10-08",
+    "timestamp": "2026-10-08T10:07:55.887711",
+    "ticker": "CUPID",
+    "action": "BUY",
+    "quantity": 287,
+    "price": 351.3
+  },
+  {
+    "id": "c2aa81f9-f03a-428c-b428-ebe17894ea39",
+    "date": "2026-10-08",
+    "timestamp": "2026-10-08T10:08:20.735646",
+    "ticker": "SKYGOLD",
+    "action": "BUY",
+    "quantity": 112,
+    "price": 858.49
+  },
+  {
+    "id": "9ce5f62e-b035-4202-8d67-044d2f09bd06",
+    "date": "2026-10-08",
+    "timestamp": "2026-10-08T10:08:53.073752",
+    "ticker": "HFCL",
+    "action": "BUY",
+    "quantity": 364,
+    "price": 262.5
   }
 ]

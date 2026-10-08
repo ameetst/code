@@ -1,13 +1,13 @@
 {
   "CUPID": {
-    "entry_date": "2026-08-10",
-    "entry_price": 261.24,
-    "qty": 225.0
+    "entry_date": "2026-10-08",
+    "entry_price": 351.3,
+    "qty": 287.0
   },
   "HFCL": {
-    "entry_date": "2026-05-25",
-    "entry_price": 188.87779521003722,
-    "qty": 415.0
+    "entry_date": "2026-10-08",
+    "entry_price": 262.5,
+    "qty": 364.0
   },
   "LAURUSLABS": {
     "entry_date": "2026-08-31",
@@ -80,9 +80,9 @@
     "qty": 70.0
   },
   "SKYGOLD": {
-    "entry_date": "2026-08-10",
-    "entry_price": 759.5,
-    "qty": 75.0
+    "entry_date": "2026-10-08",
+    "entry_price": 858.49,
+    "qty": 112.0
   },
   "AETHER": {
     "entry_date": "2026-08-31",

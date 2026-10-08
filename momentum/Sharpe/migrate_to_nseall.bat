@@ -53,6 +53,14 @@ if not exist "NSEAll_equity_history.json" (
     echo [ERROR] NSEAll_equity_history.json not found. Aborting.
     goto :end
 )
+if not exist "N750_cash_ledger.json" (
+    echo [ERROR] N750_cash_ledger.json not found. Aborting.
+    goto :end
+)
+if not exist "NSEAll_cash_ledger.json" (
+    echo [ERROR] NSEAll_cash_ledger.json not found. Aborting.
+    goto :end
+)
 if not exist "dashboard_config.json" (
     echo [ERROR] dashboard_config.json not found. Aborting.
     goto :end
@@ -86,9 +94,11 @@ copy /y "dashboard_config.json"        "%BACKUP_DIR%\" >nul || goto :copyerror
 copy /y "NSEAll_positions_ledger.json" "%BACKUP_DIR%\" >nul || goto :copyerror
 copy /y "NSEAll_tradelog.json"         "%BACKUP_DIR%\" >nul || goto :copyerror
 copy /y "NSEAll_equity_history.json"   "%BACKUP_DIR%\" >nul || goto :copyerror
+copy /y "NSEAll_cash_ledger.json"      "%BACKUP_DIR%\" >nul || goto :copyerror
 copy /y "N750_positions_ledger.json"   "%BACKUP_DIR%\" >nul || goto :copyerror
 copy /y "N750_tradelog.json"           "%BACKUP_DIR%\" >nul || goto :copyerror
 copy /y "N750_equity_history.json"     "%BACKUP_DIR%\" >nul || goto :copyerror
+copy /y "N750_cash_ledger.json"        "%BACKUP_DIR%\" >nul || goto :copyerror
 echo       done.
 
 :: --- Step 2: Seed NSEAll ledger from N750 (preserves entry_date / entry_price) ---
@@ -96,10 +106,11 @@ echo [2/4] Copying open positions: N750 -^> NSEAll ...
 copy /y "N750_positions_ledger.json" "NSEAll_positions_ledger.json" >nul || goto :copyerror
 echo       done.
 
-:: --- Step 3: Carry trade history and equity curve forward for continuous P&L ---
-echo [3/4] Carrying trade history and equity curve forward ...
+:: --- Step 3: Carry trade history, equity curve and cash ledger forward for continuous P&L ---
+echo [3/4] Carrying trade history, equity curve and cash ledger forward ...
 copy /y "N750_tradelog.json"       "NSEAll_tradelog.json" >nul || goto :copyerror
 copy /y "N750_equity_history.json" "NSEAll_equity_history.json" >nul || goto :copyerror
+copy /y "N750_cash_ledger.json"    "NSEAll_cash_ledger.json" >nul || goto :copyerror
 echo       done.
 
 :: --- Step 4: Flip the dashboard's active universe ---
@@ -115,11 +126,12 @@ echo.
 echo ============================================================
 echo  Migration complete.
 echo ============================================================
-echo   - NSEAll_positions_ledger.json now holds your 20 live N750 positions,
+echo   - NSEAll_positions_ledger.json now holds your live N750 positions,
 echo     original entry dates/prices preserved (28-day hold lock intact).
 echo   - NSEAll_tradelog.json now carries the full N750 trade history forward.
 echo   - NSEAll_equity_history.json now carries the N750 equity curve forward
-echo     (the 2 earlier NSEAll dry-run stub rows were overwritten).
+echo     (any earlier NSEAll dry-run rows were overwritten).
+echo   - NSEAll_cash_ledger.json now carries the N750 deposit/withdrawal history.
 echo   - dashboard_config.json now points at NSEAll_updated.xlsx.
 echo.
 echo   N750 source files were NOT modified, only read.
