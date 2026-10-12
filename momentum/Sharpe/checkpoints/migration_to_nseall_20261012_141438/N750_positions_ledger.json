@@ -1,0 +1,97 @@
+{
+  "CUPID": {
+    "entry_date": "2026-10-08",
+    "entry_price": 351.3,
+    "qty": 287.0
+  },
+  "HFCL": {
+    "entry_date": "2026-10-08",
+    "entry_price": 262.5,
+    "qty": 364.0
+  },
+  "LAURUSLABS": {
+    "entry_date": "2026-08-31",
+    "entry_price": 1882.1,
+    "qty": 52.0
+  },
+  "SANSERA": {
+    "entry_date": "2026-09-28",
+    "entry_price": 4500.0,
+    "qty": 22.0
+  },
+  "WELCORP": {
+    "entry_date": "2026-08-31",
+    "entry_price": 2387.0,
+    "qty": 42.0
+  },
+  "CPPLUS": {
+    "entry_date": "2026-06-23",
+    "entry_price": 3616.0100000000007,
+    "qty": 20.0
+  },
+  "STLTECH": {
+    "entry_date": "2026-09-21",
+    "entry_price": 807.9,
+    "qty": 123.0
+  },
+  "SYRMA": {
+    "entry_date": "2026-09-21",
+    "entry_price": 1703.0,
+    "qty": 58.0
+  },
+  "RRKABEL": {
+    "entry_date": "2026-06-29",
+    "entry_price": 2481.7,
+    "qty": 30.0
+  },
+  "ANANDRATHI": {
+    "entry_date": "2026-07-13",
+    "entry_price": 2117.5,
+    "qty": 35.0
+  },
+  "GRANULES": {
+    "entry_date": "2026-07-13",
+    "entry_price": 897.95,
+    "qty": 83.0
+  },
+  "ATHERENERG": {
+    "entry_date": "2026-09-21",
+    "entry_price": 1590.5,
+    "qty": 62.0
+  },
+  "DIACABS": {
+    "entry_date": "2026-09-21",
+    "entry_price": 370.6,
+    "qty": 268.0
+  },
+  "HONASA": {
+    "entry_date": "2026-08-03",
+    "entry_price": 456.35,
+    "qty": 165.0
+  },
+  "SHILPAMED": {
+    "entry_date": "2026-09-28",
+    "entry_price": 1017.05,
+    "qty": 98.0
+  },
+  "SONACOMS": {
+    "entry_date": "2026-08-10",
+    "entry_price": 818.25,
+    "qty": 70.0
+  },
+  "SKYGOLD": {
+    "entry_date": "2026-10-08",
+    "entry_price": 858.49,
+    "qty": 112.0
+  },
+  "AETHER": {
+    "entry_date": "2026-08-31",
+    "entry_price": 1684.4,
+    "qty": 59.0
+  },
+  "DIVISLAB": {
+    "entry_date": "2026-08-31",
+    "entry_price": 9217.0,
+    "qty": 11.0
+  }
+}

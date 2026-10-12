@@ -1,0 +1,911 @@
+[
+  {
+    "id": "7013099e-3fd1-466a-8ced-dfb0a53957f7",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:26:18.548259",
+    "ticker": "MTARTECH",
+    "action": "BUY",
+    "quantity": 6,
+    "price": 7992.0
+  },
+  {
+    "id": "7113882c-1394-4172-a4ae-54288d867b1c",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:26:39.203958",
+    "ticker": "CUPID",
+    "action": "BUY",
+    "quantity": 402,
+    "price": 123.1
+  },
+  {
+    "id": "c09efd89-d63d-412d-bab0-a959df69c689",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:26:53.274718",
+    "ticker": "HFCL",
+    "action": "BUY",
+    "quantity": 311,
+    "price": 162.15
+  },
+  {
+    "id": "02eda000-f940-44e2-8474-e68fce613fd8",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:27:10.987955",
+    "ticker": "BBOX",
+    "action": "BUY",
+    "quantity": 50,
+    "price": 978.81
+  },
+  {
+    "id": "d1fe9b3c-16de-4c8c-b773-654caf5f9e0c",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:27:49.042893",
+    "ticker": "MCX",
+    "action": "BUY",
+    "quantity": 15,
+    "price": 3337.9
+  },
+  {
+    "id": "0ba0eac3-2e70-4016-a906-c21dc50caec3",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:28:16.115920",
+    "ticker": "TDPOWERSYS",
+    "action": "BUY",
+    "quantity": 38,
+    "price": 1306.43
+  },
+  {
+    "id": "a00dc9ad-2b3c-4368-9102-80cdccda281a",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:28:43.476345",
+    "ticker": "LAURUSLABS",
+    "action": "BUY",
+    "quantity": 37,
+    "price": 1348.0
+  },
+  {
+    "id": "10213e9a-7717-4611-a80e-d78ce939943a",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:29:04.213268",
+    "ticker": "POWERINDIA",
+    "action": "BUY",
+    "quantity": 1,
+    "price": 35305.0
+  },
+  {
+    "id": "fe65a2c5-0c65-4d93-8825-30eddaf8d338",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:33:12.459316",
+    "ticker": "SANSERA",
+    "action": "BUY",
+    "quantity": 17,
+    "price": 2921.89
+  },
+  {
+    "id": "6e74ad76-c018-446c-b0ac-43d21b36d738",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:33:32.224629",
+    "ticker": "ACUTAAS",
+    "action": "BUY",
+    "quantity": 17,
+    "price": 2911.75
+  },
+  {
+    "id": "7bb40421-f420-421f-9168-47a265bb6216",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:33:50.496879",
+    "ticker": "ADANIPOWER",
+    "action": "BUY",
+    "quantity": 220,
+    "price": 232.79
+  },
+  {
+    "id": "a06f6349-f3e8-48f7-9bcd-224e1db83ca3",
+    "date": "2026-05-25",
+    "timestamp": "2026-05-25T14:34:11.405718",
+    "ticker": "NATIONALUM",
+    "action": "BUY",
+    "quantity": 124,
+    "price": 402.75
+  },
+  {
+    "id": "0bea2650-c6a1-42c8-9d30-973566d3f5ba",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:01:31.377456",
+    "ticker": "WELCORP",
+    "action": "BUY",
+    "quantity": 54,
+    "price": 1372.03
+  },
+  {
+    "id": "5e66c099-24f1-404f-be13-b185a228a8d7",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:01:57.023628",
+    "ticker": "CPPLUS",
+    "action": "BUY",
+    "quantity": 24,
+    "price": 3094.0
+  },
+  {
+    "id": "eb867072-8ba2-4070-9c62-18fca850b668",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:14:29.232339",
+    "ticker": "ACUTAAS",
+    "action": "BUY",
+    "quantity": 7,
+    "price": 3028.0
+  },
+  {
+    "id": "a2e519d3-180e-46b7-81f1-5ce94da54edf",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:14:44.929652",
+    "ticker": "ADANIPOWER",
+    "action": "BUY",
+    "quantity": 106,
+    "price": 232.06
+  },
+  {
+    "id": "0cbe3d55-2888-45af-bff7-de2611306574",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:14:57.283353",
+    "ticker": "BBOX",
+    "action": "BUY",
+    "quantity": 20,
+    "price": 1047.2
+  },
+  {
+    "id": "5198d961-3db9-44d9-983f-443dd1c99cad",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:15:14.432833",
+    "ticker": "CUPID",
+    "action": "BUY",
+    "quantity": 170,
+    "price": 130.05
+  },
+  {
+    "id": "0096ad34-af21-4f79-bb1e-c4598e08924a",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:15:27.891109",
+    "ticker": "HFCL",
+    "action": "BUY",
+    "quantity": 100,
+    "price": 183.22
+  },
+  {
+    "id": "1b9fc7ae-6df9-43d3-846e-52fd7cee639f",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:15:42.635035",
+    "ticker": "POWERINDIA",
+    "action": "BUY",
+    "quantity": 1,
+    "price": 36445.0
+  },
+  {
+    "id": "f197b6fb-603b-4b55-908a-5332769cc822",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:16:01.243337",
+    "ticker": "LAURUSLABS",
+    "action": "BUY",
+    "quantity": 16,
+    "price": 1388.0
+  },
+  {
+    "id": "380c0fd0-92dd-471d-afa1-8d2541ba16e1",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:16:13.159790",
+    "ticker": "MTARTECH",
+    "action": "BUY",
+    "quantity": 4,
+    "price": 7128.0
+  },
+  {
+    "id": "d05c940a-a268-49cc-8cce-356bf211ab70",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:16:30.070194",
+    "ticker": "MCX",
+    "action": "BUY",
+    "quantity": 11,
+    "price": 2896.0
+  },
+  {
+    "id": "62391d8d-d89a-468b-8586-362745d997c1",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:16:43.319760",
+    "ticker": "NATIONALUM",
+    "action": "BUY",
+    "quantity": 49,
+    "price": 436.65
+  },
+  {
+    "id": "6e41b317-beb9-46c7-b787-5e199271aa0d",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:16:59.501189",
+    "ticker": "SANSERA",
+    "action": "BUY",
+    "quantity": 9,
+    "price": 2838.1
+  },
+  {
+    "id": "6f855982-0cc6-4a15-b2bb-ddb825457245",
+    "date": "2026-06-01",
+    "timestamp": "2026-06-01T15:17:13.590231",
+    "ticker": "TDPOWERSYS",
+    "action": "BUY",
+    "quantity": 22,
+    "price": 1238.6
+  },
+  {
+    "id": "976200ca-5b90-491e-b182-0f862adce457",
+    "date": "2026-06-15",
+    "timestamp": "2026-06-15T16:08:57.575127",
+    "ticker": "CUPID",
+    "action": "SELL",
+    "quantity": 572,
+    "price": 164.56
+  },
+  {
+    "id": "3df21adf-926e-4377-ada6-4306f5d7824b",
+    "date": "2026-06-16",
+    "timestamp": "2026-06-16T15:30:55.937157",
+    "ticker": "CUPID",
+    "action": "BUY",
+    "quantity": 450,
+    "price": 154.29
+  },
+  {
+    "id": "5704cbb6-07e9-473c-86cc-516b5067eec6",
+    "date": "2026-06-22",
+    "timestamp": "2026-06-22T13:54:49.307108",
+    "ticker": "HFCL",
+    "action": "SELL",
+    "quantity": 217,
+    "price": 216.0
+  },
+  {
+    "id": "bdfa1192-7cd8-4a2b-b00d-4e2d15cdcff4",
+    "date": "2026-06-22",
+    "timestamp": "2026-06-22T13:55:40.424751",
+    "ticker": "CPPLUS",
+    "action": "SELL",
+    "quantity": 24,
+    "price": 3607.0
+  },
+  {
+    "id": "fe19d2b0-0668-455e-bc88-d3d8c7b2e8c7",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T09:49:18.061819",
+    "ticker": "HFCL",
+    "action": "BUY",
+    "quantity": 221,
+    "price": 207.84
+  },
+  {
+    "id": "4bd97024-6dd7-489c-a061-3827dec765d2",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T09:49:58.579001",
+    "ticker": "CPPLUS",
+    "action": "BUY",
+    "quantity": 20,
+    "price": 3616.01
+  },
+  {
+    "id": "69318238-86d9-4849-9248-324139f155aa",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T09:50:28.471026",
+    "ticker": "STLTECH",
+    "action": "BUY",
+    "quantity": 123,
+    "price": 609.0
+  },
+  {
+    "id": "cf398e2d-9727-4d3a-94d7-0b4c162c6a32",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T09:50:45.372282",
+    "ticker": "SYRMA",
+    "action": "BUY",
+    "quantity": 56,
+    "price": 1377.0
+  },
+  {
+    "id": "d79983cc-aad5-4235-9b19-5332de209160",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T11:44:06.554180",
+    "ticker": "NATIONALUM",
+    "action": "SELL",
+    "quantity": 173,
+    "price": 359.5
+  },
+  {
+    "id": "4ffa533d-0112-4c31-a89e-19f27b773b81",
+    "date": "2026-06-23",
+    "timestamp": "2026-06-23T11:44:33.068367",
+    "ticker": "MCX",
+    "action": "SELL",
+    "quantity": 26,
+    "price": 2827.0
+  },
+  {
+    "id": "9fb53387-3882-41dc-95fa-2ec0dbc47780",
+    "date": "2026-06-29",
+    "timestamp": "2026-06-29T09:52:41.925536",
+    "ticker": "KIRLOSENG",
+    "action": "BUY",
+    "quantity": 30,
+    "price": 2482.6
+  },
+  {
+    "id": "637660de-5c8b-48b3-8e36-312620a70f13",
+    "date": "2026-06-29",
+    "timestamp": "2026-06-29T09:53:12.735131",
+    "ticker": "RRKABEL",
+    "action": "BUY",
+    "quantity": 30,
+    "price": 2481.7
+  },
+  {
+    "id": "5415d794-bc7e-4485-a78b-6a17479177be",
+    "date": "2026-07-06",
+    "timestamp": "2026-07-06T12:51:04.273182",
+    "ticker": "WELCORP",
+    "action": "SELL",
+    "quantity": 54,
+    "price": 1560.0
+  },
+  {
+    "id": "71f1cb5a-6c48-4619-884c-d4676dee9d8c",
+    "date": "2026-07-06",
+    "timestamp": "2026-07-07T12:51:42.471715",
+    "ticker": "ACUTAAS",
+    "action": "SELL",
+    "quantity": 24,
+    "price": 3487.8
+  },
+  {
+    "id": "8871ba0c-a903-4eb4-b8be-b4e41a4c05a4",
+    "date": "2026-07-06",
+    "timestamp": "2026-07-07T12:52:03.309096",
+    "ticker": "CUPID",
+    "action": "SELL",
+    "quantity": 450,
+    "price": 212.93
+  },
+  {
+    "id": "0f0873a6-75bb-4dd4-be74-935b5b605aab",
+    "date": "2026-07-07",
+    "timestamp": "2026-07-07T12:55:59.543210",
+    "ticker": "CUPID",
+    "action": "BUY",
+    "quantity": 350,
+    "price": 208.99
+  },
+  {
+    "id": "49fd0e61-5737-460c-be20-504749aaeb87",
+    "date": "2026-07-07",
+    "timestamp": "2026-07-07T12:56:20.015985",
+    "ticker": "ACUTAAS",
+    "action": "BUY",
+    "quantity": 21,
+    "price": 3516.0
+  },
+  {
+    "id": "32cc4e52-8def-4a66-9f77-32c77fec48ff",
+    "date": "2026-07-07",
+    "timestamp": "2026-07-07T12:56:39.897905",
+    "ticker": "WELCORP",
+    "action": "BUY",
+    "quantity": 48,
+    "price": 1532.8
+  },
+  {
+    "id": "f2ba2a58-8eab-4a53-a09a-3cefe577c32a",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:11:03.441818",
+    "ticker": "ADANIPOWER",
+    "action": "SELL",
+    "quantity": 326,
+    "price": 215.52
+  },
+  {
+    "id": "4a55502f-fb3c-4445-b476-ba5519cc9e51",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:11:31.116017",
+    "ticker": "TDPOWERSYS",
+    "action": "SELL",
+    "quantity": 60,
+    "price": 1154.3
+  },
+  {
+    "id": "89183d59-33a5-4dbe-96ee-8931599dd332",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:12:02.996183",
+    "ticker": "POWERINDIA",
+    "action": "SELL",
+    "quantity": 2,
+    "price": 31945.0
+  },
+  {
+    "id": "1a6a7741-5587-4ca5-8bc5-e6f597acc9fd",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:12:44.782266",
+    "ticker": "ANANDRATHI",
+    "action": "BUY",
+    "quantity": 35,
+    "price": 2117.5
+  },
+  {
+    "id": "8bdc6423-a351-4daa-b2f3-0703875066e9",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:13:34.185931",
+    "ticker": "ASTRAMICRO",
+    "action": "BUY",
+    "quantity": 43,
+    "price": 1708.1
+  },
+  {
+    "id": "da1d4b26-bb26-4ae0-9c04-0351fe4dcc93",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:13:58.586600",
+    "ticker": "GRANULES",
+    "action": "BUY",
+    "quantity": 83,
+    "price": 897.95
+  },
+  {
+    "id": "ff468d93-d811-4da9-a60e-e35e92b7176e",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:14:21.120944",
+    "ticker": "TORNTPHARM",
+    "action": "BUY",
+    "quantity": 15,
+    "price": 4816.27
+  },
+  {
+    "id": "8fbd271f-1803-4c09-999a-2c81730e0523",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:14:48.728356",
+    "ticker": "THANGAMAYL",
+    "action": "BUY",
+    "quantity": 12,
+    "price": 6256.0
+  },
+  {
+    "id": "3e77659f-c940-4d71-8370-6fce88f4f784",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:15:07.842757",
+    "ticker": "ATHERENERG",
+    "action": "BUY",
+    "quantity": 62,
+    "price": 1191.4
+  },
+  {
+    "id": "0b61ac66-12cf-48b0-a91f-82be5d1a3130",
+    "date": "2026-07-13",
+    "timestamp": "2026-07-14T12:15:38.754340",
+    "ticker": "GRWRHITECH",
+    "action": "BUY",
+    "quantity": 10,
+    "price": 7047.0
+  },
+  {
+    "id": "32d070e3-6bc3-4989-a187-218327aa3434",
+    "date": "2026-07-20",
+    "timestamp": "2026-07-20T13:55:26.481443",
+    "ticker": "MTARTECH",
+    "action": "SELL",
+    "quantity": 10,
+    "price": 5744.0
+  },
+  {
+    "id": "248ff0b0-657a-4e7b-87bb-1c57e04f3757",
+    "date": "2026-07-27",
+    "timestamp": "2026-07-27T12:33:19.754603",
+    "ticker": "BBOX",
+    "action": "SELL",
+    "quantity": 70,
+    "price": 779.7
+  },
+  {
+    "id": "9e0734fb-1bf3-4b85-936c-e467111460db",
+    "date": "2026-08-03",
+    "timestamp": "2026-08-03T09:34:58.912243",
+    "ticker": "THANGAMAYL",
+    "action": "SELL",
+    "quantity": 12,
+    "price": 5017.0
+  },
+  {
+    "id": "0aba5370-e9b4-4c0e-83f2-b9f9b8e0eae3",
+    "date": "2026-08-03",
+    "timestamp": "2026-08-03T14:59:46.740457",
+    "ticker": "DIACABS",
+    "action": "BUY",
+    "quantity": 235,
+    "price": 320.3
+  },
+  {
+    "id": "da9afad7-89a5-4f17-b8dc-73d8ecd460bc",
+    "date": "2026-08-03",
+    "timestamp": "2026-08-03T15:00:31.984871",
+    "ticker": "HONASA",
+    "action": "BUY",
+    "quantity": 165,
+    "price": 456.35
+  },
+  {
+    "id": "087bd70f-bb49-48a4-bbd3-2ab27551189f",
+    "date": "2026-08-06",
+    "timestamp": "2026-08-06T17:00:03.606303",
+    "ticker": "SANSERA",
+    "action": "SELL",
+    "quantity": 26,
+    "price": 3769.0
+  },
+  {
+    "id": "95de563d-f89b-4bbc-9b21-63f3d19bd6d5",
+    "date": "2026-08-06",
+    "timestamp": "2026-08-06T17:00:26.322329",
+    "ticker": "CUPID",
+    "action": "SELL",
+    "quantity": 350,
+    "price": 262.9
+  },
+  {
+    "id": "4a252b89-e5ce-480c-8eb9-75fe02f54ac7",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T09:32:45.903387",
+    "ticker": "DIACABS",
+    "action": "SELL",
+    "quantity": 235,
+    "price": 352.8
+  },
+  {
+    "id": "9ff8c19e-d2f5-4f68-b8aa-1481867aa6ad",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T09:33:04.892431",
+    "ticker": "STLTECH",
+    "action": "SELL",
+    "quantity": 123,
+    "price": 621.0
+  },
+  {
+    "id": "0250c5e2-5158-4fce-a88f-767aac231b1a",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T09:51:32.934796",
+    "ticker": "TORNTPHARM",
+    "action": "SELL",
+    "quantity": 15,
+    "price": 4940.5
+  },
+  {
+    "id": "a32a7af8-af9b-4434-a36b-b7664cfcf0ca",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T13:46:45.751686",
+    "ticker": "CUPID",
+    "action": "BUY",
+    "quantity": 225,
+    "price": 261.24
+  },
+  {
+    "id": "ebee57fd-79f2-413b-ba0c-31b43f5f5e28",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T13:47:08.086679",
+    "ticker": "SANSERA",
+    "action": "BUY",
+    "quantity": 15,
+    "price": 3849.2
+  },
+  {
+    "id": "45267fd2-97ca-40ad-b67e-cc6a4044bb0a",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T13:47:34.146122",
+    "ticker": "SHILPAMED",
+    "action": "BUY",
+    "quantity": 70,
+    "price": 803.35
+  },
+  {
+    "id": "8d59b05b-3fdd-4676-a0b8-236d6c8f2b62",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T13:47:55.520925",
+    "ticker": "SONACOMS",
+    "action": "BUY",
+    "quantity": 70,
+    "price": 818.25
+  },
+  {
+    "id": "27d58003-9691-4714-a654-138dfd4d46be",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T13:48:24.328952",
+    "ticker": "SKYGOLD",
+    "action": "BUY",
+    "quantity": 75,
+    "price": 759.5
+  },
+  {
+    "id": "37220026-3ca7-4800-a95a-b73046806c85",
+    "date": "2026-08-10",
+    "timestamp": "2026-08-10T13:48:56.885103",
+    "ticker": "BHARATFORG",
+    "action": "BUY",
+    "quantity": 26,
+    "price": 2262.9
+  },
+  {
+    "id": "03ce5a7b-e254-4eec-89da-2374f1610424",
+    "date": "2026-08-24",
+    "timestamp": "2026-08-24T15:23:08.578826",
+    "ticker": "KIRLOSENG",
+    "action": "SELL",
+    "quantity": 30,
+    "price": 2077.49
+  },
+  {
+    "id": "f7fc028b-d38e-48f5-95b3-387ef5c88f09",
+    "date": "2026-08-24",
+    "timestamp": "2026-08-24T15:23:29.349664",
+    "ticker": "ACUTAAS",
+    "action": "SELL",
+    "quantity": 21,
+    "price": 3174.0
+  },
+  {
+    "id": "38713e93-1e58-4196-a17e-2238db8b64ec",
+    "date": "2026-08-24",
+    "timestamp": "2026-08-24T15:24:05.768585",
+    "ticker": "AETHER",
+    "action": "BUY",
+    "quantity": 13,
+    "price": 1667.5
+  },
+  {
+    "id": "cd40002d-8b6c-4415-9e76-b97510fd7784",
+    "date": "2026-08-28",
+    "timestamp": "2026-08-28T15:08:00.408330",
+    "ticker": "WELCORP",
+    "action": "SELL",
+    "quantity": 48,
+    "price": 2380.0
+  },
+  {
+    "id": "776b15c9-5689-4512-8e81-b9186d52e152",
+    "date": "2026-08-28",
+    "timestamp": "2026-08-28T15:13:52.729555",
+    "ticker": "LAURUSLABS",
+    "action": "SELL",
+    "quantity": 53,
+    "price": 1932.0
+  },
+  {
+    "id": "ddd654e7-e7b6-486b-8eb5-cdb8d5151fff",
+    "date": "2026-08-28",
+    "timestamp": "2026-08-28T15:16:11.222090",
+    "ticker": "AETHER",
+    "action": "SELL",
+    "quantity": 13,
+    "price": 1698.0
+  },
+  {
+    "id": "6ca2a7c2-b9d0-4d59-83d6-25bea41c0614",
+    "date": "2026-08-31",
+    "timestamp": "2026-08-31T14:33:36.645394",
+    "ticker": "WELCORP",
+    "action": "BUY",
+    "quantity": 42,
+    "price": 2387.0
+  },
+  {
+    "id": "aa403d95-7e0d-4161-b97b-ba3f564a4e8b",
+    "date": "2026-08-31",
+    "timestamp": "2026-08-31T14:35:37.055339",
+    "ticker": "AETHER",
+    "action": "BUY",
+    "quantity": 59,
+    "price": 1684.4
+  },
+  {
+    "id": "f62c142d-2a41-4429-946a-00733c808c1b",
+    "date": "2026-08-31",
+    "timestamp": "2026-08-31T14:40:30.897449",
+    "ticker": "LAURUSLABS",
+    "action": "BUY",
+    "quantity": 52,
+    "price": 1882.1
+  },
+  {
+    "id": "50363f6c-f860-45b6-808c-0bcd39f42de2",
+    "date": "2026-08-31",
+    "timestamp": "2026-08-31T14:40:51.213944",
+    "ticker": "DIVISLAB",
+    "action": "BUY",
+    "quantity": 11,
+    "price": 9217.0
+  },
+  {
+    "id": "2f62be5c-9450-4eb8-925c-de3915cd2b8c",
+    "date": "2026-09-07",
+    "timestamp": "2026-09-07T13:59:54.582302",
+    "ticker": "BHARATFORG",
+    "action": "SELL",
+    "quantity": 26,
+    "price": 1950.0
+  },
+  {
+    "id": "2ad66d30-a48f-44aa-8530-f63c09535597",
+    "date": "2026-09-18",
+    "timestamp": "2026-09-18T15:09:54.287672",
+    "ticker": "ATHERENERG",
+    "action": "SELL",
+    "quantity": 62,
+    "price": 1600.0
+  },
+  {
+    "id": "7ae641b2-ade9-4697-a99c-e0ecfdf8fa04",
+    "date": "2026-09-18",
+    "timestamp": "2026-09-18T15:11:07.018536",
+    "ticker": "SYRMA",
+    "action": "SELL",
+    "quantity": 56,
+    "price": 1727.5
+  },
+  {
+    "id": "e328b163-1a70-4919-bc42-579da73b6a8b",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:03:55.874248",
+    "ticker": "GRWRHITECH",
+    "action": "SELL",
+    "quantity": 10,
+    "price": 6516.0
+  },
+  {
+    "id": "06428b3f-321f-4d14-9218-c52246d0b30b",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:04:30.699802",
+    "ticker": "ASTRAMICRO",
+    "action": "SELL",
+    "quantity": 43,
+    "price": 1654.5
+  },
+  {
+    "id": "9eadf794-0b0f-44aa-bd2e-7f3506f33a21",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:16:42.416693",
+    "ticker": "SYRMA",
+    "action": "BUY",
+    "quantity": 58,
+    "price": 1703.0
+  },
+  {
+    "id": "57c8768c-8630-4aa8-ab79-321050c8e03b",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:17:09.440331",
+    "ticker": "ATHERENERG",
+    "action": "BUY",
+    "quantity": 62,
+    "price": 1590.5
+  },
+  {
+    "id": "f89fb488-bd02-4208-b352-2008334bd2be",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:17:33.252285",
+    "ticker": "DIACABS",
+    "action": "BUY",
+    "quantity": 268,
+    "price": 370.6
+  },
+  {
+    "id": "c3df8053-cfbd-408f-acb5-2befa60e7587",
+    "date": "2026-09-21",
+    "timestamp": "2026-09-21T14:17:56.988842",
+    "ticker": "STLTECH",
+    "action": "BUY",
+    "quantity": 123,
+    "price": 807.9
+  },
+  {
+    "id": "c1de328c-847f-4cd8-bb26-23de8ef9833b",
+    "date": "2026-09-25",
+    "timestamp": "2026-09-28T09:40:38.577555",
+    "ticker": "SHILPAMED",
+    "action": "SELL",
+    "quantity": 70,
+    "price": 1014.0
+  },
+  {
+    "id": "2bb09ec1-7445-4ac6-aa73-9cbcf7ace02c",
+    "date": "2026-09-25",
+    "timestamp": "2026-09-28T09:41:07.303512",
+    "ticker": "SANSERA",
+    "action": "SELL",
+    "quantity": 15,
+    "price": 4664.0
+  },
+  {
+    "id": "51f23c18-dadc-4eb4-ac4d-57844f7bd6e3",
+    "date": "2026-09-28",
+    "timestamp": "2026-09-28T14:45:04.711708",
+    "ticker": "SANSERA",
+    "action": "BUY",
+    "quantity": 22,
+    "price": 4500.0
+  },
+  {
+    "id": "3b4c3066-be85-4649-849b-ff71c4b54186",
+    "date": "2026-09-28",
+    "timestamp": "2026-09-28T14:45:39.612185",
+    "ticker": "SHILPAMED",
+    "action": "BUY",
+    "quantity": 98,
+    "price": 1017.05
+  },
+  {
+    "id": "e0d46321-9cb2-4130-920d-1ca19cde0dd8",
+    "date": "2026-10-07",
+    "timestamp": "2026-10-07T15:24:02.699792",
+    "ticker": "HFCL",
+    "action": "SELL",
+    "quantity": 415,
+    "price": 271.64
+  },
+  {
+    "id": "cfc8ca55-e970-41be-a245-36bd2e8b3b7f",
+    "date": "2026-10-07",
+    "timestamp": "2026-10-07T15:24:21.621171",
+    "ticker": "CUPID",
+    "action": "SELL",
+    "quantity": 225,
+    "price": 343.6
+  },
+  {
+    "id": "7a59ddc7-2736-41ea-a971-d015608e4927",
+    "date": "2026-10-07",
+    "timestamp": "2026-10-07T15:24:57.980144",
+    "ticker": "SKYGOLD",
+    "action": "SELL",
+    "quantity": 75,
+    "price": 875.8
+  },
+  {
+    "id": "9a4df93e-e340-4f11-9a16-f4bd9774e714",
+    "date": "2026-10-08",
+    "timestamp": "2026-10-08T10:07:55.887711",
+    "ticker": "CUPID",
+    "action": "BUY",
+    "quantity": 287,
+    "price": 351.3
+  },
+  {
+    "id": "c2aa81f9-f03a-428c-b428-ebe17894ea39",
+    "date": "2026-10-08",
+    "timestamp": "2026-10-08T10:08:20.735646",
+    "ticker": "SKYGOLD",
+    "action": "BUY",
+    "quantity": 112,
+    "price": 858.49
+  },
+  {
+    "id": "9ce5f62e-b035-4202-8d67-044d2f09bd06",
+    "date": "2026-10-08",
+    "timestamp": "2026-10-08T10:08:53.073752",
+    "ticker": "HFCL",
+    "action": "BUY",
+    "quantity": 364,
+    "price": 262.5
+  },
+  {
+    "id": "6de4e715-679e-4f82-abc9-87cbd6445e33",
+    "date": "2026-10-12",
+    "timestamp": "2026-10-12T14:21:27.060049",
+    "ticker": "GRANULES",
+    "action": "SELL",
+    "quantity": 83,
+    "price": 807.0
+  },
+  {
+    "id": "9232dcf4-76d7-4b81-a66b-59c82e830ce9",
+    "date": "2026-10-12",
+    "timestamp": "2026-10-12T14:21:54.760128",
+    "ticker": "ANANDRATHI",
+    "action": "SELL",
+    "quantity": 35,
+    "price": 2077.98
+  }
+]
