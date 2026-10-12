@@ -825,9 +825,24 @@ elif regime_score >= NEW_ENTRY_THRESHOLD:
 else:
     badge_cls, emoji = "score-low",  "🔴"
 
+def _metric_card(label, value, delta=None):
+    """Compact grey metric card (replaces st.metric to keep boxes short and on one line)."""
+    _delta_html = ""
+    if delta:
+        _neg = str(delta).strip().startswith("-")
+        _dc = "#C62828" if _neg else "#2E7D32"
+        _arrow = "▼" if _neg else "▲"
+        _delta_html = f" <span style='font-size:13px; font-weight:600; color:{_dc};'>{_arrow} {delta}</span>"
+    return (
+        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
+        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>{label}</p>"
+        f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap;'>{value}{_delta_html}</p>"
+        f"</div>")
+
+
 entry_label = "NEW BUYS ALLOWED" if allow_new else f"NO NEW BUYS (< {NEW_ENTRY_THRESHOLD})"
 
-c1, c2, c3, c4, c5 = st.columns(5)
+c1, c2, c3, c4, c5 = st.columns([1.0, 0.85, 1.5, 0.85, 1.8])
 with c1:
     st.markdown(
         f"<div style='text-align:center; padding:10px;'>"
@@ -836,31 +851,31 @@ with c1:
         unsafe_allow_html=True)
 with c2:
     st.markdown(
-        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
-        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Dynamic N</p>"
-        f"<p style='font-size:20px; font-weight:700; margin:0;'>{dynamic_n} stocks</p>"
+        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
+        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Dynamic N</p>"
+        f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap;'>{dynamic_n} stocks</p>"
         f"</div>",
         unsafe_allow_html=True)
 with c3:
     st.markdown(
-        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
-        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Entry Gate</p>"
-        f"<p style='font-size:20px; font-weight:700; margin:0;'>{entry_label}</p>"
+        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
+        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Entry Gate</p>"
+        f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap;'>{entry_label}</p>"
         f"</div>",
         unsafe_allow_html=True)
 with c4:
     eligible_count = (result['PCT_FROM_52H'] >= -25).sum()
     st.markdown(
-        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
-        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Eligible (52H)</p>"
-        f"<p style='font-size:20px; font-weight:700; margin:0;'>{eligible_count}</p>"
+        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
+        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Eligible (52H)</p>"
+        f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap;'>{eligible_count}</p>"
         f"</div>",
         unsafe_allow_html=True)
 with c5:
     st.markdown(
-        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
-        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Data Range</p>"
-        f"<p style='font-size:20px; font-weight:700; margin:0;'>{dates[0].strftime('%d-%b-%y')} to {dates[-1].strftime('%d-%b-%y')}</p>"
+        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
+        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Data Range</p>"
+        f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap;'>{dates[0].strftime('%d-%b-%y')} to {dates[-1].strftime('%d-%b-%y')}</p>"
         f"</div>",
         unsafe_allow_html=True)
 
@@ -1163,10 +1178,10 @@ with tab_top:
     actual_cash_wt = (actual_cash_liquid / capital) if capital > 0 else 0.0
 
     mc1, mc2, mc3, mc4 = st.columns(4)
-    with mc1: st.metric("Equity Deployed",  f"Rs {actual_cost_basis:,.0f}")
-    with mc2: st.metric("Equity Weight",    f"{actual_equity_wt:.1%}")
-    with mc3: st.metric("Cash (Liquid)",    f"Rs {actual_cash_liquid:,.0f}")
-    with mc4: st.metric("Cash Weight",      f"{actual_cash_wt:.1%}")
+    with mc1: st.markdown(_metric_card("Equity Deployed", f"Rs {actual_cost_basis:,.0f}"), unsafe_allow_html=True)
+    with mc2: st.markdown(_metric_card("Equity Weight",   f"{actual_equity_wt:.1%}"), unsafe_allow_html=True)
+    with mc3: st.markdown(_metric_card("Cash (Liquid)",   f"Rs {actual_cash_liquid:,.0f}"), unsafe_allow_html=True)
+    with mc4: st.markdown(_metric_card("Cash Weight",     f"{actual_cash_wt:.1%}"), unsafe_allow_html=True)
 
 
 # ── TAB 2: ACTIONS MONITOR ────────────────────────────────────────────────────
@@ -1205,15 +1220,15 @@ with tab_exits:
 
         if n_new_positions > 0 and allow_new:
             bc1, bc2, bc3, bc4 = st.columns(4)
-            with bc1: st.metric("Max Stocks Allowed", f"{dynamic_n}")
-            with bc2: st.metric("Current Holdings", f"{n_current_holdings}")
-            with bc3: st.metric("Positions to Exit", f"{n_exits}")
-            with bc4: st.metric("New Positions", f"{n_new_positions}", delta=f"+{n_new_positions}", delta_color="normal")
+            with bc1: st.markdown(_metric_card("Max Stocks Allowed", f"{dynamic_n}"), unsafe_allow_html=True)
+            with bc2: st.markdown(_metric_card("Current Holdings", f"{n_current_holdings}"), unsafe_allow_html=True)
+            with bc3: st.markdown(_metric_card("Positions to Exit", f"{n_exits}"), unsafe_allow_html=True)
+            with bc4: st.markdown(_metric_card("New Positions", f"{n_new_positions}", delta=f"+{n_new_positions}"), unsafe_allow_html=True)
         else:
             bc1, bc2, bc3 = st.columns(3)
-            with bc1: st.metric("Max Stocks Allowed", f"{dynamic_n}")
-            with bc2: st.metric("Current Holdings", f"{n_current_holdings}")
-            with bc3: st.metric("Positions to Exit", f"{n_exits}")
+            with bc1: st.markdown(_metric_card("Max Stocks Allowed", f"{dynamic_n}"), unsafe_allow_html=True)
+            with bc2: st.markdown(_metric_card("Current Holdings", f"{n_current_holdings}"), unsafe_allow_html=True)
+            with bc3: st.markdown(_metric_card("Positions to Exit", f"{n_exits}"), unsafe_allow_html=True)
 
         # ── Section 3: New Entries table ───────────────────────────────────────
         if n_new_positions > 0 and allow_new:
@@ -1375,13 +1390,14 @@ with tab_tradelog:
 
     tc1, tc2, tc3, tc4 = st.columns(4)
     with tc1:
-        st.metric("Total Invested (Rs)", f"Rs {total_invested_val:,.2f}")
+        st.markdown(_metric_card("Total Invested (Rs)", f"Rs {total_invested_val:,.2f}"), unsafe_allow_html=True)
     with tc2:
-        st.metric("Current Market Value (Rs)", f"Rs {total_market_val:,.2f}")
+        st.markdown(_metric_card("Current Market Value (Rs)", f"Rs {total_market_val:,.2f}"), unsafe_allow_html=True)
     with tc3:
-        st.metric("Unrealized PnL (MTM)", f"Rs {total_unrealized_pnl:,.2f}", delta=f"{total_unrealized_pnl_pct:+.2f}%")
+        st.markdown(_metric_card("Unrealized PnL (MTM)", f"Rs {total_unrealized_pnl:,.2f}",
+                                 delta=f"{total_unrealized_pnl_pct:+.2f}%"), unsafe_allow_html=True)
     with tc4:
-        st.metric("Realized PnL (Rs)", f"Rs {realized_pnl:,.2f}")
+        st.markdown(_metric_card("Realized PnL (Rs)", f"Rs {realized_pnl:,.2f}"), unsafe_allow_html=True)
 
     st.divider()
 
@@ -1711,13 +1727,13 @@ if SHOW_CASH_LEDGER_TAB:
         # 1. Metric Cards
         cc1, cc2, cc3, cc4 = st.columns(4)
         with cc1:
-            st.metric("Total Deposits", f"Rs {cash_summary['by_type']['Deposit']:,.2f}")
+            st.markdown(_metric_card("Total Deposits", f"Rs {cash_summary['by_type']['Deposit']:,.2f}"), unsafe_allow_html=True)
         with cc2:
-            st.metric("Total Withdrawals", f"Rs {cash_summary['by_type']['Withdrawal']:,.2f}")
+            st.markdown(_metric_card("Total Withdrawals", f"Rs {cash_summary['by_type']['Withdrawal']:,.2f}"), unsafe_allow_html=True)
         with cc3:
-            st.metric("Realized PnL (Rs)", f"Rs {realized_pnl:,.2f}")
+            st.markdown(_metric_card("Realized PnL (Rs)", f"Rs {realized_pnl:,.2f}"), unsafe_allow_html=True)
         with cc4:
-            st.metric("Net Cash Contributed", f"Rs {cash_summary['net']:,.2f}")
+            st.markdown(_metric_card("Net Cash Contributed", f"Rs {cash_summary['net']:,.2f}"), unsafe_allow_html=True)
 
         st.caption(f"Fees/Charges paid to date: Rs {cash_summary['by_type']['Fees/Charges']:,.2f}")
 
@@ -2152,36 +2168,36 @@ with tab_perf:
         _end_date = _eq_df["date"].iloc[-1].strftime("%d-%b-%Y")
 
         # Metric cards
-        pm1, pm2, pm3, pm4 = st.columns(4)
+        pm1, pm2, pm3, pm4 = st.columns([1.0, 1.0, 0.7, 1.9])
         with pm1:
             _port_color = "#2E7D32" if _port_ret_total >= 0 else "#C62828"
             st.markdown(
-                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
-                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Portfolio NAV</p>"
-                f"<p style='font-size:24px; font-weight:700; margin:0; color:{_port_color};'>"
-                f"{_port_nav:.2f} <span style='font-size:14px;'>({_port_ret_total:+.2f}%)</span></p>"
+                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
+                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Portfolio NAV</p>"
+                f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap; color:{_port_color};'>"
+                f"{_port_nav:.2f} <span style='font-size:13px;'>({_port_ret_total:+.2f}%)</span></p>"
                 f"</div>", unsafe_allow_html=True)
         with pm2:
             _bench_color = "#2E7D32" if _bench_ret_total >= 0 else "#C62828"
             st.markdown(
-                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
-                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Benchmark NAV</p>"
-                f"<p style='font-size:24px; font-weight:700; margin:0; color:{_bench_color};'>"
-                f"{_bench_nav:.2f} <span style='font-size:14px;'>({_bench_ret_total:+.2f}%)</span></p>"
+                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
+                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Benchmark NAV</p>"
+                f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap; color:{_bench_color};'>"
+                f"{_bench_nav:.2f} <span style='font-size:13px;'>({_bench_ret_total:+.2f}%)</span></p>"
                 f"</div>", unsafe_allow_html=True)
         with pm3:
             _alpha_color = "#2E7D32" if _alpha >= 0 else "#C62828"
             st.markdown(
-                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
-                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Alpha</p>"
-                f"<p style='font-size:24px; font-weight:700; margin:0; color:{_alpha_color};'>"
+                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
+                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Alpha</p>"
+                f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap; color:{_alpha_color};'>"
                 f"{_alpha:+.2f}%</p>"
                 f"</div>", unsafe_allow_html=True)
         with pm4:
             st.markdown(
-                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:14px 16px;'>"
-                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 4px 0;'>Max Drawdown</p>"
-                f"<p style='font-size:24px; font-weight:700; margin:0; color:#C62828;'>"
+                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
+                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Max Drawdown</p>"
+                f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap; color:#C62828;'>"
                 f"Port: {_max_dd:.2f}% | Bench: {_bench_max_dd:.2f}%</p>"
                 f"</div>", unsafe_allow_html=True)
 
