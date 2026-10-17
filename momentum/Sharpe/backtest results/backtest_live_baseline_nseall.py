@@ -63,7 +63,7 @@ warnings.filterwarnings("ignore")
 
 # ── CONFIG (mirrors dashboard_config.json + Sharpe.py live constants) ─────────
 FILE = r"C:\Users\ameet\Documents\Github\dhan_datahq\base files\History_updated_NSEAll.xlsx"
-BAND_CSV = os.path.join(SHARPE_ROOT, "Price_Band_List.csv")
+STOCKDB_CSV = os.path.join(SHARPE_ROOT, "STOCKDB.csv")
 
 RFR_ANNUAL      = 0.07
 TRADING_DAYS    = 252
@@ -198,7 +198,7 @@ for i in range(start_i, len(valid_dates) - 1):
             eq_series_filter=EQ_SERIES_FILTER,
             circuit_filter_enabled=CIRCUIT_FILTER_ENABLED,
             circuit_threshold=CIRCUIT_HIT_THRESHOLD,
-            band_csv_path=BAND_CSV,
+            stockdb_csv_path=STOCKDB_CSV,
             windows=SHARPE_WINDOWS,
             trading_days=TRADING_DAYS,
             rfr_annual=RFR_ANNUAL,

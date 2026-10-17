@@ -95,7 +95,9 @@
       <table class="data selectable-table sortable-table" id="rank-table">
         <thead><tr>
           <th class="sortable">Inv Rank</th><th class="sortable">Ticker</th><th class="sortable">ETF Name</th><th class="sortable">Sector</th>
-          <th class="sortable num">Wtd Sharpe</th><th class="sortable num">Sharpe 6M</th><th class="sortable num">Sharpe 3M</th><th class="sortable">Screen</th>
+          <th class="sortable num" title="Final ranking score: weighted Sharpe composite + Clenow Z-score">Blend Score</th>
+          <th class="sortable num">Wtd Sharpe</th><th class="sortable num">Sharpe 6M</th><th class="sortable num">Sharpe 3M</th>
+          <th class="sortable num" title="Book-style Clenow: (exp(slope*250)-1)*100*R2; blank = gap over 15% or fewer than 90 closes">Clenow 90D</th><th class="sortable">Screen</th>
         </tr></thead>
         <tbody>
         {% for r in rank_rows %}
@@ -103,9 +105,11 @@
               data-ticker="{{ r.ticker }}" data-sector="{{ r.sector }}" data-screen="{{ 1 if r.screen else 0 }}">
             <td data-v="{{ r.rank if r.rank is not none else '' }}">{{ r.rank if r.rank is not none else '' }}</td>
             <td>{{ r.ticker }}</td><td>{{ r.name }}</td><td>{{ r.sector }}</td>
+            <td class="num" data-v="{{ r.blend if r.blend is not none else '' }}">{{ r.blend|f3 }}</td>
             <td class="num" data-v="{{ r.wtd if r.wtd is not none else '' }}">{{ r.wtd|f3 }}</td>
             <td class="num" data-v="{{ r.s6 if r.s6 is not none else '' }}">{{ r.s6|f3 }}</td>
             <td class="num" data-v="{{ r.s3 if r.s3 is not none else '' }}">{{ r.s3|f3 }}</td>
+            <td class="num" data-v="{{ r.cl if r.cl is not none else '' }}">{{ '—' if r.cl is none else '%.1f'|format(r.cl) }}</td>
             <td data-v="{{ 1 if r.screen else 0 }}">{{ '✓' if r.screen else '✗' }}</td>
           </tr>
         {% endfor %}
@@ -114,7 +118,9 @@
     </div>
     <p class="caption">💡 Select a row above to auto-fill it in <b>Log New Transaction</b> (Tradelog &amp; MTM tab).</p>
     <p class="caption">Showing <span id="f-shown"></span> rows &nbsp;|&nbsp; Universe: {{ universe }} ETFs &nbsp;|&nbsp;
-      Investable: {{ n_investable }} &nbsp;|&nbsp; Screened out: {{ n_screened_out }}</p>
+      Investable: {{ n_investable }} &nbsp;|&nbsp; Screened out: {{ n_screened_out }}
+      {% if n_excluded %}&nbsp;|&nbsp; Excluded sectors ({{ cfg_exclude }}): {{ n_excluded }}{% endif %}</p>
+    <p class="caption">Ranking score: <b>{{ score_mode }}</b>. Investable rank is the rank of <b>Blend Score</b> among screen-pass ETFs.</p>
   </section>
 
   <!-- ═════════ TAB 3: CONFIGURATION ═════════ -->
@@ -147,14 +153,32 @@
       <hr>
 
       <h3>📈 Momentum Scoring</h3>
+      <h4>Sharpe composite</h4>
       <div class="grid cols-2">
         <div class="grid">{{ num('WINDOW_6M', '6M Window (days)') }}{{ num('SHARPE_W6M', 'Sharpe 6M Weight') }}</div>
         <div class="grid">{{ num('WINDOW_3M', '3M Window (days)') }}{{ num('SHARPE_W3M', 'Sharpe 3M Weight') }}</div>
       </div>
+      <h4 style="margin-top:14px">Clenow (book-style)</h4>
+      <p class="caption">Score = (exp(slope &times; days/yr) &minus; 1) &times; 100 &times; R&sup2; of the log-price regression. Any single-day move above the gap limit inside the window blanks the score.</p>
+      <div class="grid cols-3">
+        {{ num('CLENOW_WINDOW', 'Clenow Window (days)', 'Book uses 90') }}
+        {{ num('CLENOW_TRADING_DAYS', 'Trading Days / Year', 'Book uses 250') }}
+        {{ num('CLENOW_GAP_MAX', 'Gap Exclusion (1-day move)', '0.15 = exclude if any daily move exceeds 15%') }}
+      </div>
+      <h4 style="margin-top:14px">Final ranking blend</h4>
+      <div class="grid cols-2">
+        {{ num('BLEND_W_SHARPE', 'Blend Weight: Sharpe composite', 'Score = w_sharpe x Sharpe composite + w_clenow x Z(Clenow). 1 / 0 = Sharpe-only') }}
+        {{ num('BLEND_W_CLENOW', 'Blend Weight: Clenow', '0 = Sharpe-only (previous behaviour); 0 / 1 = Clenow-only') }}
+      </div>
+      <p class="caption">Currently: <b>{{ score_mode }}</b>.</p>
       <hr>
 
       <h3>🔍 Screening</h3>
       {{ num('MAX_DRAWDOWN_FROM_HIGH', 'Max Drawdown from 52W High', 'ETFs must be within this % of their 52-week high (0.25 = must be ≥ 75%)') }}
+      <label class="field" style="margin-top:12px"><span>Excluded Sectors (comma-separated)</span>
+        <input type="text" name="EXCLUDE_SECTORS" value="{{ cfg_exclude }}">
+        <div class="hint">Sectors removed from the investable pool entirely (no rank, not in any Z-score pool). LIQUID cash funds are excluded because their near-zero volatility breaks the Sharpe Z-scores.</div>
+      </label>
       <hr>
 
       <h3>🎯 Regime Filter</h3>

@@ -40,5 +40,33 @@
     "Breadth": 0.533,
     "Momentum": 0.429,
     "Dynamic N": 15
+  },
+  {
+    "date": "2026-10-13",
+    "Composite": 0.4178,
+    "Breadth": 0.532,
+    "Momentum": 0.427,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-10-14",
+    "Composite": 0.4223,
+    "Breadth": 0.546,
+    "Momentum": 0.418,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-10-15",
+    "Composite": 0.4324,
+    "Breadth": 0.561,
+    "Momentum": 0.4,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-10-16",
+    "Composite": 0.4138,
+    "Breadth": 0.549,
+    "Momentum": 0.397,
+    "Dynamic N": 16
   }
 ]

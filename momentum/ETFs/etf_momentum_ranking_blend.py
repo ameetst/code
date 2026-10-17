@@ -12,9 +12,10 @@ Scoring pipeline (in correct order):
                      Only ETFs within MAX_DRAWDOWN_FROM_HIGH of their 52wk high are investable.
   Step 2 - SCORE   : Compute TWO independent composites among screen-pass ETFs:
                        Sharpe composite  = 0.5*Z(Sharpe 6M) + 0.5*Z(Sharpe 3M)
-                       Clenow composite  = 0.5*Z(Clenow 6M) + 0.5*Z(Clenow 3M)
-                         (Clenow = Annualised log-price regression slope x R^2,
-                          same formula as ../../Sharpe/momentum_lib.py::compute_clenow)
+                       Clenow score      = book-style 90-day Clenow (Stocks on the Move):
+                         (exp(OLS slope of ln price x 250) - 1) x 100 x R^2 over the
+                         last 90 closes; NaN if any |1-day move| > 15% in the window.
+                         Clenow composite  = Z(Clenow 90D) across the screened subset.
                      Final blended score = 0.5*Sharpe composite + 0.5*Clenow composite
                      (BLEND_W_SHARPE / BLEND_W_CLENOW in CONFIG).
                      Investable rank (RANK_INVESTABLE) is this blended score,
@@ -101,9 +102,9 @@ def _apply_json_config(cls, cfg: dict):
         "INPUT_FILE", "OUTPUT_FILE",
         "WINDOW_6M", "WINDOW_3M", "ANNUALIZE",
         "TOP_N", "TOP_N_PARTIAL",
-        "MAX_DRAWDOWN_FROM_HIGH",
+        "MAX_DRAWDOWN_FROM_HIGH", "EXCLUDE_SECTORS",
         "SHARPE_W6M", "SHARPE_W3M",
-        "CLENOW_W6M", "CLENOW_W3M", "BLEND_W_SHARPE", "BLEND_W_CLENOW",
+        "CLENOW_WINDOW", "CLENOW_TRADING_DAYS", "CLENOW_GAP_MAX", "BLEND_W_SHARPE", "BLEND_W_CLENOW",
         "REGIME_TICKER", "REGIME_FALLBACKS", "REGIME_INDEX_TICKER",
         "TREND_FAST_EMA_WINDOW", "TREND_EMA_WINDOW",
         "SECTOR_CAP",
@@ -131,10 +132,12 @@ def get_config_as_dict() -> dict:
         "TOP_N": CONFIG.TOP_N,
         "TOP_N_PARTIAL": CONFIG.TOP_N_PARTIAL,
         "MAX_DRAWDOWN_FROM_HIGH": CONFIG.MAX_DRAWDOWN_FROM_HIGH,
+        "EXCLUDE_SECTORS": CONFIG.EXCLUDE_SECTORS,
         "SHARPE_W6M": CONFIG.SHARPE_W6M,
         "SHARPE_W3M": CONFIG.SHARPE_W3M,
-        "CLENOW_W6M": CONFIG.CLENOW_W6M,
-        "CLENOW_W3M": CONFIG.CLENOW_W3M,
+        "CLENOW_WINDOW": CONFIG.CLENOW_WINDOW,
+        "CLENOW_TRADING_DAYS": CONFIG.CLENOW_TRADING_DAYS,
+        "CLENOW_GAP_MAX": CONFIG.CLENOW_GAP_MAX,
         "BLEND_W_SHARPE": CONFIG.BLEND_W_SHARPE,
         "BLEND_W_CLENOW": CONFIG.BLEND_W_CLENOW,
         "REGIME_TICKER": CONFIG.REGIME_TICKER,
@@ -171,15 +174,22 @@ class CONFIG:
     # exhibiting genuine momentum. 0.25 = must be >= 75% of 52wk high.
     MAX_DRAWDOWN_FROM_HIGH = 0.25
 
+    # Sectors removed from the investable pool altogether. LIQUID funds have
+    # near-zero volatility, so their Sharpe is huge/negative-infinite and wrecks
+    # the cross-sectional Z-scores; they are cash proxies, not momentum picks.
+    EXCLUDE_SECTORS = ["LIQUID"]
+
     # Weighted Sharpe blending (6M trend + 3M recency tilt)
     SHARPE_W6M  = 0.5
     SHARPE_W3M  = 0.5
 
-    # Weighted Clenow blending (Annualised log-price regression slope x R^2,
-    # same formula as ../../Sharpe/momentum_lib.py::compute_clenow). Rewards
-    # steep AND smooth trends; R^2 penalises choppy movers.
-    CLENOW_W6M  = 0.5
-    CLENOW_W3M  = 0.5
+    # Book-style Clenow (Stocks on the Move): single 90-day window,
+    # score = (exp(slope*250) - 1) * 100 * R^2 on the log-price regression.
+    # Rewards steep AND smooth trends; R^2 penalises choppy movers.
+    # Any |1-day move| > CLENOW_GAP_MAX inside the window -> score NaN.
+    CLENOW_WINDOW       = 90
+    CLENOW_TRADING_DAYS = 250
+    CLENOW_GAP_MAX      = 0.15
 
     # Final composite = BLEND_W_SHARPE * SharpeComposite + BLEND_W_CLENOW * ClenowComposite
     # Backtested 2020-04 to 2026-07: improves CAGR/max-DD over Sharpe-only
@@ -322,56 +332,122 @@ def classify_sector(etf_name: str, ticker: str) -> str:
 # =========================================================
 # 1. DATA LOADING
 # =========================================================
+def _load_etf_name_lookup(script_dir: Path | None = None) -> dict[str, str]:
+    """Best-effort TICKER -> ETF_NAME lookup from a legacy ETF.xlsx, for
+    enriching name-less input files (e.g. ETF_updated.xlsx). Returns {} if
+    no such file is present."""
+    from openpyxl import load_workbook
+
+    legacy = (script_dir or _SCRIPT_DIR) / "ETF.xlsx"
+    if not legacy.exists():
+        return {}
+    try:
+        wb = load_workbook(legacy, read_only=True, data_only=True)
+        ws = wb["DATA"]
+        lookup = {}
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=2, values_only=True):
+            name, ticker = row[0], row[1]
+            if ticker:
+                lookup[str(ticker).strip().upper()] = str(name).strip() if name else ""
+        wb.close()
+        return lookup
+    except Exception:
+        return {}
+
+
 def load_etf_data(filepath: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Load ETF data from ETF.xlsx.
+    Load ETF price data from an Excel workbook's DATA sheet.
 
-    The date headers (row 1, col C onwards) are an Excel dynamic array formula:
-        =TRANSPOSE(LET(d, SEQUENCE(365,...TODAY()...), FILTER(d, WEEKDAY(d,2)<6)))
-    This formula is TODAY()-based and has no cached values readable by openpyxl.
+    Supports two layouts, auto-detected from the header row:
 
-    Fix: read only the price grid via openpyxl (formula-safe), and reconstruct
-    the date index in Python by generating the last N business days (Mon-Fri)
-    to match the column count exactly.
+    1. Legacy (ETF_NAME, TICKER, <price cols>) — e.g. old ETF.xlsx.
+       The date headers (row 1, col C onwards) are an Excel dynamic array
+       formula (=TRANSPOSE(LET(d, SEQUENCE(365,...TODAY()...), ...))) with
+       no cached values readable by openpyxl, so the date index is
+       reconstructed in Python as the last N business days ending today.
+
+    2. Current (TICKER, <date cols>) — e.g. ETF_updated.xlsx. Row 1 holds
+       real (static) dates read directly from the sheet. ETF_NAME isn't
+       present in this layout; it's enriched from a legacy ETF.xlsx in the
+       same folder when available, else left blank. A handful of price
+       cells in this file carry a stray date number format (copy/paste
+       artifact) that makes openpyxl hand back a datetime instead of the
+       underlying float — those are converted back to their numeric serial.
     """
     from openpyxl import load_workbook
+    from openpyxl.utils.datetime import to_excel
+    import datetime as _dt
 
     wb = load_workbook(filepath, data_only=True)
     ws = wb["DATA"]
     max_col = ws.max_column
     max_row = ws.max_row
 
-    # Price data starts at Excel column 3 (C), 0-based index 2
-    PRICE_START_COL = 3   # Excel 1-indexed
-    n_price_cols = max_col - PRICE_START_COL + 1  # number of date columns
+    header = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    legacy_format = str(header[0]).strip().upper() == "ETF_NAME" if header else True
 
-    # Reconstruct date index: last N business days (Mon-Fri) ending today
-    # This mirrors the Excel formula which generates ~261 trading days per year
-    today = pd.Timestamp.today().normalize()
-    # Generate enough biz days; filter to exact count needed
-    candidate_dates = pd.bdate_range(end=today, periods=n_price_cols)
-    dates = list(candidate_dates)  # ascending order, length = n_price_cols
+    if legacy_format:
+        # Price data starts at Excel column 3 (C), 0-based index 2
+        PRICE_START_COL = 3   # Excel 1-indexed
+        n_price_cols = max_col - PRICE_START_COL + 1
 
-    # Read ETF names, tickers and price rows
-    rows = list(ws.iter_rows(min_row=2, max_row=max_row, values_only=True))
-    wb.close()
+        # Reconstruct date index: last N business days (Mon-Fri) ending today
+        today = pd.Timestamp.today().normalize()
+        dates = list(pd.bdate_range(end=today, periods=n_price_cols))
 
-    etf_names, tickers, price_rows = [], [], []
-    for row in rows:
-        name   = str(row[0]).strip() if row[0] is not None else ""
-        ticker = str(row[1]).strip() if row[1] is not None else ""
-        if not ticker or ticker == "None":
-            continue
-        etf_names.append(name)
-        tickers.append(ticker)
-        # cols 2 onwards (0-based) are price columns
-        price_rows.append(row[2: 2 + n_price_cols])
+        rows = list(ws.iter_rows(min_row=2, max_row=max_row, values_only=True))
+        wb.close()
 
-    meta = pd.DataFrame({"ETF_NAME": etf_names, "TICKER": tickers})
+        etf_names, tickers, price_rows = [], [], []
+        for row in rows:
+            name   = str(row[0]).strip() if row[0] is not None else ""
+            ticker = str(row[1]).strip() if row[1] is not None else ""
+            if not ticker or ticker == "None":
+                continue
+            etf_names.append(name)
+            tickers.append(ticker)
+            price_rows.append(row[2: 2 + n_price_cols])
 
-    price_raw = pd.DataFrame(price_rows, index=tickers, columns=dates)
+        meta = pd.DataFrame({"ETF_NAME": etf_names, "TICKER": tickers})
+        price_raw = pd.DataFrame(price_rows, index=tickers, columns=dates)
+
+    else:
+        # TICKER, <date cols> — dates are real values in row 1, col B onwards.
+        # Trailing columns beyond the real data (stale Excel formatting) can
+        # inflate ws.max_column, so trim to the last column with an actual date.
+        raw_dates = header[1:]
+        last_date_idx = -1
+        for i, v in enumerate(raw_dates):
+            if isinstance(v, (_dt.date, _dt.datetime)):
+                last_date_idx = i
+        dates = raw_dates[:last_date_idx + 1]
+        n_price_cols = len(dates)
+        name_lookup = _load_etf_name_lookup()
+
+        tickers, price_rows = [], []
+        for row in ws.iter_rows(min_row=2, max_row=max_row, min_col=1, max_col=1 + n_price_cols):
+            ticker_cell, *price_cells = row
+            ticker = str(ticker_cell.value).strip() if ticker_cell.value is not None else ""
+            if not ticker or ticker == "None":
+                continue
+            tickers.append(ticker)
+            fixed = []
+            for c in price_cells:
+                v = c.value
+                # A few cells carry a stray date number format even though the
+                # underlying value is a plain price; recover the numeric serial.
+                if isinstance(v, (_dt.datetime, _dt.date)):
+                    v = to_excel(v)
+                fixed.append(v)
+            price_rows.append(fixed)
+        wb.close()
+
+        etf_names = [name_lookup.get(t.upper(), "") for t in tickers]
+        meta = pd.DataFrame({"ETF_NAME": etf_names, "TICKER": tickers})
+        price_raw = pd.DataFrame(price_rows, index=tickers, columns=pd.to_datetime(dates))
+
     price_raw = price_raw.apply(pd.to_numeric, errors="coerce").replace(0, np.nan)
-
     prices = price_raw.T.sort_index().ffill()
     print(f"[load]   {filepath}")
     print(f"         {len(tickers)} ETFs  |  {len(dates)} date cols  "
@@ -406,33 +482,35 @@ def momentum_return(series: pd.Series, window: int) -> float:
     return (clean.iloc[-1] / clean.iloc[-window] - 1) * 100
 
 
-def clenow_score(series: pd.Series, window: int, trading_days: int | None = None) -> float:
+def clenow_score(series: pd.Series, window: int | None = None,
+                 trading_days: int | None = None,
+                 gap_max: float | None = None) -> float:
     """
-    Clenow momentum score: Annualised Slope x R^2 of a log-price OLS
-    regression over the last `window` trading days (Andreas Clenow,
-    "Stocks on the Move"). Same formula/convention as
-    ../../Sharpe/momentum_lib.py::compute_clenow / _clenow_window.
-
-    Slope   -- how fast the ETF is trending (annualised).
-    R^2     -- how smoothly/consistently it's trending (penalises choppy movers).
-    Score   -- ann_slope * r2. Positive & large = steep, smooth uptrend.
+    Book-style Clenow momentum score (Andreas Clenow, "Stocks on the Move"):
+      1. OLS regression of ln(price) on time over the last `window` closes.
+      2. Annualised slope = exp(slope * trading_days) - 1   (compounded).
+      3. Score = annualised slope * 100 * R^2.
+    Returns NaN if fewer than `window` valid closes, or if any |1-day move|
+    inside the window exceeds `gap_max` (Clenow's gap exclusion).
+    Defaults come from CONFIG.CLENOW_WINDOW / CLENOW_TRADING_DAYS / CLENOW_GAP_MAX.
     """
-    td = CONFIG.ANNUALIZE if trading_days is None else trading_days
+    window = CONFIG.CLENOW_WINDOW if window is None else window
+    td = CONFIG.CLENOW_TRADING_DAYS if trading_days is None else trading_days
+    gap = CONFIG.CLENOW_GAP_MAX if gap_max is None else gap_max
     px = series.dropna()
-    if len(px) < window * 0.90:
+    px = px[px > 0]
+    if len(px) < window:
         return np.nan
-    n = min(len(px), window)
-    px_w = px.iloc[-n:].values
-    if np.any(px_w <= 0):
+    px_w = px.iloc[-window:].values.astype(float)
+    if np.any(np.abs(np.diff(px_w) / px_w[:-1]) > gap):
         return np.nan
-    x = np.arange(n, dtype=float)
+    x = np.arange(window, dtype=float)
     y = np.log(px_w)
-    if np.std(x) == 0 or np.std(y) == 0:
+    if np.std(y) == 0:
         return np.nan
     slope = np.cov(x, y, bias=True)[0, 1] / np.var(x)
-    r = np.corrcoef(x, y)[0, 1]
-    r2 = r ** 2
-    ann_slope = slope * td
+    r2 = np.corrcoef(x, y)[0, 1] ** 2
+    ann_slope = (np.exp(slope * td) - 1.0) * 100.0
     return ann_slope * r2
 
 
@@ -629,8 +707,7 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
 
         sh6 = sharpe_score(s, CONFIG.WINDOW_6M)
         sh3 = sharpe_score(s, CONFIG.WINDOW_3M)
-        cl6 = clenow_score(s, CONFIG.WINDOW_6M)
-        cl3 = clenow_score(s, CONFIG.WINDOW_3M)
+        cl90 = clenow_score(s)
         # Raw Sharpe/Clenow values stored; composites computed post-loop via Z-scores
 
         # --- EMA calculation (100 day) ---
@@ -655,12 +732,15 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
         # --- Screen: above 100 EMA filter (calculated for reference only) ---
         ema_100 = float(clean_s.ewm(span=100, adjust=False).mean().iloc[-1]) if len(clean_s) >= 100 else np.nan
 
-        screen_pass = high_pass
+        sector = classify_sector(row["ETF_NAME"], ticker)
+        # Sectors excluded from the investable pool entirely (e.g. LIQUID cash
+        # funds): no screen pass -> no rank, not in any Z-score reference pool.
+        screen_pass = high_pass and (sector not in CONFIG.EXCLUDE_SECTORS)
 
         records.append({
             "TICKER"        : ticker,
             "ETF_NAME"      : row["ETF_NAME"],
-            "SECTOR"        : classify_sector(row["ETF_NAME"], ticker),
+            "SECTOR"        : sector,
             "CLOSE"         : close,
             "52WK_HIGH"     : high_52w,
             "PCT_FROM_HIGH" : pct_from_high * 100 if not np.isnan(pct_from_high) else np.nan,
@@ -668,8 +748,7 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
             "EOM_PCT"       : eom_ret,
             "SHARPE_6M"     : sh6,
             "SHARPE_3M"     : sh3,
-            "CLENOW_6M"     : cl6,
-            "CLENOW_3M"     : cl3,
+            "CLENOW_90D"    : cl90,
             "SCREEN_PASS"   : screen_pass,
         })
 
@@ -714,8 +793,9 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
     inv_mask = df["SCREEN_PASS"]
     df["SHARPE_COMPOSITE_INV"] = _blend_composite(
         df, "SHARPE_6M", "SHARPE_3M", CONFIG.SHARPE_W6M, CONFIG.SHARPE_W3M, mask=inv_mask)
-    df["CLENOW_COMPOSITE_INV"] = _blend_composite(
-        df, "CLENOW_6M", "CLENOW_3M", CONFIG.CLENOW_W6M, CONFIG.CLENOW_W3M, mask=inv_mask)
+    df["CLENOW_COMPOSITE_INV"] = np.nan
+    if inv_mask.sum() > 0:
+        df.loc[inv_mask, "CLENOW_COMPOSITE_INV"] = _zscore(df.loc[inv_mask, "CLENOW_90D"])
 
     # Final blended score used for ranking: 0.5*SharpeComposite + 0.5*ClenowComposite
     # (again dropping whichever composite is NaN for a given ETF, not rescaling)
@@ -730,8 +810,11 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
 
     # ── Universe composites (reference pool = ALL ETFs; used for display/
     #    fallback sort of ETFs that failed the screen) ──
-    df["WTD_SHARPE"] = _blend_composite(df, "SHARPE_6M", "SHARPE_3M", CONFIG.SHARPE_W6M, CONFIG.SHARPE_W3M)
-    df["WTD_CLENOW"] = _blend_composite(df, "CLENOW_6M", "CLENOW_3M", CONFIG.CLENOW_W6M, CONFIG.CLENOW_W3M)
+    u_mask = ~df["SECTOR"].isin(CONFIG.EXCLUDE_SECTORS)   # excluded sectors -> NaN
+    df["WTD_SHARPE"] = _blend_composite(df, "SHARPE_6M", "SHARPE_3M", CONFIG.SHARPE_W6M, CONFIG.SHARPE_W3M,
+                                        mask=u_mask)
+    df["WTD_CLENOW"] = np.nan
+    df.loc[u_mask, "WTD_CLENOW"] = _zscore(df.loc[u_mask, "CLENOW_90D"])
     su, cu = df["WTD_SHARPE"], df["WTD_CLENOW"]
     both_bu = su.notna() & cu.notna()
     onlySu  = su.notna() & cu.isna()
@@ -990,7 +1073,7 @@ def print_summary(df, regime, allocation):
     inv_count = df["SCREEN_PASS"].sum()
     print(f"\n  RANKING  (investable rank = Sharpe+Clenow blend, scored among {inv_count} ETFs passing abs filter)")
     print(f"  {'InvRk':>5} {'Ticker':<14} {'ETF Name':<30} "
-          f"{'Blend':>8} {'Sharpe6M':>9} {'Sharpe3M':>9} {'Clenow6M':>9} {'Clenow3M':>9} "
+          f"{'Blend':>8} {'Sharpe6M':>9} {'Sharpe3M':>9} {'Clenow90D':>10} "
           f"{'Screen':>7}")
     print("  " + "-" * 105)
 
@@ -1001,7 +1084,7 @@ def print_summary(df, regime, allocation):
         print(f"  {inv_rk:>5} {r2['TICKER']:<14} "
               f"{str(r2['ETF_NAME'])[:29]:<30} "
               f"{f(r2['WTD_BLEND']):>8} {f(r2['SHARPE_6M']):>9} {f(r2['SHARPE_3M']):>9} "
-              f"{f(r2['CLENOW_6M']):>9} {f(r2['CLENOW_3M']):>9} "
+              f"{f(r2['CLENOW_90D'], 1):>10} "
               f"{screen:>7}")
 
     print(f"\n  Universe={len(df)}  Investable (both screens pass)={inv_count}  "
@@ -1639,7 +1722,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
     ws.title = "Rankings"
 
     # Title
-    ws.merge_cells("A1:Y1")
+    ws.merge_cells("A1:X1")
     c = ws["A1"]
     c.value     = ("ETF Momentum Ranking  |  "
                    "Step 1: Screen (abs filter)  ->  "
@@ -1651,7 +1734,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
     ws.row_dimensions[1].height = 22
 
     # Regime row
-    ws.merge_cells("A2:Y2")
+    ws.merge_cells("A2:X2")
     r = regime
     rtext = (f"REGIME: {r['label']}  |  Active slots: {r['active_slots']}/{CONFIG.TOP_N}  |  "
              f"Trend Signal ({r['trend_ticker']}): Price {r['nifty_price']:.2f}  |  "
@@ -1676,8 +1759,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         ("Wtd Blend\nScore",    14, "0.000"),
         ("Sharpe\n6M",          12, "0.000"),
         ("Sharpe\n3M",          12, "0.000"),
-        ("Clenow\n6M",          12, "0.000"),
-        ("Clenow\n3M",          12, "0.000"),
+        ("Clenow\n90D",         12, "0.0"),
         ("Screen\nResult",      11, "@"),
     ]
     KEYS = [
@@ -1685,7 +1767,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         "TICKER", "ETF_NAME", "SECTOR", "CLOSE", "52WK_HIGH", "PCT_FROM_HIGH",
         "EMA_100",
         "EOM_PCT",
-        "WTD_BLEND", "SHARPE_6M", "SHARPE_3M", "CLENOW_6M", "CLENOW_3M",
+        "WTD_BLEND", "SHARPE_6M", "SHARPE_3M", "CLENOW_90D",
         "SCREEN_PASS",
     ]
 

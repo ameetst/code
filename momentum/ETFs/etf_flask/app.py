@@ -96,6 +96,15 @@ def _num(x):
     return None if pd.isna(x) else float(x)
 
 
+def _score_mode() -> str:
+    ws, wc = emr.CONFIG.BLEND_W_SHARPE, emr.CONFIG.BLEND_W_CLENOW
+    if wc <= 0:
+        return "Sharpe composite only"
+    if ws <= 0:
+        return "Clenow 90D only"
+    return f"Blend: {ws:.0%} Sharpe / {wc:.0%} Clenow"
+
+
 def build_view() -> dict:
     model = get_model()
     meta, prices, regime, ranking = (model[k] for k in ("meta", "prices", "regime", "ranking"))
@@ -126,6 +135,7 @@ def build_view() -> dict:
         ("Current Holdings", f"{len(held)} / {emr.CONFIG.TOP_N}", None),
         ("Trend Ticker",     regime.get("trend_ticker", "N/A"), None),
         ("Data Range",       data_range, None),
+        ("Ranking Score",    _score_mode(), None),
     ]
 
     # ── Tab 1: allocation ──
@@ -137,7 +147,8 @@ def build_view() -> dict:
     # ── Tab 2: full rankings ──
     rank_rows = [dict(rank=None if pd.isna(r["RANK_INVESTABLE"]) else int(r["RANK_INVESTABLE"]),
                       ticker=r["TICKER"], name=r["ETF_NAME"], sector=r["SECTOR"],
-                      wtd=_num(r["WTD_SHARPE"]), s6=_num(r["SHARPE_6M"]), s3=_num(r["SHARPE_3M"]),
+                      blend=_num(r["WTD_BLEND"]), wtd=_num(r["WTD_SHARPE"]),
+                      s6=_num(r["SHARPE_6M"]), s3=_num(r["SHARPE_3M"]), cl=_num(r["CLENOW_90D"]),
                       screen=bool(r["SCREEN_PASS"]), held=r["TICKER"] in held)
                  for r in ranking.to_dict("records")]
 
@@ -168,6 +179,9 @@ def build_view() -> dict:
         output_exists=(ROOT / emr.CONFIG.OUTPUT_FILE).exists(),
         cfg=cfg, num_fields=core.NUM_FIELDS,
         cfg_fallbacks=", ".join(cfg["REGIME_FALLBACKS"]),
+        cfg_exclude=", ".join(cfg.get("EXCLUDE_SECTORS", [])),
+        n_excluded=int(ranking["SECTOR"].isin(emr.CONFIG.EXCLUDE_SECTORS).sum()),
+        score_mode=_score_mode(),
         cfg_file_text=cfg_path.read_text() if cfg_path.exists() else None,
         default_input=default_input,
         default_input_exists=(ROOT / default_input).exists(),

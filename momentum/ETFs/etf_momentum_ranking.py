@@ -4,8 +4,10 @@ ETF Dual Momentum + Clenow + Weighted Sharpe + Binary Risk-On/Off Regime Filter
 Scoring pipeline (in correct order):
   Step 1 - SCREEN  : Apply 52-week high proximity filter.
                      Only ETFs within MAX_DRAWDOWN_FROM_HIGH of their 52wk high are investable.
-  Step 2 - SCORE   : Weighted Sharpe composite (6M+3M Z-scores) on ALL ETFs for reference.
-                     Investable rank is computed on the screened subset only.
+  Step 2 - SCORE   : Sharpe composite (0.5*Z(6M) + 0.5*Z(3M)) and book-style 90-day
+                     Clenow score ((exp(slope*250)-1)*100*R^2, gap>15% excluded), blended
+                     0.5/0.5 (BLEND_W_SHARPE / BLEND_W_CLENOW; set the Clenow weight to 0
+                     for Sharpe-only). Investable rank is computed on the screened subset.
   Step 3 - REGIME  : Binary risk-on/risk-off filter caps new-buy capacity.
   Step 4 - ALLOCATE: Select Top-N from the investable (screened) ranked list.
 
@@ -77,8 +79,10 @@ def _apply_json_config(cls, cfg: dict):
         "INPUT_FILE", "OUTPUT_FILE",
         "WINDOW_6M", "WINDOW_3M", "ANNUALIZE",
         "TOP_N", "TOP_N_PARTIAL",
-        "MAX_DRAWDOWN_FROM_HIGH",
+        "MAX_DRAWDOWN_FROM_HIGH", "EXCLUDE_SECTORS",
         "SHARPE_W6M", "SHARPE_W3M",
+        "CLENOW_WINDOW", "CLENOW_TRADING_DAYS", "CLENOW_GAP_MAX",
+        "BLEND_W_SHARPE", "BLEND_W_CLENOW",
         "REGIME_TICKER", "REGIME_FALLBACKS", "REGIME_INDEX_TICKER",
         "TREND_FAST_EMA_WINDOW", "TREND_EMA_WINDOW",
         "SECTOR_CAP",
@@ -106,8 +110,14 @@ def get_config_as_dict() -> dict:
         "TOP_N": CONFIG.TOP_N,
         "TOP_N_PARTIAL": CONFIG.TOP_N_PARTIAL,
         "MAX_DRAWDOWN_FROM_HIGH": CONFIG.MAX_DRAWDOWN_FROM_HIGH,
+        "EXCLUDE_SECTORS": CONFIG.EXCLUDE_SECTORS,
         "SHARPE_W6M": CONFIG.SHARPE_W6M,
         "SHARPE_W3M": CONFIG.SHARPE_W3M,
+        "CLENOW_WINDOW": CONFIG.CLENOW_WINDOW,
+        "CLENOW_TRADING_DAYS": CONFIG.CLENOW_TRADING_DAYS,
+        "CLENOW_GAP_MAX": CONFIG.CLENOW_GAP_MAX,
+        "BLEND_W_SHARPE": CONFIG.BLEND_W_SHARPE,
+        "BLEND_W_CLENOW": CONFIG.BLEND_W_CLENOW,
         "REGIME_TICKER": CONFIG.REGIME_TICKER,
         "REGIME_FALLBACKS": CONFIG.REGIME_FALLBACKS,
         "REGIME_INDEX_TICKER": CONFIG.REGIME_INDEX_TICKER,
@@ -142,10 +152,28 @@ class CONFIG:
     # exhibiting genuine momentum. 0.25 = must be >= 75% of 52wk high.
     MAX_DRAWDOWN_FROM_HIGH = 0.25
 
+    # Sectors removed from the investable pool altogether. LIQUID funds have
+    # near-zero volatility, so their Sharpe is huge/negative-infinite and wrecks
+    # the cross-sectional Z-scores; they are cash proxies, not momentum picks.
+    EXCLUDE_SECTORS = ["LIQUID"]
+
     # Weighted Sharpe blending (6M trend + 3M recency tilt)
     # Composite ranking is based entirely on Weighted Sharpe
     SHARPE_W6M  = 0.5
     SHARPE_W3M  = 0.5
+
+    # Book-style Clenow (Stocks on the Move): single 90-day window,
+    # score = (exp(slope*250) - 1) * 100 * R^2 on the log-price regression.
+    # Any |1-day move| > CLENOW_GAP_MAX inside the window -> score NaN.
+    CLENOW_WINDOW       = 90
+    CLENOW_TRADING_DAYS = 250
+    CLENOW_GAP_MAX      = 0.15
+
+    # Final ranking score = BLEND_W_SHARPE * Sharpe composite
+    #                     + BLEND_W_CLENOW * Z(Clenow 90D)   (Z over the pool)
+    # BLEND_W_CLENOW = 0 reproduces the previous Sharpe-only ranking exactly.
+    BLEND_W_SHARPE = 0.5
+    BLEND_W_CLENOW = 0.5
 
     # Regime filter
     # Nifty 500 used (not Nifty 50) — broader coverage matches full ETF universe
@@ -424,6 +452,36 @@ def sharpe_score(series: pd.Series, window: int, daily_rf: float | None = None) 
     return (excess.mean() / excess.std()) * np.sqrt(CONFIG.ANNUALIZE)
 
 
+def clenow_score(series: pd.Series, window: int | None = None,
+                 trading_days: int | None = None,
+                 gap_max: float | None = None) -> float:
+    """
+    Book-style Clenow momentum score (Andreas Clenow, "Stocks on the Move"):
+      1. OLS regression of ln(price) on time over the last `window` closes.
+      2. Annualised slope = exp(slope * trading_days) - 1   (compounded).
+      3. Score = annualised slope * 100 * R^2.
+    Returns NaN if fewer than `window` valid closes, or if any |1-day move|
+    inside the window exceeds `gap_max` (Clenow's gap exclusion).
+    """
+    window = CONFIG.CLENOW_WINDOW if window is None else window
+    td = CONFIG.CLENOW_TRADING_DAYS if trading_days is None else trading_days
+    gap = CONFIG.CLENOW_GAP_MAX if gap_max is None else gap_max
+    px = series.dropna()
+    px = px[px > 0]
+    if len(px) < window:
+        return np.nan
+    px_w = px.iloc[-window:].values.astype(float)
+    if np.any(np.abs(np.diff(px_w) / px_w[:-1]) > gap):
+        return np.nan
+    x = np.arange(window, dtype=float)
+    y = np.log(px_w)
+    if np.std(y) == 0:
+        return np.nan
+    slope = np.cov(x, y, bias=True)[0, 1] / np.var(x)
+    r2 = np.corrcoef(x, y)[0, 1] ** 2
+    return (np.exp(slope * td) - 1.0) * 100.0 * r2
+
+
 def momentum_return(series: pd.Series, window: int) -> float:
     """Total % return over lookback window"""
     clean = series.dropna()
@@ -625,7 +683,8 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
 
         sh6 = sharpe_score(s, CONFIG.WINDOW_6M)
         sh3 = sharpe_score(s, CONFIG.WINDOW_3M)
-        # Raw Sharpe values stored; WTD_SHARPE computed post-loop via Z-scores
+        cl90 = clenow_score(s)
+        # Raw Sharpe/Clenow values stored; composites computed post-loop via Z-scores
 
         # --- EMA calculation (100 day) ---
         clean_s = s.dropna()
@@ -649,12 +708,15 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
         # --- Screen: above 100 EMA filter (calculated for reference only) ---
         ema_100 = float(clean_s.ewm(span=100, adjust=False).mean().iloc[-1]) if len(clean_s) >= 100 else np.nan
 
-        screen_pass = high_pass
+        sector = classify_sector(row["ETF_NAME"], ticker)
+        # Sectors excluded from the investable pool entirely (e.g. LIQUID cash
+        # funds): no screen pass -> no rank, not in any Z-score reference pool.
+        screen_pass = high_pass and (sector not in CONFIG.EXCLUDE_SECTORS)
 
         records.append({
             "TICKER"        : ticker,
             "ETF_NAME"      : row["ETF_NAME"],
-            "SECTOR"        : classify_sector(row["ETF_NAME"], ticker),
+            "SECTOR"        : sector,
             "CLOSE"         : close,
             "52WK_HIGH"     : high_52w,
             "PCT_FROM_HIGH" : pct_from_high * 100 if not np.isnan(pct_from_high) else np.nan,
@@ -662,6 +724,7 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
             "EOM_PCT"       : eom_ret,
             "SHARPE_6M"     : sh6,
             "SHARPE_3M"     : sh3,
+            "CLENOW_90D"    : cl90,
             "SCREEN_PASS"   : screen_pass,
         })
 
@@ -699,8 +762,28 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
     df.loc[only6i, "_WTD_INV"] = CONFIG.SHARPE_W6M * z6i[only6i]
     df.loc[only3i, "_WTD_INV"] = CONFIG.SHARPE_W3M * z3i[only3i]
 
-    # ── Universe Z-scores (reference pool = ALL ETFs with valid Sharpe) ──
-    z6u = _zscore(df["SHARPE_6M"]); z3u = _zscore(df["SHARPE_3M"])
+    # Clenow Z-score over the investable pool, blended with the Sharpe composite
+    # (a term that is NaN for a given ETF is dropped, not rescaled)
+    df["_CL_INV"] = np.nan
+    if inv_mask.sum() > 0:
+        df.loc[inv_mask, "_CL_INV"] = _zscore(df.loc[inv_mask, "CLENOW_90D"])
+    wS, wC = CONFIG.BLEND_W_SHARPE, CONFIG.BLEND_W_CLENOW
+    sc, cc = df["_WTD_INV"], df["_CL_INV"]
+    df["_BLEND_INV"] = np.nan
+    both_b = sc.notna() & cc.notna()
+    only_s = sc.notna() & cc.isna()
+    only_c = sc.isna() & cc.notna()
+    df.loc[both_b, "_BLEND_INV"] = wS * sc[both_b] + wC * cc[both_b]
+    df.loc[only_s, "_BLEND_INV"] = wS * sc[only_s]
+    df.loc[only_c, "_BLEND_INV"] = wC * cc[only_c]
+
+    # ── Universe Z-scores (reference pool = all ETFs with valid Sharpe, minus
+    #    EXCLUDE_SECTORS whose degenerate Sharpe would distort the Z-scores;
+    #    excluded ETFs get NaN here) ──
+    u_mask = ~df["SECTOR"].isin(CONFIG.EXCLUDE_SECTORS)
+    z6u = pd.Series(np.nan, index=df.index); z3u = pd.Series(np.nan, index=df.index)
+    z6u.loc[u_mask] = _zscore(df.loc[u_mask, "SHARPE_6M"])
+    z3u.loc[u_mask] = _zscore(df.loc[u_mask, "SHARPE_3M"])
     both_u = z6u.notna() & z3u.notna()
     only6u = z6u.notna() & z3u.isna()
     only3u = z6u.isna()  & z3u.notna()
@@ -709,6 +792,18 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
     df.loc[only6u, "WTD_SHARPE"] = z6u[only6u]
     df.loc[only3u, "WTD_SHARPE"] = z3u[only3u]
 
+    # Universe Clenow Z + blend (display / fallback sort; excluded sectors -> NaN)
+    df["WTD_CLENOW"] = np.nan
+    df.loc[u_mask, "WTD_CLENOW"] = _zscore(df.loc[u_mask, "CLENOW_90D"])
+    su, cu = df["WTD_SHARPE"], df["WTD_CLENOW"]
+    df["WTD_BLEND"] = np.nan
+    both_bu = su.notna() & cu.notna()
+    only_su = su.notna() & cu.isna()
+    only_cu = su.isna() & cu.notna()
+    df.loc[both_bu, "WTD_BLEND"] = wS * su[both_bu] + wC * cu[both_bu]
+    df.loc[only_su, "WTD_BLEND"] = wS * su[only_su]
+    df.loc[only_cu, "WTD_BLEND"] = wC * cu[only_cu]
+
     # ── Rankings ─────────────────────────────────────────────────
     # Investable rank — Z-scored composite among screen-pass ETFs only.
     # ETFs that fail the 52-week-high screen get RANK_INVESTABLE = NaN
@@ -716,18 +811,18 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
     # they're not part of the investable population being ranked.
     inv = df[df["SCREEN_PASS"]].copy()
     if len(inv) > 0:
-        inv["RANK_INVESTABLE"] = inv["_WTD_INV"].rank(ascending=False, na_option="bottom").astype(int)
+        inv["RANK_INVESTABLE"] = inv["_BLEND_INV"].rank(ascending=False, na_option="bottom").astype(int)
         df = df.merge(inv[["TICKER", "RANK_INVESTABLE"]], on="TICKER", how="left")
     else:
         df["RANK_INVESTABLE"] = np.nan
 
     # Drop intermediate Z-score working columns
-    df = df.drop(columns=["_Z6_INV", "_Z3_INV", "_WTD_INV"], errors="ignore")
+    df = df.drop(columns=["_Z6_INV", "_Z3_INV", "_WTD_INV", "_CL_INV", "_BLEND_INV"], errors="ignore")
 
     # Sort by investable rank first (passing ETFs at top, best rank first),
     # then by raw Weighted Sharpe for the remaining (non-investable) ETFs
     df["_sort"] = df["RANK_INVESTABLE"].fillna(9999)
-    df = df.sort_values(["_sort", "WTD_SHARPE"], ascending=[True, False]).drop(columns="_sort").reset_index(drop=True)
+    df = df.sort_values(["_sort", "WTD_BLEND"], ascending=[True, False]).drop(columns="_sort").reset_index(drop=True)
 
     return df
 
@@ -994,9 +1089,9 @@ def print_summary(df, regime, allocation):
     inv_count = df["SCREEN_PASS"].sum()
     print(f"\n  RANKING  (investable rank = scored among {inv_count} ETFs passing abs filter)")
     print(f"  {'InvRk':>5} {'Ticker':<14} {'ETF Name':<36} "
-          f"{'WtdSharpe':>10} {'Sharpe6M':>9} {'Sharpe3M':>9} "
+          f"{'Blend':>8} {'WtdSharpe':>10} {'Sharpe6M':>9} {'Sharpe3M':>9} {'Clenow90D':>10} "
           f"{'Screen':>7}")
-    print("  " + "-" * 95)
+    print("  " + "-" * 117)
 
     for _, r2 in df.head(5).iterrows():
         def f(v, d=3): return f"{v:.{d}f}" if pd.notna(v) and v != 0 else "N/A"
@@ -1004,7 +1099,8 @@ def print_summary(df, regime, allocation):
         screen = "PASS" if r2["SCREEN_PASS"] else "FAIL"
         print(f"  {inv_rk:>5} {r2['TICKER']:<14} "
               f"{str(r2['ETF_NAME'])[:35]:<36} "
-              f"{f(r2['WTD_SHARPE']):>10} {f(r2['SHARPE_6M']):>9} {f(r2['SHARPE_3M']):>9} "
+              f"{f(r2['WTD_BLEND']):>8} {f(r2['WTD_SHARPE']):>10} {f(r2['SHARPE_6M']):>9} "
+              f"{f(r2['SHARPE_3M']):>9} {f(r2['CLENOW_90D'], 1):>10} "
               f"{screen:>7}")
 
     print(f"\n  Universe={len(df)}  Investable (both screens pass)={inv_count}  "
@@ -1048,6 +1144,63 @@ def save_holdings_log(script_dir: Path, log: dict):
     """Persist the updated log to disk."""
     with open(_log_path(script_dir), "w") as f:
         json.dump(log, f, indent=2, default=str)
+
+
+LEDGER_FILE = "ETF_positions_ledger.json"
+
+
+def seed_allocation_from_ledger(script_dir: Path, prev_alloc: list | None,
+                                ranking: pd.DataFrame,
+                                prices: pd.DataFrame) -> list | None:
+    """
+    The position ledger (what is actually held, written by the tracker/dashboard)
+    is the source of truth for current holdings. The holdings log is only the
+    script's own model state and can drift from it (e.g. positions bought in the
+    tracker that the log never recorded, or log positions never actually bought).
+
+    If the set of held tickers in the ledger differs from the previous log
+    allocation, return a replacement previous-allocation built from the ledger
+    (entry_price from the ledger, peak = highest close since entry_date) so the
+    hold/exit rules run on the REAL holdings. Returns None when no replacement is
+    needed (ledger missing/empty, or already in agreement).
+    """
+    p = script_dir / LEDGER_FILE
+    if not p.exists():
+        return None
+    try:
+        with open(p) as f:
+            ledger = json.load(f)
+    except Exception:
+        return None
+    if not isinstance(ledger, dict) or not ledger:
+        return None
+
+    log_tickers = {s["ticker"] for s in (prev_alloc or [])
+                   if s.get("ticker") and s["ticker"] != "CASH"}
+    if log_tickers == set(ledger):
+        return None
+
+    info = ranking.drop_duplicates("TICKER").set_index("TICKER") if len(ranking) else None
+    slots = []
+    for i, (t, pos) in enumerate(ledger.items(), start=1):
+        entry_price = pos.get("entry_price")
+        peak = entry_price or 0.0
+        if t in prices.columns:
+            s_px = prices[t].dropna()
+            if pos.get("entry_date"):
+                s_px = s_px[s_px.index >= pd.Timestamp(pos["entry_date"])]
+            if len(s_px):
+                peak = max(peak, float(s_px.max()))
+        slots.append({
+            "slot": i, "ticker": t,
+            "etf_name": (str(info.at[t, "ETF_NAME"]) if info is not None and t in info.index else t),
+            "sector": (str(info.at[t, "SECTOR"]) if info is not None and t in info.index else "OTHER"),
+            "weight": 1.0 / CONFIG.TOP_N, "inv_rank": "-",
+            "entry_price": entry_price, "peak": peak,
+        })
+    print(f"[sync]   ledger holdings {sorted(ledger)} != log holdings {sorted(log_tickers)} "
+          f"-> using LEDGER as the previous allocation")
+    return slots
 
 
 def record_to_log(allocation: pd.DataFrame, regime: dict, run_date: str) -> dict:
@@ -1179,7 +1332,8 @@ def diff_allocations(prev: dict, curr: dict) -> list[dict]:
 
 
 def update_log(script_dir: Path, allocation: pd.DataFrame,
-               regime: dict, prices: pd.DataFrame = None) -> tuple[dict, list[dict]]:
+               regime: dict, prices: pd.DataFrame = None,
+               seed_prev_alloc: list | None = None) -> tuple[dict, list[dict]]:
     """
     Load log, diff vs previous month, save updated log.
     When prices is provided, enriches each slot with entry_price and peak
@@ -1196,6 +1350,10 @@ def update_log(script_dir: Path, allocation: pd.DataFrame,
     sorted_keys = sorted(log.keys())
     prev_keys   = [k for k in sorted_keys if k < month_key]
     prev_entry  = log[prev_keys[-1]] if prev_keys else None
+    if seed_prev_alloc is not None:
+        # Ledger overrides the log's previous allocation (see seed_allocation_from_ledger)
+        prev_entry = {**(prev_entry or {"run_date": "ledger", "regime": "?", "active_slots": 0}),
+                      "allocation": seed_prev_alloc}
 
     # ── Enrich slots with entry_price / peak for TSL tracking ──────────
     if prices is not None:
@@ -1676,9 +1834,11 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         ("% From\n52Wk High",   12, "0.00"),
         ("EMA 100",             10, "0.00"),
         ("% From\nEOM",         11, "0.00"),
+        ("Wtd Blend\nScore",    14, "0.000"),
         ("Wtd Sharpe\nScore",   14, "0.000"),
         ("Sharpe\n6M",          13, "0.000"),
         ("Sharpe\n3M",          13, "0.000"),
+        ("Clenow\n90D",         12, "0.0"),
         ("Screen\nResult",      11, "@"),
     ]
     KEYS = [
@@ -1686,7 +1846,7 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
         "TICKER", "ETF_NAME", "SECTOR", "CLOSE", "52WK_HIGH", "PCT_FROM_HIGH",
         "EMA_100",
         "EOM_PCT",
-        "WTD_SHARPE", "SHARPE_6M", "SHARPE_3M",
+        "WTD_BLEND", "WTD_SHARPE", "SHARPE_6M", "SHARPE_3M", "CLENOW_90D",
         "SCREEN_PASS",
     ]
 
@@ -1830,6 +1990,9 @@ def run_pipeline(fp=None, out=None):
     sorted_wks = sorted(prev_log.keys())
     prev_wks   = [k for k in sorted_wks if k < prev_wk]
     prev_alloc = prev_log[prev_wks[-1]].get("allocation", []) if prev_wks else None
+    seed_alloc = seed_allocation_from_ledger(SCRIPT_DIR, prev_alloc, ranking, prices)
+    if seed_alloc is not None:
+        prev_alloc = seed_alloc
 
     print("[alloc]  Building allocation (WRH — hold & replace) ...")
     allocation = build_allocation(ranking, regime,
@@ -1839,7 +2002,8 @@ def run_pipeline(fp=None, out=None):
     print_summary(ranking, regime, allocation)
 
     print("[log]    Updating holdings log ...")
-    prev_entry, changes, log = update_log(SCRIPT_DIR, allocation, regime, prices)
+    prev_entry, changes, log = update_log(SCRIPT_DIR, allocation, regime, prices,
+                                          seed_prev_alloc=seed_alloc)
 
     if prev_entry:
         prev_period = prev_entry.get("run_date","?")[:10]

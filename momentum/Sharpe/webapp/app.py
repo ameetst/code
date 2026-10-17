@@ -64,7 +64,19 @@ def create_app() -> Flask:
 
     @app.context_processor
     def inject_globals():
-        return {"read_only": settings.READ_ONLY, "actions_dot": _actions_dot()}
+        # Nav label and footer download mirror the Streamlit dashboards' tab label
+        # ("Top {MAX_N} Rankings") and bottom "Actions" section.
+        max_n, rankings_xlsx = None, None
+        try:
+            cfg = config_store.load_config()
+            max_n = int(cfg["max_n"])
+            universe = config_store.universe_name(config_store.resolve_file(cfg))
+            path = config_store.rankings_xlsx_path(universe)
+            rankings_xlsx = path.name if path else None
+        except Exception:
+            pass
+        return {"read_only": settings.READ_ONLY, "actions_dot": _actions_dot(),
+                "nav_max_n": max_n, "rankings_xlsx": rankings_xlsx}
 
     threading.Thread(target=_warm_cache, daemon=True).start()
     return app

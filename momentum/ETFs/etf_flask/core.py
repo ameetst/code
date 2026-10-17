@@ -294,6 +294,11 @@ NUM_FIELDS = {
     "WINDOW_3M":              dict(kind="int",   min=10,   max=126,  step=1),
     "SHARPE_W6M":             dict(kind="float", min=0.0,  max=1.0,  step=0.1),
     "SHARPE_W3M":             dict(kind="float", min=0.0,  max=1.0,  step=0.1),
+    "CLENOW_WINDOW":          dict(kind="int",   min=20,   max=252,  step=5),
+    "CLENOW_TRADING_DAYS":    dict(kind="int",   min=200,  max=260,  step=1),
+    "CLENOW_GAP_MAX":         dict(kind="float", min=0.05, max=1.0,  step=0.01),
+    "BLEND_W_SHARPE":         dict(kind="float", min=0.0,  max=1.0,  step=0.1),
+    "BLEND_W_CLENOW":         dict(kind="float", min=0.0,  max=1.0,  step=0.1),
     "MAX_DRAWDOWN_FROM_HIGH": dict(kind="float", min=0.05, max=0.50, step=0.05),
     "TREND_FAST_EMA_WINDOW":  dict(kind="int",   min=10,   max=200,  step=5),
     "TREND_EMA_WINDOW":       dict(kind="int",   min=20,   max=400,  step=10),
@@ -339,5 +344,13 @@ def parse_config(payload: dict, current_cfg: dict) -> dict:
         raw = payload["REGIME_FALLBACKS"]
         parts = raw.split(",") if isinstance(raw, str) else raw
         new_cfg["REGIME_FALLBACKS"] = [str(t).strip() for t in parts if str(t).strip()]
+
+    if "EXCLUDE_SECTORS" in payload:
+        raw = payload["EXCLUDE_SECTORS"]
+        parts = raw.split(",") if isinstance(raw, str) else raw
+        new_cfg["EXCLUDE_SECTORS"] = [str(t).strip().upper() for t in parts if str(t).strip()]
+
+    if new_cfg.get("BLEND_W_SHARPE", 0) + new_cfg.get("BLEND_W_CLENOW", 0) <= 0:
+        raise ValidationError("BLEND_W_SHARPE and BLEND_W_CLENOW: at least one weight must be above 0.")
 
     return new_cfg

@@ -1,10 +1,23 @@
-from flask import Blueprint, abort, render_template, request
+from flask import Blueprint, abort, render_template, request, send_file
 
 import momentum_lib as ml
 
 from webapp.core import cap_tier, config_store, dhan_client, rankings, regime
 
 bp = Blueprint("rankings", __name__)
+
+
+@bp.route("/rankings/download")
+def download():
+    """Serves the Sharpe.py output workbook (<universe>_rankings.xlsx) as-is. Read-only,
+    not gated by READ_ONLY -- matches the Streamlit dashboards' Download Rankings Excel."""
+    cfg = config_store.load_config()
+    universe = config_store.universe_name(config_store.resolve_file(cfg))
+    path = config_store.rankings_xlsx_path(universe)
+    if path is None:
+        abort(404, description="No rankings workbook found. Run Sharpe.py to generate it first.")
+    return send_file(path, as_attachment=True, download_name=path.name,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 def _view_model(limit: int | None):

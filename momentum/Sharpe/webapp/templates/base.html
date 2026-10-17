@@ -17,15 +17,23 @@
     <div class="banner">Read-only preview — trade entry and config changes stay in the Streamlit dashboard for now.</div>
     {% endif %}
     <nav class="nav-tabs">
-      <a href="{{ url_for('rankings.index') }}" class="{{ 'active' if active_tab == 'rankings' }}">📊 Top Rankings</a>
+      <a href="{{ url_for('rankings.index') }}" class="{{ 'active' if active_tab == 'rankings' }}">📊 {{ ('Top ' ~ nav_max_n ~ ' Rankings') if nav_max_n else 'Top Rankings' }}</a>
       <a href="{{ url_for('actions.index') }}" class="{{ 'active' if active_tab == 'actions' }}">{{ actions_dot }} Actions Monitor</a>
       <a href="{{ url_for('tradelog.index') }}" class="{{ 'active' if active_tab == 'tradelog' }}">📝 Tradelog &amp; MTM</a>
       <a href="{{ url_for('cash_ledger.index') }}" class="{{ 'active' if active_tab == 'cash' }}">💰 Cash Ledger</a>
       <a href="{{ url_for('rankings.full_page') }}" class="{{ 'active' if active_tab == 'full' }}">📋 Full Rankings</a>
       <a href="{{ url_for('configuration.index') }}" class="{{ 'active' if active_tab == 'config' }}">⚙️ Configuration</a>
-      <a href="{{ url_for('performance.index') }}" class="{{ 'active' if active_tab == 'performance' }}">📈 Performance</a>
+      <a href="{{ url_for('performance.index') }}" class="{{ 'active' if active_tab == 'performance' }}">📈 Performance Tracker</a>
     </nav>
     {% block content %}{% endblock %}
+
+    <hr>
+    <h3>⚡ Actions</h3>
+    {% if rankings_xlsx %}
+      <a href="{{ url_for('rankings.download') }}" class="btn-secondary" style="margin-left:0;">📥 Download Rankings Excel ({{ rankings_xlsx }})</a>
+    {% else %}
+      <div class="banner">Run <code>Sharpe.py</code> to generate the Excel output first.</div>
+    {% endif %}
   </div>
 </body>
 </html>

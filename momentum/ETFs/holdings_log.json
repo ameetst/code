@@ -796,5 +796,62 @@
         "peak": null
       }
     ]
+  },
+  "2026-W42": {
+    "run_date": "2026-10-16 09:44",
+    "regime": "BEAR",
+    "active_slots": 0,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "PHARMABEES",
+        "etf_name": "Nippon India Nifty Pharma ETF",
+        "sector": "NIFTY PHARMA",
+        "weight": 0.2,
+        "inv_rank": "4",
+        "entry_price": 27.51,
+        "peak": 27.89
+      },
+      {
+        "slot": 2,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      },
+      {
+        "slot": 3,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      },
+      {
+        "slot": 4,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      },
+      {
+        "slot": 5,
+        "ticker": "CASH",
+        "etf_name": "Cash / Money Market",
+        "sector": "CASH",
+        "weight": 0.2,
+        "inv_rank": "-",
+        "entry_price": null,
+        "peak": null
+      }
+    ]
   }
 }

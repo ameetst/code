@@ -41,6 +41,15 @@ def universe_name(filename: str) -> str:
     return filename.replace("_updated.xlsx", "").replace(".xlsx", "")
 
 
+def rankings_xlsx_path(universe: str) -> Path | None:
+    """The Sharpe.py output workbook, same candidate order as the Streamlit dashboards'
+    Download Rankings Excel button. None if Sharpe.py hasn't generated one yet."""
+    candidates = [DATA_DIR / f"{universe}_rankings.xlsx",
+                  DATA_DIR / "N750_rankings.xlsx",
+                  DATA_DIR / "NSEAll_rankings.xlsx"]
+    return next((p for p in candidates if p.exists()), None)
+
+
 def positions_ledger_path(universe: str) -> Path:
     candidates = [DATA_DIR / f"{universe}_positions_ledger.json", DATA_DIR / "positions_ledger.json"]
     return next((p for p in candidates if p.exists()), candidates[0])

@@ -204,3 +204,33 @@ def test_performance_page_renders_chart_data(client):
     records = json.loads(m.group(1))
     assert len(records) >= 2
     assert set(records[0]) == {"date", "port", "bench", "n_held", "invested", "method"}
+
+
+# ── Parity with the Streamlit dashboards: nav labels + Download Rankings Excel ──
+
+def test_nav_labels_match_streamlit_tab_labels(client):
+    from webapp.core import config_store
+    max_n = int(config_store.load_config()["max_n"])
+    html = client.get("/").data.decode()
+    assert f"Top {max_n} Rankings" in html      # Streamlit: f"📊 Top {MAX_N} Rankings"
+    assert "📈 Performance Tracker" in html     # Streamlit: "📈 Performance Tracker"
+
+
+def test_download_rankings_excel_serves_the_workbook_and_is_linked_in_the_footer(client):
+    import io
+    import openpyxl
+    from webapp.core import config_store
+
+    cfg = config_store.load_config()
+    universe = config_store.universe_name(config_store.resolve_file(cfg))
+    path = config_store.rankings_xlsx_path(universe)
+    if path is None:
+        pytest.skip("no rankings workbook generated yet")
+
+    assert 'href="/rankings/download"' in client.get("/").data.decode()
+
+    r = client.get("/rankings/download")
+    assert r.status_code == 200
+    assert "attachment" in r.headers.get("Content-Disposition", "")
+    assert path.name in r.headers.get("Content-Disposition", "")
+    assert openpyxl.load_workbook(io.BytesIO(r.data)).sheetnames  # a real, openable workbook

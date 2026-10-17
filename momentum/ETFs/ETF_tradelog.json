@@ -151,5 +151,14 @@
     "date": "2026-09-29",
     "quantity": 1030,
     "price": 45.9
+  },
+  {
+    "id": "1715df47-fbf0-4750-b834-05b4f6b571b3",
+    "timestamp": "2026-10-12T09:41:06.427327",
+    "ticker": "HEALTHCARE",
+    "action": "SELL",
+    "date": "2026-10-12",
+    "quantity": 2305,
+    "price": 20.75
   }
 ]
