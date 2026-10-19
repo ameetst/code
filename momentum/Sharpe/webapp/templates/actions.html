@@ -2,6 +2,7 @@
 {% set active_tab = "actions" %}
 {% block content %}
 <h2>{{ actions_dot }} Actions Monitor</h2>
+{% if actions_dot_error %}<div class="banner error">⚠️ Exit status could not be evaluated: {{ actions_dot_error }}</div>{% endif %}
 
 {% if not view.has_ledger %}
   <div class="banner">No open positions found in the positions ledger. Nothing to evaluate.</div>

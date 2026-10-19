@@ -1,13 +1,18 @@
 """
 Regime Score Breakdown. Ported from sharpe_dashboard_dhan.py: compute_ad_ratio (pure,
-no network) plus the regime-history trend chart. Read-only difference: this module
-never calls append_regime_history -- that file is written only by the Streamlit
-dashboard/Sharpe.py, and read here the same way core.performance reads equity_history.json.
+no network) plus the regime-history trend chart.
+
+Reading is always safe. Writing (record_today, the port of the dashboards'
+append_regime_history) only happens when the webapp is write-enabled
+(SHARPE_READ_ONLY=0) -- the caller gates it; in the default read-only mode this module
+never touches *_regime_history.json, and the Streamlit dashboards remain its only writer.
 """
+import datetime
 import json
 
 import pandas as pd
 
+from webapp.core.storage import safe_write_json
 from webapp.settings import DATA_DIR
 
 SIGNAL_WEIGHTS_PCT = {
@@ -53,6 +58,46 @@ def load_regime_history(universe: str) -> list[dict]:
             return json.load(f)
     except (OSError, ValueError):
         return []
+
+
+def record_today(universe: str, score: float, detail: dict, today: datetime.date | None = None) -> bool:
+    """Records today's regime score in <universe>_regime_history.json: one entry per calendar
+    day, the latest value overwriting an earlier one (same rule as the Streamlit dashboards'
+    append_regime_history). Skips the write when today's entry is already identical, so
+    repeated page loads don't rewrite the file. Never overwrites a history file it can't
+    parse. Returns True only if the file was written.
+
+    Caller must gate this behind settings.READ_ONLY -- it performs no check itself."""
+    path = DATA_DIR / f"{universe}_regime_history.json"
+    history = []
+    if path.exists():
+        try:
+            with open(path) as f:
+                history = json.load(f)
+        except (OSError, ValueError):
+            return False
+        if not isinstance(history, list):
+            return False
+
+    today_str = (today or datetime.date.today()).isoformat()
+    entry = {
+        "date":      today_str,
+        "Composite": round(float(score), 4),
+        "Breadth":   round(detail.get("breadth_score", 0.0), 4),
+        "Momentum":  round(detail.get("momentum_score", 0.0), 4),
+        "Dynamic N": detail.get("dynamic_n", 0),
+    }
+    for i, h in enumerate(history):
+        if h.get("date") == today_str:
+            if h == entry:
+                return False
+            history[i] = entry
+            break
+    else:
+        history.append(entry)
+
+    safe_write_json(path, history)
+    return True
 
 
 def trend_chart_records(history: list[dict], entry_threshold: float) -> str | None:

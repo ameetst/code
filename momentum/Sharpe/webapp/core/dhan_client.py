@@ -31,6 +31,10 @@ _VIX_TTL = 3600  # matches @st.cache_data(ttl=3600) on the dashboard's get_live_
 _vix_cache: dict = {}
 
 
+def clear_vix_cache() -> None:
+    _vix_cache.pop("value", None)
+
+
 def get_live_vix() -> tuple[float | None, str | None]:
     """(value, source) -- source is "Dhan" / "Yahoo Finance" / None (both failed).
     Cached in-process for _VIX_TTL seconds, same cadence as the dashboard."""

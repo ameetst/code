@@ -2,6 +2,7 @@ from flask import Blueprint, abort, render_template, request, send_file
 
 import momentum_lib as ml
 
+from webapp import settings
 from webapp.core import cap_tier, config_store, dhan_client, rankings, regime
 
 bp = Blueprint("rankings", __name__)
@@ -96,6 +97,10 @@ def index():
     view = _view_model(None)
     cfg = config_store.load_config()
     bundle = rankings.get_bundle(cfg)  # already cached by _view_model's own call above
+    if not settings.READ_ONLY:
+        # Same as the Streamlit dashboards on every load: record today's regime point
+        # (a no-op if it's already stored). Never happens in the default read-only mode.
+        regime.record_today(view["universe"], bundle.regime_score, bundle.regime_detail)
     view["trend"] = _regime_trend_context(view["universe"], ml.DEFAULT_NEW_ENTRY_THRESHOLD)
     view["cap_tier"] = _cap_tier_dual_context(bundle)
     return render_template("rankings.html", **view)

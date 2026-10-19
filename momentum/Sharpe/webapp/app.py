@@ -17,34 +17,41 @@ from webapp.blueprints import configuration as configuration_bp
 from webapp.blueprints import performance as performance_bp
 from webapp.blueprints import rankings as rankings_bp
 from webapp.blueprints import tradelog as tradelog_bp
-from webapp.core import actions, config_store, rankings, tradelog
+from webapp.core import actions, config_store, rankings, regime, tradelog
 
 
 def _warm_cache() -> None:
     """Pay the ~11s ranking compute at startup instead of on the first page load."""
     try:
-        rankings.get_bundle(config_store.load_config())
+        cfg = config_store.load_config()
+        bundle = rankings.get_bundle(cfg)
+        if not settings.READ_ONLY:  # write-enabled only: a server left running still logs the day
+            regime.record_today(config_store.universe_name(config_store.resolve_file(cfg)),
+                                bundle.regime_score, bundle.regime_detail)
     except Exception as e:  # never block startup; the page will surface the real error
         print(f"[warmup] skipped: {e}")
 
 
-def _actions_dot() -> str:
-    """🔴/🟢 nav indicator, same signal as the Streamlit tab label. Bundle is cached, so
-    this costs one small JSON read plus a short Python loop on every page render."""
+def _actions_status() -> tuple[str, str | None]:
+    """(nav dot, error). 🔴/🟢 is the same signal as the Streamlit tab label. Bundle is
+    cached, so this costs one small JSON read plus a short Python loop on every render.
+    If the exit check itself fails the dot is a grey ⚪ plus the error text, never a
+    silent 🟢 -- "no exits" must not be what a broken calculation looks like."""
     try:
         cfg = config_store.load_config()
         bundle = rankings.get_bundle(cfg)
         universe = config_store.universe_name(config_store.resolve_file(cfg))
         ledger = actions.load_ledger(universe)
         if not ledger:
-            return "\U0001f7e2"
+            return "🟢", None
         tl = tradelog.load_tradelog(universe)
         pnl = tradelog.calculate_holdings_and_pnl(tl, bundle.latest_prices)
         n_exits = actions.evaluate_exits(bundle, cfg, ledger, pnl["holdings_metrics"],
                                           datetime.date.today())["n_exits"]
-        return "\U0001f534" if n_exits > 0 else "\U0001f7e2"
-    except Exception:
-        return "\U0001f7e2"
+        return ("🔴" if n_exits > 0 else "🟢"), None
+    except Exception as e:
+        print(f"[actions-dot] exit check failed: {e!r}")
+        return "⚪", f"{type(e).__name__}: {e}"
 
 
 def create_app() -> Flask:
@@ -75,7 +82,8 @@ def create_app() -> Flask:
             rankings_xlsx = path.name if path else None
         except Exception:
             pass
-        return {"read_only": settings.READ_ONLY, "actions_dot": _actions_dot(),
+        dot, dot_error = _actions_status()
+        return {"read_only": settings.READ_ONLY, "actions_dot": dot, "actions_dot_error": dot_error,
                 "nav_max_n": max_n, "rankings_xlsx": rankings_xlsx}
 
     threading.Thread(target=_warm_cache, daemon=True).start()

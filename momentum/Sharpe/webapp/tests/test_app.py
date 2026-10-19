@@ -130,9 +130,12 @@ def test_actions_page_renders_and_matches_ledger(client):
     html = r.data.decode()
     assert "Actions Monitor" in html
     assert "All Positions" in html
-    # every ledger ticker appears exactly once in the All Positions table
+    # Every ledger ticker appears exactly once in the All Positions table. Count only inside
+    # that table: a position flagged for exit is also (deliberately) listed in the separate
+    # "Exits Required" table above it, so a whole-page count is 2 whenever an exit is flagged.
+    all_positions_html = html.split("<h3>📋 All Positions</h3>")[1]
     for ticker in ledger:
-        assert html.count(f"<td>{ticker}</td>") == 1
+        assert all_positions_html.count(f"<td>{ticker}</td>") == 1
 
 
 def test_actions_row_classes_are_mutually_exclusive_and_valid(client):

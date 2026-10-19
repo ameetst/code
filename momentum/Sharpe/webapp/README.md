@@ -28,9 +28,10 @@ Tests (uses live data, read-only; ~15s because of the ranking compute):
   re-render their normal content partial with an error banner at **200**, not 403 — HTMX
   does not swap in error-status response bodies by default, so a 403 would silently do
   nothing on screen.
-- Loading rankings here **does not write** anything. The Streamlit page appends to
-  `*_regime_history.json` and rewrites `*_positions_ledger.json` on every load; the
-  webapp deliberately doesn't. A test guards this.
+- In read-only mode (the default), loading rankings here **does not write** anything. The Streamlit
+  page appends to `*_regime_history.json` and rewrites `*_positions_ledger.json` on every load; the
+  webapp deliberately doesn't. A test guards this. (Write mode adds only the once-a-day regime
+  record — see "Using the webapp for real" below.)
 - To develop against a copy of the data: `set SHARPE_DATA_DIR=C:\path\to\copy`.
 - Don't enter trades in both UIs at once — there is no cross-process lock.
 - **The first request after a cold start (or any config/data change) takes ~10-15s**
@@ -39,6 +40,30 @@ Tests (uses live data, read-only; ~15s because of the ranking compute):
   requests before the first one returns. Wait for one request to complete before sending
   more; the background warm-up thread already pays this cost once at startup so real users
   shouldn't normally see it.
+
+## Using the webapp for real (write mode)
+
+- **Launch:** `webapp\run_webapp.bat` stays look-only. `webapp\run_webapp_write.bat` is the same
+  server with `SHARPE_READ_ONLY=0` (a "✏️ Write mode" banner shows on every page). Run one server only,
+  and close the Streamlit dashboard tabs while you enter trades here — there is no cross-process lock,
+  and Streamlit rewrites `*_positions_ledger.json` on every page load.
+- **What write mode enables:** Tradelog add / edit / delete (each re-syncs the positions ledger),
+  Cash Ledger add / edit / delete, Configuration save, and the **daily regime record**: Top Rankings
+  (and server start-up) record today's Regime Score in `*_regime_history.json` — one entry per day,
+  latest overwrites, identical re-records are skipped, a file that can't be parsed is never
+  overwritten. In read-only mode nothing is ever written, so the Streamlit dashboards remain the
+  only writer of that file.
+- **Rehearse first:** `python webapp\tools\rehearse_writes.py` copies the configured universe's data
+  to a temp folder and drives every write route against the copy (31 checks: new rows have the same
+  keys as Streamlit-written ones, the ledger stays in sync with the tradelog, deletes restore the
+  baseline exactly, the over-sell guard works, only the edited config key changes, the regime record
+  is written once) and verifies the live files were not touched. Re-run it after changing any write route.
+- **Actions dot:** 🔴 exits, 🟢 none, ⚪ means the exit check itself failed (the error is in the
+  tooltip) — it never shows green for a broken calculation.
+- **Regime history backfill:** `python webapp\tools\backfill_regime_history.py NSEAll` rebuilds past days
+  from the price workbook (needs >= 200 price columns, i.e. from ~July onward), keeps every real entry,
+  validates the method against your real entries and writes `NSEAll_regime_history_backfill.json` —
+  it never touches the live file; copy it over yourself once you've checked it.
 
 ## Layout
 
@@ -66,7 +91,7 @@ Tests (uses live data, read-only; ~15s because of the ranking compute):
       actions.py                 /actions
       tradelog.py                 /tradelog and every add/edit/delete route
       cash_ledger.py              /cash and every add/edit/delete route
-      configuration.py            /config-page and /config-page/save (HTML page; kept off
+      configuration.py            /config-page, /config-page/save and /config-page/refresh-rankings (HTML page; kept off
                                     /config to stay clear of the /api/config JSON route)
       performance.py             /performance
     templates/
@@ -204,6 +229,11 @@ Done:
   effect after Refresh Rankings; the webapp's cache key already covers every setting involved.
   MDTV / Series / Circuit reasons read columns from the ranking compute, so they reflect the
   configuration it was last computed with (i.e. up to date after Refresh Rankings).
+  **Refresh Rankings** (Configuration tab only, below Save): clears the in-memory ranking, India
+  VIX and Yahoo market-cap caches and recomputes from the data files and the *saved*
+  Configuration. Normally unnecessary (the cache key tracks the data files and every setting);
+  it writes no file, so it works in read-only mode too. Live prices are deliberately not cleared,
+  as in Streamlit.
   **Deliberate simplification vs. Streamlit**: this page does not
   live-preview ranking impact as you type — the ranking cache is keyed on the *saved* config,
   so a change takes effect project-wide only after Save (and the next page load). Streamlit's
@@ -244,16 +274,7 @@ to prove the source actually switched — and HTTP-level tests everywhere that p
 loaders return the exact requested values and that every mutating route is blocked with a
 200 + banner (not a silent 403) and touches no data file while read-only.
 
-**Not yet covered by an automated test**: a real end-to-end write (add/edit/delete, or a config
-Save, actually persisting) with `SHARPE_READ_ONLY=0`. `settings.DATA_DIR` is imported by value
-into several core modules at import time, so redirecting it mid-test-run means monkeypatching
-each of those modules individually rather than one central patch -- doable, but deliberately
-deferred until closer to cutover rather than adding fragile cross-module patching now. `configuration.save()` and `cash_ledger.save_cash_ledger()` do each have a direct `tmp_path` test
-(monkeypatching just their own module's `DATA_DIR`), so the write mechanics themselves are
-covered — what's not covered end-to-end is the full HTTP round trip with the flag actually off.
-The Actions Monitor's exit-trigger and new-entry-candidate paths were similarly verified against
-an in-memory synthetic ledger during development (not committed as a test) since the live N750
-portfolio currently has zero exit signals to exercise those branches naturally.
+**End-to-end writes** (add/edit/delete, config Save, cash entries with `SHARPE_READ_ONLY=0`) are not part of the pytest suite, because they would mutate the live shared data files. They are covered by `webapp/tools/rehearse_writes.py`, which runs the full HTTP round trip against a temporary copy of the data. `configuration.save()` and `cash_ledger.save_cash_ledger()` also each have a direct `tmp_path` test. The Actions Monitor's exit-trigger and new-entry-candidate paths were verified against an in-memory synthetic ledger during development (not committed as a test).
 
 **Tradelog's "Refresh Live Market Prices"** (`core/dhan_client.refresh_live_prices`) is also
 done: Dhan's batched LTP first, per-ticker yfinance thread pool fallback, same as the

@@ -48,6 +48,14 @@ _cache_lock = threading.Lock()
 _CACHE_MAX_ENTRIES = 4
 
 
+def clear_cache() -> None:
+    """Drops every cached ranking bundle, so the next get_bundle() recomputes from the data
+    files and the current saved Configuration. Normally unnecessary -- the cache key already
+    tracks the data files' mtimes and every compute-affecting setting."""
+    with _cache_lock:
+        _cache.clear()
+
+
 def _mtime(path) -> float:
     try:
         return path.stat().st_mtime

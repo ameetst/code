@@ -124,11 +124,16 @@
 
   <div class="save-row">
     <button type="submit" class="btn-primary">💾 Save Configuration</button>
+    <button type="button" class="btn-primary" hx-post="{{ url_for('configuration.refresh_rankings') }}"
+            hx-params="none" hx-target="#config-content" hx-swap="innerHTML"
+            hx-indicator="#refresh-rankings-spinner"
+            title="Clears the cached ranking, VIX and Yahoo market-cap data and recomputes from the data files and the current SAVED Configuration (unsaved edits are not used). Can take 1-2 minutes.">🔁 Refresh Rankings</button>
     {% if last_saved %}
       <span class="caption">📄 Last saved: {{ last_saved }}</span>
     {% else %}
       <span class="caption">⚠️ No saved config found — using defaults.</span>
     {% endif %}
+    <span id="refresh-rankings-spinner" class="htmx-indicator caption">Recomputing — this can take 1–2 minutes…</span>
   </div>
 </form>
 

@@ -15,10 +15,12 @@
     <p class="app-subtitle">Rank &rarr; Filter &rarr; Size &rarr; Allocate &nbsp;|&nbsp; Dynamic Regime Engine</p>
     {% if read_only %}
     <div class="banner">Read-only preview — trade entry and config changes stay in the Streamlit dashboard for now.</div>
+    {% else %}
+    <div class="banner info">✏️ Write mode — trades, cash entries and config saves are written to the live data files. Don't enter trades in the Streamlit dashboard at the same time.</div>
     {% endif %}
     <nav class="nav-tabs">
       <a href="{{ url_for('rankings.index') }}" class="{{ 'active' if active_tab == 'rankings' }}">📊 {{ ('Top ' ~ nav_max_n ~ ' Rankings') if nav_max_n else 'Top Rankings' }}</a>
-      <a href="{{ url_for('actions.index') }}" class="{{ 'active' if active_tab == 'actions' }}">{{ actions_dot }} Actions Monitor</a>
+      <a href="{{ url_for('actions.index') }}" class="{{ 'active' if active_tab == 'actions' }}"{% if actions_dot_error %} title="Exit status unavailable: {{ actions_dot_error }}"{% endif %}>{{ actions_dot }} Actions Monitor</a>
       <a href="{{ url_for('tradelog.index') }}" class="{{ 'active' if active_tab == 'tradelog' }}">📝 Tradelog &amp; MTM</a>
       <a href="{{ url_for('cash_ledger.index') }}" class="{{ 'active' if active_tab == 'cash' }}">💰 Cash Ledger</a>
       <a href="{{ url_for('rankings.full_page') }}" class="{{ 'active' if active_tab == 'full' }}">📋 Full Rankings</a>

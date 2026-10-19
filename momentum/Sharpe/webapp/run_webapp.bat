@@ -1,6 +1,7 @@
 @echo off
 rem Starts the webapp on http://127.0.0.1:8000 and opens it once it's actually up.
-rem Read-only by default; set SHARPE_READ_ONLY=0 to enable write routes (none exist yet).
+rem Read-only by default. For trade entry / cash entries / config saves use run_webapp_write.bat
+rem (same thing with SHARPE_READ_ONLY=0).
 cd /d "%~dp0\.."
 
 if not exist "webapp\.venv\Scripts\python.exe" (

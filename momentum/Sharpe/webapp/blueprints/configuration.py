@@ -9,7 +9,7 @@ import datetime
 from flask import Blueprint, render_template, request
 
 from webapp import settings
-from webapp.core import config_store, configuration, rankings
+from webapp.core import cap_tier, config_store, configuration, dhan_client, rankings
 
 bp = Blueprint("configuration", __name__)
 
@@ -47,6 +47,20 @@ def _build_context(cfg: dict = None, *, error=None, success=None) -> dict:
 @bp.route("/config-page")
 def index():
     return render_template("configuration.html", **_build_context())
+
+
+@bp.route("/config-page/refresh-rankings", methods=["POST"])
+def refresh_rankings():
+    """Equivalent of the Streamlit dashboards' Refresh Rankings button: clears the cached
+    ranking, India VIX and Yahoo market-cap data, then re-renders this tab -- which recomputes
+    the ranking from the data files and the current SAVED Configuration. Not gated by READ_ONLY:
+    it only drops in-memory caches and writes no file."""
+    rankings.clear_cache()
+    dhan_client.clear_vix_cache()
+    cap_tier.clear_yahoo_cache()
+    ctx = _build_context(success="Rankings refreshed — the ranking was recomputed from the data "
+                                  "files and the current saved Configuration.")
+    return render_template("_configuration_content.html", **ctx)
 
 
 @bp.route("/config-page/save", methods=["POST"])
