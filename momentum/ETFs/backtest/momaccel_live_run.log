@@ -1,0 +1,60 @@
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+[load] C:\Users\ameet\Documents\Github\dhan_datahq\base files\History_ETFs.xlsx
+       283 tickers (non-empty) | 2609 trading days (2016-09-12 -> 2026-09-10)
+[regime/benchmark] Fetching ^CRSLDX (Nifty 500 Index) via yfinance ...
+       2462 rows (2016-09-12 -> 2026-09-11)
+
+[run] BASELINE (live)
+      CAGR=12.21% MaxDD=-21.7% Sharpe=0.92
+
+[run] ACCEL
+      CAGR=11.52% MaxDD=-18.1% Sharpe=0.91
+
+[run] ACCEL+EXIT
+      CAGR=11.92% MaxDD=-22.7% Sharpe=0.94
+
+==========================================================================================
+FULL PERIOD 2016-09-12 -> 2026-09-10
+==========================================================================================
+                   BASELINE (live)      ACCEL ACCEL+EXIT Buy&Hold N500
+CAGR                        12.21%     11.52%     11.92%        11.96%
+Total return                216.3%     197.4%     208.2%        209.3%
+Max drawdown                -21.7%     -18.1%     -22.7%        -38.3%
+Volatility                   13.3%      12.7%      12.6%         15.8%
+Sharpe (CAGR/vol)             0.92       0.91       0.94          0.76
+Final equity (INR)       3,162,797  2,973,900  3,082,498     3,093,104
+
+==========================================================================================
+SUB-PERIOD 2018-01-01 -> 2020-12-31
+==========================================================================================
+                   BASELINE (live)      ACCEL ACCEL+EXIT Buy&Hold N500
+CAGR                         8.53%      8.73%      6.95%         6.88%
+Total return                 27.8%      28.5%      22.3%         22.1%
+Max drawdown                -12.2%     -12.8%     -15.1%        -38.3%
+Volatility                   11.5%      11.6%      11.6%         19.8%
+Sharpe (CAGR/vol)             0.74       0.75       0.60          0.35
+Final equity (INR)       1,341,714  1,352,822  1,303,827     1,552,227
+
+Trading activity:
+                       BASELINE (live)  ACCEL ACCEL+EXIT
+Buys                             185.0  137.0      442.0
+Win rate                         52.2%  50.8%      53.2%
+Avg hold (days)                     74     99         29
+Held <=7 days                      8.0    4.0      127.0
+Exits via 52wk-DD rule             4.0    3.0        3.0
+
+Calendar-year returns (%):
+      BASELINE (live)  ACCEL  ACCEL+EXIT  Buy&Hold N500
+2016              0.4    0.4         0.4           -5.9
+2017              4.7    5.2         6.3           35.9
+2018              2.1   -2.0        -1.0           -3.4
+2019              1.9    6.9         2.1            7.7
+2020             22.6   22.2        20.9           16.7
+2021              6.6    7.4        15.0           30.2
+2022             19.3    2.0         5.4            3.0
+2023             34.5   32.8        38.1           25.8
+2024             29.0   22.3        25.0           15.2
+2025              1.1   12.5         5.5            6.7
+2026              5.8    9.8         7.1           -3.9
+
+Chart -> C:\Users\ameet\Documents\Github\code\momentum\ETFs\backtest\comparison_mom_accel_live.png
