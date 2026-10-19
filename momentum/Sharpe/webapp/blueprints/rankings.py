@@ -68,6 +68,7 @@ def _view_model(limit: int | None):
         },
         "rows": rankings.top_rows(bundle, limit or max_n, rankings.held_tickers(universe),
                                    prices=dhan_client.apply_cached_prices(bundle.latest_prices)),
+        "hidden": rankings.top_hidden(bundle, limit or max_n, rankings.held_tickers(universe)),
     }
 
 
@@ -163,10 +164,12 @@ def full_table_partial():
     top_n = max(10, min(top_n, total)) if total else 0
     rel_dd_breach_threshold = float(cfg["rel_dd_breach_threshold"])
 
+    rows = rankings.full_rankings_rows(bundle, eligibility, sort_col, top_n, rel_dd_breach_threshold)
     return render_template(
         "_full_rankings_table.html",
         headers=[rankings.FULL_COLUMN_LABELS.get(c, c) for c in rankings.full_display_columns(bundle)],
-        rows=rankings.full_rankings_rows(bundle, eligibility, sort_col, top_n, rel_dd_breach_threshold),
+        rows=rows,
+        blocked=rankings.blocked_breakdown(rows),
         summary=rankings.full_rankings_summary(bundle, rel_dd_breach_threshold),
         rel_dd_breach_threshold=rel_dd_breach_threshold,
     )

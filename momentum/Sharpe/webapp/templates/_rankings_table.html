@@ -24,3 +24,7 @@
   </tbody>
 </table>
 <p class="caption">🟡 Yellow rows = currently held positions | White rows = not yet in portfolio</p>
+{% if hidden %}
+<p class="caption">⛔ {{ hidden|length }} ranked name(s) hidden — blocked from purchase by the current Configuration:
+  {% for h in hidden[:10] %}{{ h.ticker }}{% if h.held %} [held]{% endif %} ({{ h.reason }}){{ "; " if not loop.last }}{% endfor %}{% if hidden|length > 10 %} … and {{ hidden|length - 10 }} more{% endif %}</p>
+{% endif %}

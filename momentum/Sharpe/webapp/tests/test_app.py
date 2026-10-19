@@ -45,16 +45,22 @@ def test_rankings_table_partial_shape_and_order(client):
     assert r.status_code == 200
     html = r.data.decode()
     assert html.count('<tr class="held-row">') + html.count('<tr class="">') >= 1
-    # Ranks render 1..N with no gaps, in document order.
-    rows = re.findall(r"<tr class=\"[^\"]*\">\s*<td>(\d+)</td>", html)
-    assert [int(x) for x in rows] == list(range(1, len(rows) + 1))
+    # Ranks render in increasing order. The only gaps allowed are names hidden because the
+    # current Configuration blocks buying them (Min CMP / Min Market Cap / ...).
+    from webapp.core import config_store, rankings
+    bundle = rankings.get_bundle(config_store.load_config())
+    rows = [int(x) for x in re.findall(r"<tr class=\"[^\"]*\">\s*<td>(\d+)</td>", html)]
+    assert rows == sorted(rows) and len(set(rows)) == len(rows)
+    blocked_ranks = {int(bundle.result.loc[t, "RANK"]) for t in bundle.result.index
+                     if bundle.purchase_block.get(t, "") and bundle.result.loc[t, "RANK"] == bundle.result.loc[t, "RANK"]}
+    assert set(range(1, rows[-1] + 1)) - set(rows) <= blocked_ranks
 
 
 def test_rankings_matches_library_output(client):
     """The page must show exactly what momentum_lib ranks — no re-derivation drift."""
     from webapp.core import config_store, rankings
     bundle = rankings.get_bundle(config_store.load_config())
-    expected = list(bundle.result.head(5).index)
+    expected = rankings._visible_and_hidden(bundle, 5)[0]   # top 5 names purchasable under the current Configuration
     html = client.get("/rankings/table?limit=5").data.decode()
     for ticker in expected:
         assert f"<td>{ticker}</td>" in html

@@ -1,17 +1,23 @@
 {# Rendered standalone (HTMX swap target) and on first load of full_rankings.html. #}
 <table class="data-table">
   <thead>
-    <tr><th>Ticker</th>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr>
+    <tr><th>Ticker</th>{% for h in headers %}<th>{{ h }}</th>{% endfor %}{% if blocked.n_blocked %}<th>Blocked</th>{% endif %}</tr>
   </thead>
   <tbody>
     {% for row in rows %}
     <tr class="{{ row.row_class }}">
       <td>{{ row.ticker }}</td>
       {% for value in row.cells %}<td>{{ value }}</td>{% endfor %}
+      {% if blocked.n_blocked %}<td>{{ row.blocked }}</td>{% endif %}
     </tr>
     {% endfor %}
   </tbody>
 </table>
+{% if blocked.n_blocked %}
+<p class="caption">⛔ Greyed-out rows are blocked from purchase by the current Configuration (reason in the Blocked column) —
+  {{ blocked.n_blocked }} of {{ blocked.n_shown }} shown rows
+  {% for label, n in blocked.by_reason %}&nbsp;|&nbsp; {{ label }}: {{ n }}{% endfor %}</p>
+{% endif %}
 <p class="caption">
   Universe: {{ summary.universe_count }} &nbsp;|&nbsp;
   Eligible: {{ summary.eligible_count }} &nbsp;|&nbsp;

@@ -72,6 +72,7 @@ h2 {
 }
 .data-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); background: #fff; }
 .data-table tr.held-row td { background: var(--held-row); }
+.data-table tr.row-blocked td { background: #eeeeee; color: #9e9e9e; }
 .data-table tr.row-disqualified td { background: #fff8f8; color: #b0b0b0; }
 .data-table tr.row-breach td { background: var(--bad-bg); }
 .data-table tr.row-regime td { background: var(--good-bg); }

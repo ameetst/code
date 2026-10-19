@@ -144,10 +144,8 @@ def entry_candidates(bundle: rankings.Bundle, cfg: dict, ledger: dict,
     for ticker in result.index:
         if ticker in held_tickers:
             continue
-        if "CMP_ELIGIBLE" in result.columns and not bool(result.loc[ticker, "CMP_ELIGIBLE"]):
-            continue  # below Min CMP -- blocked for new entries only, held positions unaffected
-        if "MCAP_ELIGIBLE" in result.columns and not bool(result.loc[ticker, "MCAP_ELIGIBLE"]):
-            continue  # below Min Market Cap -- blocked for new entries only, held positions unaffected
+        if bundle.purchase_block is not None and bundle.purchase_block.get(ticker, ""):
+            continue  # blocked from purchase by the current Configuration (new entries only; held positions unaffected)
         if len(candidates) >= n_new_positions:
             break
         candidates.append(ticker)

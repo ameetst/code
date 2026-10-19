@@ -1410,3 +1410,92 @@ def compute_universe_rankings(
     return result, regime_score, regime_detail
 
 
+
+
+# ── PURCHASE BLOCKS (display / entry gating under the CURRENT configuration) ──
+
+def load_market_caps_raw(stockdb_csv_path: str = "STOCKDB.csv") -> dict:
+    """{ticker: raw Rs market cap} from STOCKDB.csv's MARKETCAP_CR column. Despite the
+    name the values are absolute Rs, not Rs Cr (divide by 1e7). {} if unavailable."""
+    p = Path(stockdb_csv_path)
+    if not p.exists():
+        return {}
+    try:
+        df = pd.read_csv(p)
+        out = {}
+        for sym, val in zip(df["SYMBOL"], df["MARKETCAP_CR"]):
+            try:
+                out[str(sym).strip()] = float(val)
+            except (ValueError, TypeError):
+                pass
+        return out
+    except Exception:
+        return {}
+
+
+def compute_purchase_blocks(
+    result: pd.DataFrame,
+    prices_df: pd.DataFrame,
+    *,
+    min_turnover_cr: float = 0.0,
+    min_cmp: float = 0.0,
+    min_market_cap: float = 0.0,
+    eq_series_filter: bool = False,
+    circuit_filter_enabled: bool = False,
+    circuit_threshold: int = 20,
+    stockdb_csv_path: str = "STOCKDB.csv",
+) -> pd.Series:
+    """Why each ticker in `result` can't be bought under the given configuration.
+
+    Returns a Series indexed like `result`: "" if nothing blocks it, else a "; "-joined
+    list of reasons (Min CMP, Min Market Cap, MDTV, Series EQ, Circuit hits). Only
+    configurable gates are reported -- the fixed 52H floor is not.
+
+    Min CMP and Min Market Cap are evaluated fresh from prices_df / STOCKDB.csv here, using
+    the same rules as compute_universe_rankings (missing STOCKDB row fails; a raw value of
+    exactly 0 passes as "not yet populated"). MDTV, Series and Circuit read the columns
+    compute_universe_rankings already put in `result`, so they reflect the configuration
+    it was last computed with.
+    """
+    idx = result.index
+    reasons = {t: [] for t in idx}
+
+    if min_cmp and min_cmp > 0:
+        last_px = prices_df.reindex(idx).ffill(axis=1).iloc[:, -1]
+        for t, px in last_px.items():
+            if pd.isna(px):
+                reasons[t].append("Min CMP: no price")
+            elif px < min_cmp:
+                reasons[t].append(f"Min CMP: Rs {px:,.2f} < Rs {min_cmp:,.0f}")
+
+    if min_market_cap and min_market_cap > 0:
+        raw = load_market_caps_raw(stockdb_csv_path)
+        for t in idx:
+            r = raw.get(t)
+            if r is None:
+                reasons[t].append("Min Market Cap: not in STOCKDB.csv")
+            elif r != 0 and (r / 1e7) < min_market_cap:
+                reasons[t].append(
+                    f"Min Market Cap: Rs {r / 1e7:,.0f} Cr < Rs {min_market_cap:,.0f} Cr")
+
+    if "TURNOVER_12M" in result.columns:
+        t12 = result["TURNOVER_12M"]
+        t6 = result["TURNOVER_6M"] if "TURNOVER_6M" in result.columns else t12
+        for t in idx:
+            vals = [v for v in (t12[t], t6[t]) if pd.notna(v)]
+            if not any(v >= min_turnover_cr for v in vals):
+                reasons[t].append(
+                    "MDTV: no turnover data" if not vals
+                    else f"MDTV: Rs {max(vals):,.2f} Cr < Rs {min_turnover_cr:,.2f} Cr")
+
+    if eq_series_filter and "SERIES" in result.columns:
+        for t, s in result["SERIES"].items():
+            if str(s).strip() != "EQ":
+                reasons[t].append(f"Series {str(s).strip()} (EQ only)")
+
+    if circuit_filter_enabled and "TOTAL_CIRCUIT_HITS" in result.columns:
+        for t, h in result["TOTAL_CIRCUIT_HITS"].items():
+            if pd.notna(h) and h >= circuit_threshold:
+                reasons[t].append(f"Circuit hits {int(h)} >= {int(circuit_threshold)}")
+
+    return pd.Series({t: "; ".join(r) for t, r in reasons.items()}, index=idx, dtype=object)

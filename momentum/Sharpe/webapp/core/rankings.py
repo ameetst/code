@@ -39,6 +39,8 @@ class Bundle:
     dates: list
     latest_prices: dict
     market_caps_raw: dict = field(default_factory=dict)  # ticker -> raw Rs market cap from STOCKDB.csv (NOT Cr); see configuration.mcap_pass_count
+    # ticker -> why it can't be bought under the config this bundle was built with ("" = purchasable)
+    purchase_block: pd.Series | None = None
 
 
 _cache: dict = {}
@@ -126,6 +128,13 @@ def get_bundle(cfg: dict) -> Bundle:
             dates=list(dates),
             latest_prices={t: _latest_price(t, prices_df) for t in stock_tickers},
             market_caps_raw=_load_market_caps_raw(),
+            purchase_block=ml.compute_purchase_blocks(
+                result, prices_df,
+                min_turnover_cr=cfg["min_turnover"], min_cmp=cfg["min_cmp"],
+                min_market_cap=cfg["min_market_cap"], eq_series_filter=cfg["eq_series_filter"],
+                circuit_filter_enabled=cfg["circuit_filter_enabled"],
+                circuit_threshold=int(cfg["circuit_threshold"]),
+                stockdb_csv_path=str(STOCKDB_CSV)),
         )
         if len(_cache) >= _CACHE_MAX_ENTRIES:
             _cache.pop(next(iter(_cache)))
@@ -181,13 +190,40 @@ def regime_badge(score: float) -> str:
     return "low"
 
 
+def _visible_and_hidden(bundle: Bundle, limit: int) -> tuple[list, list]:
+    """Walk the ranking in order, skipping names blocked from purchase by the current
+    Configuration (Min CMP / Min Market Cap / MDTV / Series / Circuit) until `limit`
+    purchasable names are collected. Returns (visible tickers, [(ticker, reason), ...]
+    for the blocked names ranked above the cut). Rank numbers are unchanged, so a hidden
+    name leaves a visible gap in the Rank column."""
+    blocks = bundle.purchase_block
+    visible, hidden = [], []
+    for t in bundle.result.index[bundle.result["RANK"].notna()]:
+        reason = blocks.get(t, "") if blocks is not None else ""
+        if reason:
+            hidden.append((t, reason))
+        else:
+            visible.append(t)
+            if len(visible) >= limit:
+                break
+    return visible, hidden
+
+
+def top_hidden(bundle: Bundle, limit: int, held: set) -> list[dict]:
+    """Ranked names hidden from the Top-N table because the current Configuration blocks
+    buying them (see _visible_and_hidden), for the table's explanatory caption."""
+    return [{"ticker": t, "reason": r, "held": t in held}
+            for t, r in _visible_and_hidden(bundle, limit)[1]]
+
+
 def top_rows(bundle: Bundle, limit: int, held: set, prices: dict | None = None) -> list[dict]:
     """`prices` overrides bundle.latest_prices for the LTP column when given -- pass
     dhan_client.apply_cached_prices(bundle.latest_prices) to reflect Tradelog's
     "Refresh Live Market Prices" button here too, matching the dashboard's single
     global price override."""
     prices = prices if prices is not None else bundle.latest_prices
-    top_tickers = bundle.result.head(limit).index.tolist()
+    top_tickers, _ = _visible_and_hidden(bundle, limit)
+    top_view = bundle.result.loc[top_tickers]
 
     # Circuit-hit frequency (UC/LC over trailing 252 sessions) — always computed
     # here regardless of the Circuit Hit Frequency Filter setting, matching the
@@ -199,7 +235,7 @@ def top_rows(bundle: Bundle, limit: int, held: set, prices: dict | None = None) 
         circuit_df = None
 
     rows = []
-    for ticker, row in bundle.result.head(limit).iterrows():
+    for ticker, row in top_view.iterrows():
         mean_vol = mean_volatility(ticker, bundle.prices_df)
         comp = finite(row["COMPOSITE"])
         vol_adj = round(comp / mean_vol, 3) if (comp is not None and mean_vol and mean_vol > 0) else None
@@ -277,12 +313,16 @@ def full_rankings_rows(bundle: Bundle, eligibility: str, sort_col: str,
     df = df.sort_values(sort_col, ascending=(sort_col == "RANK"), na_position="last").head(top_n)
 
     dynamic_n = int(bundle.regime_detail["dynamic_n"])
+    blocks = bundle.purchase_block
     rows = []
     for _, r in df.iterrows():
         rank = finite(r.get("RANK"))
         pct52h = finite(r.get("PCT_FROM_52H"))
         rel_dd = finite(r.get("REL_52H_DD"))
-        if pct52h is not None and pct52h < ELIGIBLE_52H_FLOOR:
+        blocked = blocks.get(r["TICKER"], "") if blocks is not None else ""
+        if blocked:
+            row_class = "row-blocked"  # greyed out: the current Configuration blocks buying it
+        elif pct52h is not None and pct52h < ELIGIBLE_52H_FLOOR:
             row_class = "row-disqualified"
         elif rel_dd is not None and rel_dd < rel_dd_breach_threshold:
             row_class = "row-breach"
@@ -307,8 +347,22 @@ def full_rankings_rows(bundle: Bundle, eligibility: str, sort_col: str,
                     cells.append(f"{fv:.2f}")
                 else:
                     cells.append(f"{fv:.3f}")
-        rows.append({"ticker": r["TICKER"], "row_class": row_class, "cells": cells})
+        rows.append({"ticker": r["TICKER"], "row_class": row_class, "cells": cells,
+                     "blocked": blocked})
     return rows
+
+
+_BLOCK_CATEGORIES = [("Min CMP", "Min CMP"), ("Min Market Cap", "Min Market Cap"),
+                     ("MDTV", "MDTV"), ("Series EQ", "Series "), ("Circuit", "Circuit")]
+
+
+def blocked_breakdown(rows: list[dict]) -> dict:
+    """Summary of the blocked rows among those shown, for the table caption:
+    {"n_blocked", "n_shown", "by_reason": [(label, count), ...]} (only reasons with rows)."""
+    blocked = [r["blocked"] for r in rows if r.get("blocked")]
+    by_reason = [(label, sum(1 for b in blocked if key in b)) for label, key in _BLOCK_CATEGORIES]
+    return {"n_blocked": len(blocked), "n_shown": len(rows),
+            "by_reason": [(label, n) for label, n in by_reason if n]}
 
 
 def full_rankings_summary(bundle: Bundle, rel_dd_breach_threshold: float) -> dict:

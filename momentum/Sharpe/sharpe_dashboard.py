@@ -709,6 +709,15 @@ except Exception as e:
 # NOTE: result["SERIES"] is already set by ml.compute_universe_rankings() above
 # (from STOCKDB.csv) -- no need to redundantly recompute it here.
 
+# Why each ticker can't be bought under the CURRENT Configuration ("" = purchasable).
+# Re-evaluated on every run, so Top Rankings, Full Rankings and New Entry Candidates
+# always agree with the Configuration values in effect (incl. after Refresh Rankings).
+purchase_block = ml.compute_purchase_blocks(
+    result, prices_df,
+    min_turnover_cr=min_turnover_cr, min_cmp=min_cmp, min_market_cap=min_market_cap,
+    eq_series_filter=eq_series_filter, circuit_filter_enabled=circuit_filter_enabled,
+    circuit_threshold=circuit_threshold, stockdb_csv_path=str(band_csv))
+
 
 # Record today's regime score and load full history for trend chart
 regime_history = append_regime_history(universe, regime_score, regime_detail)
@@ -1098,16 +1107,30 @@ with tab_top:
     held_tickers = set(active_holdings.keys())
     rows = []
 
+    # Show only names that can be bought under the current Configuration: walk the ranking
+    # in order, skipping blocked names (Min CMP / Min Market Cap / MDTV / Series / Circuit)
+    # until DISPLAY_N purchasable names are collected. Rank numbers are unchanged, so a
+    # hidden name leaves a visible gap in the Rank column.
+    _visible, _hidden = [], []
+    for _t in result.index[result["RANK"].notna()]:
+        if purchase_block.get(_t, ""):
+            _hidden.append((_t, purchase_block[_t]))
+        else:
+            _visible.append(_t)
+            if len(_visible) >= DISPLAY_N:
+                break
+    top_view = result.loc[_visible]
+
     # Circuit-hit frequency (UC/LC over trailing 252 sessions) — always computed
     # here regardless of the Circuit Hit Frequency Filter setting, same as the
     # New Entry Candidates section below.
     try:
         _top_circuit_df = ml.compute_circuit_hits(
-            prices_df, result.head(DISPLAY_N).index.tolist(), str(band_csv), lookback_period=252)
+            prices_df, top_view.index.tolist(), str(band_csv), lookback_period=252)
     except Exception:
         _top_circuit_df = None
 
-    for ticker, row in result.head(DISPLAY_N).iterrows():
+    for ticker, row in top_view.iterrows():
         ltp = latest_prices.get(ticker, 0.0)
 
         if _top_circuit_df is not None and ticker in _top_circuit_df.index:
@@ -1143,7 +1166,9 @@ with tab_top:
             "Circuit Hits (UC/LC)": circuit_hits_str,
         })
 
-    top25_df = pd.DataFrame(rows)
+    top25_df = pd.DataFrame(rows, columns=[
+        "Rank", "Ticker", "Composite", "Res Mom", "Volatility %", "Vol-Adj Score",
+        "LTP", "Circuit Hits (UC/LC)"])  # explicit columns: stays valid if every name is blocked
 
     def style_top25(row):
         if row["Ticker"] in held_tickers:
@@ -1163,6 +1188,12 @@ with tab_top:
 
 
     st.caption("🟡 Yellow rows = currently held positions  |  White rows = not yet in portfolio")
+    if _hidden:
+        _hid_txt = "; ".join(
+            f"{t}{' [held]' if t in held_tickers else ''} ({r})" for t, r in _hidden[:10])
+        _hid_more = f" … and {len(_hidden) - 10} more" if len(_hidden) > 10 else ""
+        st.caption(f"⛔ {len(_hidden)} ranked name(s) hidden — blocked from purchase by the "
+                   f"current Configuration: {_hid_txt}{_hid_more}")
 
     st.divider()
     
@@ -1242,10 +1273,8 @@ with tab_exits:
             for ticker in result.index:
                 if ticker in held_tickers:
                     continue
-                if "CMP_ELIGIBLE" in result.columns and not bool(result.loc[ticker, "CMP_ELIGIBLE"]):
-                    continue  # below Min CMP -- blocked for new entries only, held positions unaffected
-                if "MCAP_ELIGIBLE" in result.columns and not bool(result.loc[ticker, "MCAP_ELIGIBLE"]):
-                    continue  # below Min Market Cap -- blocked for new entries only, held positions unaffected
+                if purchase_block.get(ticker, ""):
+                    continue  # blocked from purchase by the current Configuration (new entries only; held positions unaffected)
                 if len(entry_candidates) >= n_new_positions:
                     break
                 entry_candidates.append(ticker)
@@ -1927,8 +1956,15 @@ with tab_calcs:
         sort_col, ascending=(sort_col == "RANK"),
         na_position="last").head(top_n_show)
 
+    # Names blocked from purchase by the current Configuration: greyed out below, with the
+    # reason in a "Blocked" column (added only when at least one shown row is blocked).
+    calcs_df["Blocked"] = calcs_df["TICKER"].map(purchase_block).fillna("")
+    _n_blocked = int((calcs_df["Blocked"] != "").sum())
+    if _n_blocked == 0:
+        calcs_df = calcs_df.drop(columns=["Blocked"])
+
     fmt = {c: "{:.3f}" for c in calcs_df.columns
-           if c not in ["RANK", "TICKER", "SERIES"]}
+           if c not in ["RANK", "TICKER", "SERIES", "Blocked"]}
     fmt["PCT_FROM_52H"] = "{:.1f}"
     fmt["REL_52H_DD"]   = "{:.1f}"
     for c in ["3M%", "12M%"]:
@@ -1936,6 +1972,8 @@ with tab_calcs:
     if "BETA" in fmt: fmt["BETA"] = "{:.2f}"
 
     def style_calcs(row):
+        if row.get("Blocked"):
+            return ["background-color:#EEEEEE; color:#9E9E9E;"] * len(row)
         if pd.notna(row.get("PCT_FROM_52H")) and row["PCT_FROM_52H"] < -25:
             return ["background-color:#FFF8F8; color:#B0B0B0;"] * len(row)
         if pd.notna(row.get("REL_52H_DD")) and row["REL_52H_DD"] < rel_dd_breach_threshold:
@@ -1949,6 +1987,17 @@ with tab_calcs:
     st.dataframe(
         calcs_df.style.apply(style_calcs, axis=1).format(fmt, na_rep="—"),
         use_container_width=True, hide_index=True, height=600)
+
+    if _n_blocked:
+        _blk = calcs_df["Blocked"]
+        _blk_counts = {
+            label: int(_blk.str.contains(key, regex=False).sum())
+            for label, key in [("Min CMP", "Min CMP"), ("Min Market Cap", "Min Market Cap"),
+                               ("MDTV", "MDTV"), ("Series EQ", "Series "), ("Circuit", "Circuit")]}
+        _blk_breakdown = "  |  ".join(f"{k}: {v}" for k, v in _blk_counts.items() if v)
+        st.caption(f"⛔ Greyed-out rows are blocked from purchase by the current Configuration "
+                   f"(reason in the Blocked column) — {_n_blocked} of {len(calcs_df)} shown rows  |  "
+                   f"{_blk_breakdown}")
 
     st.caption(
         f"Universe: {len(stock_tickers)}  |  "

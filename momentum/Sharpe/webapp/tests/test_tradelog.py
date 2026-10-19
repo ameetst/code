@@ -298,7 +298,7 @@ def test_cached_live_price_also_overrides_the_rankings_ltp_column(client, monkey
     from webapp.core import config_store, dhan_client, rankings
 
     bundle = rankings.get_bundle(config_store.load_config())
-    ticker = bundle.prices_df.index[0]
+    ticker = rankings._visible_and_hidden(bundle, 5)[0][0]   # a name Top-N actually shows (ranked + purchasable)
     fake_price = round(bundle.latest_prices.get(ticker, 100.0) * 2 + 1, 2)  # unmistakably not the real price
 
     monkeypatch.setattr(dhan_client, "_live_price_cache",

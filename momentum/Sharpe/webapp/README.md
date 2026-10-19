@@ -193,6 +193,17 @@ Done:
   default today. A redundant `result["SERIES"]` recomputation that existed separately in both
   Streamlit dashboards (duplicating what `compute_universe_rankings()` already sets) was deleted
   rather than migrated, since it was dead weight even before this change.
+  **Blocked-from-purchase display** (all three dashboards): `momentum_lib.compute_purchase_blocks`
+  returns, per ticker, why the *current* Configuration forbids buying it (Min CMP, Min Market
+  Cap, MDTV, Series EQ, Circuit hits; the fixed 52H floor is not included). **Top N Rankings
+  hides** those names and fills the table with the next purchasable ones (rank numbers are
+  unchanged, so a hidden name leaves a visible gap, and a caption lists what was hidden and
+  why); **Full Rankings greys them out** with the reason in a "Blocked" column and a caption
+  breaking the count down by reason; New Entry Candidates skip them. In the Streamlit
+  dashboards the blocks are re-evaluated on every run, so they follow the Configuration in
+  effect after Refresh Rankings; the webapp's cache key already covers every setting involved.
+  MDTV / Series / Circuit reasons read columns from the ranking compute, so they reflect the
+  configuration it was last computed with (i.e. up to date after Refresh Rankings).
   **Deliberate simplification vs. Streamlit**: this page does not
   live-preview ranking impact as you type — the ranking cache is keyed on the *saved* config,
   so a change takes effect project-wide only after Save (and the next page load). Streamlit's
