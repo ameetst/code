@@ -916,5 +916,23 @@
     "action": "SELL",
     "quantity": 165,
     "price": 472.65
+  },
+  {
+    "id": "3be0e83d-97fa-4bf5-ac88-50030e3145c5",
+    "date": "2026-10-19",
+    "timestamp": "2026-10-19T15:38:55.717080",
+    "ticker": "AETHER",
+    "action": "SELL",
+    "quantity": 59,
+    "price": 1521.0
+  },
+  {
+    "id": "1ff4bbaa-a3a6-4be3-ad0d-91d49fda2121",
+    "date": "2026-10-19",
+    "timestamp": "2026-10-19T15:39:24.847870",
+    "ticker": "RRKABEL",
+    "action": "SELL",
+    "quantity": 30,
+    "price": 2372.6
   }
 ]

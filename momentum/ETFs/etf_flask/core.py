@@ -238,7 +238,8 @@ def build_live_allocation(ranking, regime, active_holdings, prices):
         current_price = get_etf_latest_price(ticker, prices)
         peak = emr.compute_holding_peak(ticker, h.get("first_buy_date"), prices, current_price)
         prev_alloc.append({"ticker": ticker, "etf_name": etf_name, "sector": sector, "peak": peak})
-    return emr.build_allocation(ranking, regime, prev_allocation=prev_alloc, prices=prices)
+    return emr.build_allocation(ranking, regime, prev_allocation=prev_alloc, prices=prices,
+                                variant=emr.get_variant())
 
 
 # =========================================================

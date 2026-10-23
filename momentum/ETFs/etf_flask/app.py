@@ -81,7 +81,7 @@ def get_model() -> dict:
     except Exception as e:
         raise ViewError(f"Error loading data: {e}")
     try:
-        regime  = emr.regime_status(prices)
+        regime  = emr.regime_status(prices, variant=emr.get_variant())
         ranking = emr.build_ranking(meta, prices)
     except Exception as e:
         raise ViewError(f"Error computing rankings: {e}")
@@ -118,7 +118,8 @@ def build_view() -> dict:
     tradelog, notices = core.load_tradelog()
     tl = core.calculate_holdings_and_pnl(tradelog, latest)
     active_holdings  = tl["active_holdings"]
-    holdings_metrics = emr.evaluate_holdings_exit_rules(tl["holdings_metrics"], ranking, prices)
+    holdings_metrics = emr.evaluate_holdings_exit_rules(tl["holdings_metrics"], ranking, prices,
+                                                        variant=emr.get_variant())
     core.sync_to_positions_ledger(active_holdings)
 
     allocation = core.build_live_allocation(ranking, regime, active_holdings, prices)
@@ -130,7 +131,8 @@ def build_view() -> dict:
     banner = [
         ("Regime",           f"{'🟢' if is_bull else '🔴'} {regime['label']}", "bull" if is_bull else "bear"),
         ("Price",            f"{regime['nifty_price']:.2f}", None),
-        ("50 EMA (trend)",   f"{regime['nifty_ema_50']:.2f}", None),
+        (regime.get("regime_ma_label", "50 EMA (trend)"),
+                             f"{regime.get('regime_ma', regime['nifty_ema_50']):.2f}", None),
         ("New-Buy Slots",    f"{regime['active_slots']} / {emr.CONFIG.TOP_N}", None),
         ("Current Holdings", f"{len(held)} / {emr.CONFIG.TOP_N}", None),
         ("Trend Ticker",     regime.get("trend_ticker", "N/A"), None),
@@ -166,9 +168,15 @@ def build_view() -> dict:
     market   = sum(h["Market Value"] for h in holdings)
     unreal   = market - invested
 
+    try:
+        paper = build_paper_view(model, held)
+    except Exception as e:                    # a paper-tab problem must never take the whole page down
+        log.exception("paper tab failed")
+        paper = dict(error=f"{type(e).__name__}: {e}")
+
     return dict(
         fatal=None, notices=notices,
-        banner=banner,
+        banner=banner, paper=paper,
         alloc_rows=alloc_rows,
         rank_rows=rank_rows,
         sectors=sorted({r["sector"] for r in rank_rows}),
@@ -194,13 +202,137 @@ def build_view() -> dict:
         transactions=[dict(tx, total=tx["quantity"] * tx["price"]) for tx in reversed(tradelog)],
         etf_tickers=etf_tickers,
         today=datetime.date.today().isoformat(),
-        boot=dict(prices=latest, tickers=etf_tickers, topn_max=len(rank_rows)),
+        boot=dict(prices=latest, tickers=etf_tickers, topn_max=len(rank_rows),
+                  paper_chart=paper.get("chart"),
+                  paper_equity=(dict(dates=paper["perf"]["dates"], values=paper["perf"]["equity_series"])
+                                if paper.get("perf") else None)),
+    )
+
+
+
+# =========================================================
+# PAPER TRADE (v2) TAB -- simulated portfolio, no real orders
+# =========================================================
+def _isnum(v) -> bool:
+    """True only for a real, non-NaN number (None / NaN / Jinja Undefined / strings -> False)."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v
+
+
+def build_paper_view(model: dict, held: set) -> dict:
+    """Everything the Paper Trade tab shows. Read-only: nothing is written here."""
+    cfg = emr.CONFIG
+    prices, ranking, regime = model["prices"], model["ranking"], model["regime"]
+    variant = emr.get_variant(cfg.PAPER_VARIANT)
+    n_ma = int(variant.get("regime_window") or 200)
+
+    plog = emr.load_paper_log(ROOT)
+    last = plog[sorted(plog)[-1]] if plog else None
+    asof = prices.index[-1]
+    age = int((pd.Timestamp.today().normalize() - asof.normalize()).days)
+
+    pv = emr.paper_preview(ROOT, ranking, prices)
+    preg, palloc, pexits, pstate = pv["regime"], pv["allocation"], pv["exits"], pv["state"]
+
+    since = preg.get("state_since")
+    live_ma = regime.get("regime_ma", regime["nifty_ema_50"])
+    reg = dict(
+        paper=dict(label=preg["label"], risk_on=bool(preg["risk_on"]), price=_num(preg["nifty_price"]),
+                   ma=_num(preg.get("regime_ma", float("nan"))), dist=_num(preg.get("dist_pct", float("nan"))),
+                   since=pd.Timestamp(since).strftime("%d %b %Y") if since is not None else "n/a",
+                   days=int(preg.get("state_days") or 0), source=preg.get("trend_ticker", "N/A"),
+                   short_history=bool(preg.get("insufficient_history"))),
+        live=dict(label=regime["label"], price=_num(regime["nifty_price"]), ma=_num(live_ma),
+                  dist=(regime["nifty_price"] / live_ma - 1) * 100 if live_ma else None,
+                  ma_label=regime.get("regime_ma_label", "50-day EMA")),
+    )
+
+    # holdings the paper variant recommends right now
+    rows = []
+    for r in palloc.to_dict("records"):
+        t = r["TICKER"]
+        if t == "CASH":
+            continue
+        pos = pstate["positions"].get(t)
+        px = emr._last_close(prices, t)
+        if pos:
+            peak = max(pos.get("peak") or 0, px or 0)
+            rows.append(dict(slot=int(r["SLOT"]), ticker=t, name=r["ETF_NAME"], sector=r["SECTOR"], rank=str(r["INV_RANK"]),
+                             status="HOLD", entry_date=pos["entry_date"], entry_px=pos["entry_price"], last_px=px,
+                             pnl=(px / pos["entry_price"] - 1) * 100 if px else None,
+                             from_peak=(px / peak - 1) * 100 if px and peak else None))
+        else:
+            rows.append(dict(slot=int(r["SLOT"]), ticker=t, name=r["ETF_NAME"], sector=r["SECTOR"], rank=str(r["INV_RANK"]),
+                             status="NEW BUY", entry_date="next update", entry_px=px, last_px=px, pnl=None, from_peak=None))
+    n_cash = int((palloc["TICKER"] == "CASH").sum())
+    cash_reason = palloc.loc[palloc["TICKER"] == "CASH", "REASON"].iloc[0] if n_cash else ""
+
+    pending = [dict(action="SELL", ticker=e["ticker"], name=pstate["positions"][e["ticker"]]["name"], reason=e["reason"])
+               for e in pexits]
+    pending += [dict(action="BUY", ticker=r["ticker"], name=r["name"], reason=f"Rank {r['rank']} in {r['sector']}")
+                for r in rows if r["status"] == "NEW BUY"]
+
+    # last executed update + performance
+    last_view, perf = None, None
+    if last:
+        lr = last["regime"]
+        last_view = dict(week=last["week"], run_date=last["run_date"], data_asof=last["data_asof"], regime=lr.get("label"),
+                         price=lr.get("nifty_price"), ma=lr.get("regime_ma"), ma_window=lr.get("regime_ma_window"),
+                         equity=last["equity"], actions=last["actions"])
+        stt = last["state"]
+        eq_now = emr.paper_equity(stt, prices)
+        hist = {}
+        for p in stt["equity_history"]:
+            hist[p["date"]] = p["equity"]
+        hist[str(asof.date())] = eq_now
+        dates, vals = list(hist), list(hist.values())
+        peak, dd = 0.0, 0.0
+        for v in vals:
+            peak = max(peak, v)
+            dd = min(dd, v / peak - 1)
+        closed = [t for t in stt["trades"] if t["type"] == "SELL"]
+        wins = [t for t in closed if (t.get("pnl_pct") or 0) > 0]
+        perf = dict(equity=eq_now, ret=(eq_now / stt["start_capital"] - 1) * 100, max_dd=dd * 100,
+                    n_closed=len(closed), win_rate=(len(wins) / len(closed) * 100) if closed else None,
+                    cash_pct=stt["cash"] / eq_now * 100 if eq_now else 0.0, inception=stt["inception"],
+                    dates=dates, equity_series=vals, trades=stt["trades"][::-1])
+
+    paper_set = {r["ticker"] for r in rows}
+    top = ranking[ranking["SCREEN_PASS"] & ranking["RANK_INVESTABLE"].notna()].sort_values("RANK_INVESTABLE").head(15)
+    top_rows = [dict(rank=int(r["RANK_INVESTABLE"]), ticker=r["TICKER"], name=r["ETF_NAME"], sector=r["SECTOR"],
+                     s6=_num(r["SHARPE_6M"]), s3=_num(r["SHARPE_3M"]), cl=_num(r["CLENOW_90D"]),
+                     pfh=_num(r["PCT_FROM_HIGH"]), held=r["TICKER"] in pstate["positions"])
+                for r in top.to_dict("records")]
+
+    tf = emr.trend_frame(prices, ROOT, variant, tail=300)
+    chart = None
+    if len(tf):
+        chart = dict(dates=[d.strftime("%Y-%m-%d") for d in tf.index],
+                     series=[dict(name=f"{n_ma}-day SMA (paper signal)", color="#1F4E79", data=[_num(v) for v in tf["ma"]]),
+                             dict(name="50-day EMA (live signal)", color="#64B5F6", data=[_num(v) for v in tf["ema50"]]),
+                             dict(name="Nifty 500", color="#E53935", data=[_num(v) for v in tf["price"]])])
+
+    return dict(
+        variant_name=variant["name"], live_variant_name=emr.get_variant()["name"], n_ma=n_ma,
+        exit_rank_v2=variant.get("exit_max_rank"), exit_rank_live=cfg.EXIT_MAX_RANK,
+        asof=str(asof.date()), age=age, stale=age > cfg.PAPER_MAX_DATA_AGE_DAYS, max_age=cfg.PAPER_MAX_DATA_AGE_DAYS,
+        enabled=bool(cfg.PAPER_TRADE_ENABLED), start_capital=cfg.PAPER_START_CAPITAL, slip_bps=cfg.PAPER_SLIPPAGE_BPS,
+        tsl=cfg.TSL_THRESHOLD, top_n=cfg.TOP_N, last=last_view, perf=perf, reg=reg, rows=rows, n_cash=n_cash,
+        cash_reason=cash_reason, pending=pending, has_history=bool(plog), top_rows=top_rows,
+        live_only=sorted(held - paper_set), paper_only=sorted(paper_set - held), both=sorted(held & paper_set),
+        flat_no_positions=(not preg["risk_on"]) and not pstate["positions"],
+        chart=chart,
     )
 
 
 @app.template_filter("inr")
 def _inr(v):
     return f"Rs {v:,.2f}"
+
+
+@app.template_filter("fmt")
+def _fmt(v, spec="{:,.2f}"):
+    """Format a number with `spec`, or an em dash for None/NaN."""
+    return spec.format(v) if _isnum(v) else "—"
 
 
 @app.template_filter("f3")
@@ -374,6 +506,39 @@ def rebalance():
         emr.run_pipeline(input_path())
         invalidate_model()
     return {"message": "Weekly rebalance complete."}
+
+
+# ── Paper trade (simulated; own state file, never touches the live logs) ──
+@app.post("/api/paper/update")
+@api
+def paper_update():
+    force = bool(_json_body().get("force"))
+    with LOCK:
+        m = get_model()
+        res = emr.run_paper_trade(ROOT, m["ranking"], m["prices"], force=force)
+    if res["status"] != "ok":
+        raise ValidationError(res["reason"])
+    e = res["entry"]
+    return {"message": f"Paper portfolio updated (week {e['week']}, data as of {e['data_asof']})."}
+
+
+@app.post("/api/paper/reset")
+@api
+def paper_reset():
+    with LOCK:
+        bak = emr.reset_paper_log(ROOT)
+    return {"message": f"Paper history archived to {bak.name}." if bak else "Nothing to reset."}
+
+
+@app.post("/api/paper/toggle")
+@api
+def paper_toggle():
+    enabled = bool(_json_body().get("enabled"))
+    with LOCK:
+        emr.save_config_to_json({"PAPER_TRADE_ENABLED": enabled}, ROOT)
+        emr.CONFIG.PAPER_TRADE_ENABLED = enabled
+    return {"message": f"Paper auto-update {'enabled' if enabled else 'disabled'}."}
+
 
 
 @app.post("/api/upload")

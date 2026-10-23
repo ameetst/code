@@ -151,5 +151,23 @@
     "date": "2026-09-29",
     "quantity": 1030,
     "price": 45.9
+  },
+  {
+    "id": "1715df47-fbf0-4750-b834-05b4f6b571b3",
+    "timestamp": "2026-10-12T09:41:06.427327",
+    "ticker": "HEALTHCARE",
+    "action": "SELL",
+    "date": "2026-10-12",
+    "quantity": 2305,
+    "price": 20.75
+  },
+  {
+    "id": "2c860059-e32e-444d-a904-90580eaf360d",
+    "timestamp": "2026-10-19T15:32:39.795780",
+    "ticker": "SML100CASE",
+    "action": "SELL",
+    "date": "2026-10-19",
+    "quantity": 4436,
+    "price": 10.76
   }
 ]

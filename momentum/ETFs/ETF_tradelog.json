@@ -160,5 +160,23 @@
     "date": "2026-10-12",
     "quantity": 2305,
     "price": 20.75
+  },
+  {
+    "id": "2c860059-e32e-444d-a904-90580eaf360d",
+    "timestamp": "2026-10-19T15:32:39.795780",
+    "ticker": "SML100CASE",
+    "action": "SELL",
+    "date": "2026-10-19",
+    "quantity": 4436,
+    "price": 10.76
+  },
+  {
+    "id": "ae7ba04f-ea34-47d8-9129-55d1b9c31f24",
+    "timestamp": "2026-10-19T15:32:58.222434",
+    "ticker": "PHARMABEES",
+    "action": "SELL",
+    "date": "2026-10-19",
+    "quantity": 1817,
+    "price": 26.33
   }
 ]

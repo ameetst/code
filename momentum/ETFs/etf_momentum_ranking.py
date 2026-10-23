@@ -67,10 +67,13 @@ def load_config_from_json(script_dir: Path | None = None) -> dict:
 
 
 def save_config_to_json(config_dict: dict, script_dir: Path | None = None):
-    """Write config values to strategy_config.json."""
+    """Write config values to strategy_config.json. Merges into the existing file so
+    keys the caller doesn't know about (e.g. STRATEGY_VARIANT, PAPER_*) are preserved."""
     p = _config_path(script_dir)
+    merged = load_config_from_json(script_dir)
+    merged.update(config_dict)
     with open(p, "w") as f:
-        json.dump(config_dict, f, indent=2, default=str)
+        json.dump(merged, f, indent=2, default=str)
 
 
 def _apply_json_config(cls, cfg: dict):
@@ -89,6 +92,8 @@ def _apply_json_config(cls, cfg: dict):
         "TSL_THRESHOLD",
         "EXIT_MAX_DD_FROM_HIGH", "EXIT_MAX_RANK",
         "HISTORY_PERIODS",
+        "STRATEGY_VARIANT", "PAPER_TRADE_ENABLED", "PAPER_VARIANT",
+        "PAPER_START_CAPITAL", "PAPER_SLIPPAGE_BPS", "PAPER_MAX_DATA_AGE_DAYS",
     ]
     for key in _KEYS:
         if key in cfg:
@@ -129,6 +134,12 @@ def get_config_as_dict() -> dict:
         "EXIT_MAX_DD_FROM_HIGH": CONFIG.EXIT_MAX_DD_FROM_HIGH,
         "EXIT_MAX_RANK": CONFIG.EXIT_MAX_RANK,
         "HISTORY_PERIODS": CONFIG.HISTORY_PERIODS,
+        "STRATEGY_VARIANT": CONFIG.STRATEGY_VARIANT,
+        "PAPER_TRADE_ENABLED": CONFIG.PAPER_TRADE_ENABLED,
+        "PAPER_VARIANT": CONFIG.PAPER_VARIANT,
+        "PAPER_START_CAPITAL": CONFIG.PAPER_START_CAPITAL,
+        "PAPER_SLIPPAGE_BPS": CONFIG.PAPER_SLIPPAGE_BPS,
+        "PAPER_MAX_DATA_AGE_DAYS": CONFIG.PAPER_MAX_DATA_AGE_DAYS,
     }
 
 
@@ -201,9 +212,49 @@ class CONFIG:
     EXIT_MAX_RANK         = 40     # exit if investable rank > 40
     HISTORY_PERIODS       = 52     # weeks of log history to retain in Excel
 
+    # ── Strategy variants / paper trading ────────────────────────────────
+    # STRATEGY_VARIANT picks the rule-set the LIVE pipeline uses (see VARIANTS
+    # below). "live" = the rules documented above; nothing changes unless this
+    # is switched. PAPER_* runs PAPER_VARIANT as a separate simulated portfolio
+    # (paper_trade_log.json) on every run_pipeline(): no real orders, never
+    # touches holdings_log.json / the tradelog / the positions ledger.
+    STRATEGY_VARIANT        = "live"
+    PAPER_TRADE_ENABLED     = True
+    PAPER_VARIANT           = "v2_trend200"
+    PAPER_START_CAPITAL     = 1_000_000
+    PAPER_SLIPPAGE_BPS      = 20      # one-way spread/impact applied to paper fills
+    PAPER_MAX_DATA_AGE_DAYS = 7       # skip the paper update if price data is older
+
 
 # ── Apply JSON overrides on module load ──────────────────────
 _apply_json_config(CONFIG, load_config_from_json())
+
+# Rule-sets selectable by CONFIG.STRATEGY_VARIANT / CONFIG.PAPER_VARIANT.
+# Only the parts that differ are listed; everything else (screen, scoring, sector
+# cap, trailing stop, 52wk-DD exit, slot count) is shared. Research evidence for
+# v2_trend200: backtest/research/ (s7_final.py) and backtest/comparison_proposed_vs_baseline.png.
+VARIANTS: dict[str, dict] = {
+    "live": {
+        "label": "Live: 50-EMA regime, hold through risk-off",
+        "regime_kind": "ema", "regime_window": None,          # None -> CONFIG.TREND_FAST_EMA_WINDOW
+        "liquidate_on_risk_off": False,
+        "exit_max_rank": None,                                  # None -> CONFIG.EXIT_MAX_RANK
+    },
+    "v2_trend200": {
+        "label": "v2: 200-day SMA regime, liquidate in risk-off, rank-exit 60",
+        "regime_kind": "sma", "regime_window": 200,
+        "liquidate_on_risk_off": True,
+        "exit_max_rank": 60,
+    },
+}
+
+
+def get_variant(name: str | None = None) -> dict:
+    """Rule-set dict for `name` (default CONFIG.STRATEGY_VARIANT). Unknown names fall back to live."""
+    key = name or CONFIG.STRATEGY_VARIANT
+    v = dict(VARIANTS.get(key, VARIANTS["live"]))
+    v["name"] = key if key in VARIANTS else "live"
+    return v
 
 
 
@@ -421,7 +472,7 @@ def load_etf_data(filepath: str) -> tuple[pd.DataFrame, pd.DataFrame]:
             price_rows.append(fixed)
         wb.close()
 
-        etf_names = [name_lookup.get(t.upper(), "") for t in tickers]
+        etf_names = [name_lookup.get(t.upper()) or t for t in tickers]   # newer ETFs absent from the legacy file -> show ticker
         meta = pd.DataFrame({"ETF_NAME": etf_names, "TICKER": tickers})
         price_raw = pd.DataFrame(price_rows, index=tickers, columns=pd.to_datetime(dates))
 
@@ -564,7 +615,44 @@ def fetch_nifty500_index(n_days: int = 600, script_dir: Path | None = None) -> p
         return None
 
 
-def regime_status(prices: pd.DataFrame, script_dir: Path | None = None) -> dict:
+def _trend_series(prices: pd.DataFrame, script_dir: Path | None = None):
+    """Nifty 500 trend series, by priority: live index -> REGIME_TICKER -> REGIME_FALLBACKS.
+    Returns (series, ticker) or (None, None) when nothing is available."""
+    live_series = fetch_nifty500_index(script_dir=script_dir)
+    if live_series is not None and len(live_series) > 0:
+        return live_series, "NIFTY500"
+    xlsx_ticker = next(
+        (t for t in [CONFIG.REGIME_TICKER] + CONFIG.REGIME_FALLBACKS if t in prices.columns), None
+    )
+    if xlsx_ticker is not None:
+        s = prices[xlsx_ticker].dropna()
+        if len(s) > 0:
+            return s, xlsx_ticker
+    return None, None
+
+
+def trend_frame(prices: pd.DataFrame, script_dir: Path | None = None,
+                variant: dict | None = None, tail: int | None = None) -> pd.DataFrame:
+    """Daily frame for charts/diagnostics: price, EMA50 (live signal), MA of the variant
+    (SMA-N), and risk_on for that variant. Empty frame if no trend source is available."""
+    s, _ = _trend_series(prices, script_dir)
+    if s is None:
+        return pd.DataFrame()
+    v = variant or get_variant()
+    n = v.get("regime_window") or CONFIG.TREND_FAST_EMA_WINDOW
+    df = pd.DataFrame({"price": s})
+    df["ema50"] = s.ewm(span=CONFIG.TREND_FAST_EMA_WINDOW, adjust=False).mean()
+    if v.get("regime_kind") == "sma":
+        df["ma"] = s.rolling(n).mean()
+    else:
+        df["ma"] = s.ewm(span=n, adjust=False).mean()
+    df["risk_on"] = df["price"] > df["ma"]
+    df.loc[df["ma"].isna(), "risk_on"] = True
+    return df.tail(tail) if tail else df
+
+
+def regime_status(prices: pd.DataFrame, script_dir: Path | None = None,
+                  variant: dict | None = None) -> dict:
     """
     Simple binary regime state, based on price vs the 50-day EMA only:
       BULL (risk-on)  - Nifty 500 price > its 50-day EMA. Normal weekly
@@ -582,27 +670,15 @@ def regime_status(prices: pd.DataFrame, script_dir: Path | None = None) -> dict:
       2. CONFIG.REGIME_TICKER (MONIFTY500) from ETF.xlsx
       3. CONFIG.REGIME_FALLBACKS, in order, from ETF.xlsx
       4. Default to BULL (risk-on) if nothing is available at all
+
+    `variant` (see VARIANTS / get_variant): a non-live rule-set with regime_kind
+    "sma" is delegated to regime_status_sma(); the default / "live" path below
+    is unchanged.
     """
-    trend_series = None
-    trend_ticker = None
+    if variant and variant.get("regime_kind") == "sma":
+        return regime_status_sma(prices, script_dir, variant)
 
-    # --- Priority 1: live Nifty 500 index ---
-    live_series = fetch_nifty500_index(script_dir=script_dir)
-    if live_series is not None and len(live_series) > 0:
-        trend_series = live_series
-        trend_ticker = "NIFTY500"
-
-    # --- Priority 2/3: ETF.xlsx-based tickers (MONIFTY500, then fallbacks) ---
-    if trend_series is None:
-        xlsx_ticker = next(
-            (t for t in [CONFIG.REGIME_TICKER] + CONFIG.REGIME_FALLBACKS
-             if t in prices.columns), None
-        )
-        if xlsx_ticker is not None:
-            s = prices[xlsx_ticker].dropna()
-            if len(s) > 0:
-                trend_series = s
-                trend_ticker = xlsx_ticker
+    trend_series, trend_ticker = _trend_series(prices, script_dir)
 
     # --- Priority 4: nothing available at all -> default BULL ---
     if trend_series is None:
@@ -652,6 +728,43 @@ def regime_status(prices: pd.DataFrame, script_dir: Path | None = None) -> dict:
         "nifty_ema_100": nifty_ema_100,
         "trend_ticker": trend_ticker or "N/A",
     }
+
+
+def regime_status_sma(prices: pd.DataFrame, script_dir: Path | None, variant: dict) -> dict:
+    """Binary regime on price vs an N-day SMA of the Nifty 500 (variant["regime_window"], e.g. 200).
+    Same keys as regime_status() (so the dashboard/log code is unchanged) plus the SMA fields
+    and how long the current state has lasted. With fewer than N observations it defaults to
+    risk-on and says so via `insufficient_history`."""
+    n = int(variant.get("regime_window") or 200)
+    s, ticker = _trend_series(prices, script_dir)
+    base = {"regime_kind": "sma", "regime_ma_window": n, "regime_ma_label": f"{n}-day SMA",
+            "variant": variant.get("name", "?")}
+    if s is None or len(s) == 0:
+        print("  [warn] No Nifty 500 source available; regime defaulting to BULL (risk-on)")
+        return {**base, "regime_ok": True, "label": "BULL", "risk_on": True, "active_slots": CONFIG.TOP_N,
+                "trend_ok": True, "nifty_price": np.nan, "nifty_ema_50": np.nan, "nifty_ema_100": np.nan,
+                "regime_ma": np.nan, "dist_pct": np.nan, "trend_ticker": "N/A",
+                "state_since": None, "state_days": 0, "asof": None, "insufficient_history": True}
+    price = float(s.iloc[-1])
+    ema50 = float(s.ewm(span=CONFIG.TREND_FAST_EMA_WINDOW, adjust=False).mean().iloc[-1])
+    ema100 = (float(s.ewm(span=CONFIG.TREND_EMA_WINDOW, adjust=False).mean().iloc[-1])
+              if len(s) >= CONFIG.TREND_EMA_WINDOW else np.nan)
+    ma_series = s.rolling(n).mean()
+    insufficient = len(s) < n
+    ma = float(ma_series.iloc[-1]) if not insufficient else np.nan
+    risk_on = True if insufficient else bool(price > ma)
+    state_since, state_days = None, 0
+    if not insufficient:
+        sig = (s > ma_series)[ma_series.notna()]
+        flips = sig[sig != sig.shift()]
+        state_since = flips.index[-1] if len(flips) else sig.index[0]
+        state_days = int((sig.index > state_since).sum()) + 1
+    return {**base, "regime_ok": risk_on, "label": "BULL" if risk_on else "BEAR", "risk_on": risk_on,
+            "active_slots": CONFIG.TOP_N if risk_on else 0, "trend_ok": risk_on,
+            "nifty_price": price, "nifty_ema_50": ema50, "nifty_ema_100": ema100,
+            "regime_ma": ma, "dist_pct": (price / ma - 1) * 100 if not insufficient else np.nan,
+            "trend_ticker": ticker or "N/A", "state_since": state_since, "state_days": state_days,
+            "asof": s.index[-1], "insufficient_history": insufficient}
 
 
 # =========================================================
@@ -831,16 +944,18 @@ def build_ranking(meta: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
 # 5. PORTFOLIO ALLOCATION
 # =========================================================
 def should_exit(ticker: str, ranking_df: pd.DataFrame, peak: float,
-                current_price: float) -> tuple[bool, str]:
+                current_price: float, exit_max_rank: int | None = None) -> tuple[bool, str]:
     """
     Check whether a currently-held position should be exited.
     Returns (should_exit: bool, reason: str).
 
     Exit triggers (ANY fires → exit):
       1. >25% away from 52-week high  (EXIT_MAX_DD_FROM_HIGH)
-      2. Investable rank > EXIT_MAX_RANK (CONFIG default 40)
+      2. Investable rank > EXIT_MAX_RANK (CONFIG default 40; `exit_max_rank`
+         overrides it, e.g. a strategy variant's own cutoff)
       3. Drawdown from peak > 5%       (TSL_THRESHOLD)
     """
+    rank_cut = CONFIG.EXIT_MAX_RANK if exit_max_rank is None else exit_max_rank
     reasons = []
     row = ranking_df[ranking_df["TICKER"] == ticker]
     if row.empty:
@@ -855,8 +970,8 @@ def should_exit(ticker: str, ranking_df: pd.DataFrame, peak: float,
 
     # 2. Rank degradation
     inv_rank = row.get("RANK_INVESTABLE", float("inf"))
-    if pd.notna(inv_rank) and inv_rank > CONFIG.EXIT_MAX_RANK:
-        reasons.append(f"Rank {int(inv_rank)} > {CONFIG.EXIT_MAX_RANK}")
+    if pd.notna(inv_rank) and inv_rank > rank_cut:
+        reasons.append(f"Rank {int(inv_rank)} > {rank_cut}")
 
     # 3. TSL breach (drawdown from stored peak)
     if peak and peak > 0 and current_price and current_price > 0:
@@ -892,7 +1007,7 @@ def compute_holding_peak(ticker: str, first_buy_date, prices_df: pd.DataFrame,
 
 
 def evaluate_holdings_exit_rules(holdings_metrics: list, ranking_df: pd.DataFrame,
-                                  prices_df: pd.DataFrame) -> list:
+                                  prices_df: pd.DataFrame, variant: dict | None = None) -> list:
     """
     Attach exit-rule evaluation to each tradelog holding, reusing should_exit()
     (52wk-high drawdown, investable rank degradation, TSL from peak-since-entry).
@@ -904,7 +1019,8 @@ def evaluate_holdings_exit_rules(holdings_metrics: list, ranking_df: pd.DataFram
     for h in holdings_metrics:
         peak = compute_holding_peak(h["Ticker"], h.get("First Buy Date"),
                                      prices_df, h["Current Price"])
-        exit_flag, exit_reason = should_exit(h["Ticker"], ranking_df, peak, h["Current Price"])
+        exit_flag, exit_reason = should_exit(h["Ticker"], ranking_df, peak, h["Current Price"],
+                                             exit_max_rank=(variant or {}).get("exit_max_rank"))
         row = dict(h)
         row["Peak Price"]  = peak
         row["Exit Flag"]   = exit_flag
@@ -915,7 +1031,9 @@ def evaluate_holdings_exit_rules(holdings_metrics: list, ranking_df: pd.DataFram
 
 def build_allocation(df: pd.DataFrame, regime: dict,
                      prev_allocation: list | None = None,
-                     prices: pd.DataFrame | None = None) -> pd.DataFrame:
+                     prices: pd.DataFrame | None = None,
+                     variant: dict | None = None,
+                     exits_out: list | None = None) -> pd.DataFrame:
     """
     Weekly Hold-and-Replace (WRH) allocation, binary risk-on/risk-off regime.
 
@@ -931,8 +1049,15 @@ def build_allocation(df: pd.DataFrame, regime: dict,
 
     If prev_allocation is None (first run): behaves like a fresh top-N pick
     when risk-on, or all-cash when risk-off (nothing to hold yet).
+
+    `variant` (VARIANTS rule-set, default = live rules): may override the rank-exit
+    cutoff and, with liquidate_on_risk_off, close EVERY held position when the
+    regime is risk-off (steps 1-2 above are skipped in risk-off). `exits_out`, if
+    given, is appended with {"ticker", "reason"} for each position closed.
     """
     risk_on = regime.get("risk_on", regime.get("active_slots", CONFIG.TOP_N) > 0)
+    exit_rank = (variant or {}).get("exit_max_rank")
+    liquidate = bool((variant or {}).get("liquidate_on_risk_off"))
     total   = CONFIG.TOP_N
     w       = 1.0 / total
 
@@ -960,9 +1085,14 @@ def build_allocation(df: pd.DataFrame, regime: dict,
                 if len(s) > 0:
                     current_price = float(s.iloc[-1])
 
-            exit_flag, exit_reason = should_exit(t, df, peak, current_price)
+            if liquidate and not risk_on:
+                exit_flag, exit_reason = True, f"Risk-off ({regime['label']}): liquidate all"
+            else:
+                exit_flag, exit_reason = should_exit(t, df, peak, current_price, exit_max_rank=exit_rank)
             if exit_flag:
                 print(f"    EXIT {t}: {exit_reason}")
+                if exits_out is not None:
+                    exits_out.append({"ticker": t, "reason": exit_reason})
                 continue
 
             rk_row = df[df["TICKER"] == t]
@@ -1028,6 +1158,8 @@ def build_allocation(df: pd.DataFrame, regime: dict,
     for _ in range(len(slots), total):
         if risk_on:
             reason = "No remaining qualifying ETF after screen/sector cap"
+        elif liquidate:
+            reason = f"Regime = {regime['label']} (risk-off) -> positions liquidated, no new buys"
         else:
             reason = f"Regime = {regime['label']} (risk-off) -> no new buys"
         slots.append({
@@ -1966,6 +2098,239 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
 # =========================================================
 # 8. MAIN
 # =========================================================
+# =========================================================
+# 7d. PAPER TRADING (simulated portfolio running CONFIG.PAPER_VARIANT)
+#     Own state file; never touches holdings_log.json, the tradelog or
+#     the positions ledger. No real orders are implied.
+# =========================================================
+import copy as _copy
+
+PAPER_LOG_FILE = "paper_trade_log.json"
+
+
+def _paper_path(script_dir: Path) -> Path:
+    return script_dir / PAPER_LOG_FILE
+
+
+def _json_safe(o):
+    """Recursively make values JSON-safe (NaN -> None, numpy/pandas scalars -> python)."""
+    if isinstance(o, dict):
+        return {str(k): _json_safe(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_json_safe(v) for v in o]
+    if isinstance(o, (pd.Timestamp, datetime)):
+        return o.strftime("%Y-%m-%d")
+    if isinstance(o, (np.floating, float)):
+        return None if (o != o or o in (float("inf"), float("-inf"))) else float(o)
+    if isinstance(o, (np.integer,)):
+        return int(o)
+    if isinstance(o, (np.bool_,)):
+        return bool(o)
+    return o
+
+
+def load_paper_log(script_dir: Path) -> dict:
+    p = _paper_path(script_dir)
+    if p.exists():
+        try:
+            with open(p) as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_paper_log(script_dir: Path, log: dict):
+    p = _paper_path(script_dir)
+    tmp = p.with_suffix(".json.tmp")
+    with open(tmp, "w") as f:
+        json.dump(_json_safe(log), f, indent=2)
+    tmp.replace(p)
+
+
+def reset_paper_log(script_dir: Path) -> Path | None:
+    """Archive the paper log (paper_trade_log.json -> .bak) so the portfolio restarts from scratch."""
+    p = _paper_path(script_dir)
+    if not p.exists():
+        return None
+    bak = p.with_suffix(".json.bak")
+    p.replace(bak)
+    return bak
+
+
+def _last_close(prices: pd.DataFrame, ticker: str):
+    if ticker in prices.columns:
+        s = prices[ticker].dropna()
+        if len(s):
+            return float(s.iloc[-1])
+    return None
+
+
+def paper_new_state(start_capital: float | None = None) -> dict:
+    cap = float(CONFIG.PAPER_START_CAPITAL if start_capital is None else start_capital)
+    return {"inception": None, "start_capital": cap, "cash": cap,
+            "positions": {}, "trades": [], "equity_history": []}
+
+
+def paper_equity(state: dict, prices: pd.DataFrame) -> float:
+    """Mark-to-market equity: cash + positions at the latest close."""
+    total = float(state["cash"])
+    for t, p in state["positions"].items():
+        px = _last_close(prices, t)
+        total += p["shares"] * (px if px is not None else p["entry_price"])
+    return total
+
+
+def _paper_plan(state: dict, ranking: pd.DataFrame, prices: pd.DataFrame,
+                regime: dict, variant: dict):
+    """Allocation + exits the variant calls for, given a paper `state` (not otherwise mutated:
+    each position's `peak` is advanced to the latest close, as the live log does weekly)."""
+    for t, p in state["positions"].items():
+        px = _last_close(prices, t)
+        if px:
+            p["peak"] = max(p.get("peak") or 0.0, px)
+    prev_alloc = [{"ticker": t, "etf_name": p["name"], "sector": p["sector"], "peak": p["peak"]}
+                  for t, p in state["positions"].items()]
+    exits: list = []
+    allocation = build_allocation(ranking, regime, prev_allocation=prev_alloc, prices=prices,
+                                  variant=variant, exits_out=exits)
+    return allocation, exits
+
+
+def paper_preview(script_dir: Path, ranking: pd.DataFrame, prices: pd.DataFrame,
+                  variant_name: str | None = None) -> dict:
+    """What the paper variant would do on the CURRENT data, from the latest saved paper state
+    (or a fresh portfolio). Pure: nothing is written."""
+    variant = get_variant(variant_name or CONFIG.PAPER_VARIANT)
+    log = load_paper_log(script_dir)
+    state = _copy.deepcopy(log[sorted(log)[-1]]["state"]) if log else paper_new_state()
+    regime = regime_status(prices, script_dir, variant=variant)
+    allocation, exits = _paper_plan(state, ranking, prices, regime, variant)
+    return {"variant": variant, "regime": regime, "allocation": allocation, "exits": exits, "state": state}
+
+
+def run_paper_trade(script_dir: Path, ranking: pd.DataFrame, prices: pd.DataFrame,
+                    force: bool = False, variant_name: str | None = None, today=None) -> dict:
+    """
+    Weekly paper-trade step. Idempotent within an ISO week: the portfolio is always rebuilt
+    from the last entry of an EARLIER week, so re-running overwrites that week (like
+    holdings_log.json). Fills happen at the latest close in `prices`, charged
+    CONFIG.PAPER_SLIPPAGE_BPS one way; each new position gets total_equity / TOP_N.
+
+    Skipped (status="skipped") when the price data is older than
+    CONFIG.PAPER_MAX_DATA_AGE_DAYS, unless force=True -- a paper fill on stale prices
+    would be misleading.
+    """
+    variant = get_variant(variant_name or CONFIG.PAPER_VARIANT)
+    now = pd.Timestamp(today) if today is not None else pd.Timestamp.today()
+    asof = prices.index[-1]
+    age = int((now.normalize() - asof.normalize()).days)
+    if not force and age > CONFIG.PAPER_MAX_DATA_AGE_DAYS:
+        msg = (f"price data is {age} days old (as of {asof.date()}; limit "
+               f"{CONFIG.PAPER_MAX_DATA_AGE_DAYS}) -- paper portfolio not updated")
+        print(f"[paper]  SKIPPED: {msg}")
+        return {"status": "skipped", "reason": msg, "data_age_days": age, "data_asof": str(asof.date())}
+
+    log = load_paper_log(script_dir)
+    wk = _week_key(now.to_pydatetime())
+    prev_keys = [k for k in sorted(log) if k < wk]
+    state = _copy.deepcopy(log[prev_keys[-1]]["state"]) if prev_keys else paper_new_state()
+    first_run = not prev_keys
+    if first_run:
+        state["inception"] = str(asof.date())
+
+    regime = regime_status(prices, script_dir, variant=variant)
+    allocation, exits = _paper_plan(state, ranking, prices, regime, variant)
+
+    slip = CONFIG.PAPER_SLIPPAGE_BPS / 1e4
+    total = paper_equity(state, prices)
+    slot_val = total / CONFIG.TOP_N
+    trades, actions = [], []
+    asof_s = str(asof.date())
+
+    for e in exits:
+        t = e["ticker"]
+        pos = state["positions"].pop(t)
+        px = _last_close(prices, t) or pos["entry_price"]
+        fill = px * (1 - slip)
+        proceeds = pos["shares"] * fill
+        state["cash"] += proceeds
+        tr = {"date": asof_s, "week": wk, "type": "SELL", "ticker": t, "name": pos["name"], "shares": pos["shares"],
+              "price": fill, "value": proceeds, "reason": e["reason"],
+              "entry_date": pos["entry_date"], "entry_price": pos["entry_price"],
+              "pnl_pct": (fill / pos["entry_price"] - 1) * 100}
+        trades.append(tr)
+        actions.append({"action": "SELL", "ticker": t, "name": pos["name"], "note": e["reason"],
+                        "price": fill, "pnl_pct": tr["pnl_pct"]})
+
+    held_after_exits = set(state["positions"])
+    for _, row in allocation.iterrows():
+        t = str(row["TICKER"])
+        if t == "CASH":
+            continue
+        if t in held_after_exits:
+            pos = state["positions"][t]
+            px = _last_close(prices, t) or pos["entry_price"]
+            actions.append({"action": "HOLD", "ticker": t, "name": pos["name"],
+                            "note": f"rank {row['INV_RANK']} - no exit trigger", "price": px,
+                            "pnl_pct": (px / pos["entry_price"] - 1) * 100})
+            continue
+        px = _last_close(prices, t)
+        value = min(slot_val, state["cash"])
+        if px is None or value <= 0:
+            continue
+        fill = px * (1 + slip)
+        state["cash"] -= value
+        state["positions"][t] = {"name": str(row["ETF_NAME"]), "sector": str(row["SECTOR"]),
+                                 "shares": value / fill, "entry_price": fill,
+                                 "entry_date": asof_s, "peak": px}
+        trades.append({"date": asof_s, "week": wk, "type": "BUY", "ticker": t, "name": str(row["ETF_NAME"]),
+                       "shares": value / fill, "price": fill, "value": value, "reason": str(row["REASON"])})
+        actions.append({"action": "BUY", "ticker": t, "name": str(row["ETF_NAME"]),
+                        "note": str(row["REASON"]), "price": fill, "pnl_pct": None})
+
+    state["trades"].extend(trades)
+    equity = paper_equity(state, prices)
+    if first_run and not state["equity_history"]:
+        state["equity_history"].append({"week": wk, "date": asof_s, "equity": state["start_capital"]})
+    state["equity_history"].append({"week": wk, "date": asof_s, "equity": equity})
+
+    inv = ranking[ranking["SCREEN_PASS"] & ranking["RANK_INVESTABLE"].notna()].sort_values("RANK_INVESTABLE").head(15)
+    candidates = [{"ticker": r["TICKER"], "name": r["ETF_NAME"], "sector": r["SECTOR"],
+                   "rank": int(r["RANK_INVESTABLE"]), "sharpe_6m": r.get("SHARPE_6M"),
+                   "sharpe_3m": r.get("SHARPE_3M"), "clenow_90d": r.get("CLENOW_90D"),
+                   "pct_from_high": r.get("PCT_FROM_HIGH")} for _, r in inv.iterrows()]
+    entry = {
+        "week": wk, "run_date": now.strftime("%Y-%m-%d %H:%M"), "data_asof": asof_s,
+        "variant": variant["name"], "variant_label": variant.get("label", variant["name"]),
+        "regime": {k: regime.get(k) for k in (
+            "label", "risk_on", "nifty_price", "nifty_ema_50", "regime_ma", "regime_ma_window",
+            "regime_ma_label", "dist_pct", "state_since", "state_days", "trend_ticker", "asof")},
+        "state": state, "trades": trades, "actions": actions,
+        "allocation": allocation.to_dict("records"), "candidates": candidates,
+        "equity": equity,
+    }
+    log[wk] = entry
+    save_paper_log(script_dir, log)
+
+    ret = (equity / state["start_capital"] - 1) * 100
+    print(f"[paper]  {variant['name']} | regime {regime['label']} | data as of {asof_s} | "
+          f"{len(trades)} trade(s) | {len(state['positions'])} position(s) | "
+          f"equity {equity:,.0f} ({ret:+.2f}% since {state['inception']})")
+    for tr in trades:
+        print(f"           {tr['type']:<4} {tr['ticker']:<14} {tr['reason'][:70]}")
+    return {"status": "ok", "entry": entry, "regime": regime}
+
+
+def run_paper_only(fp=None, force: bool = False) -> dict:
+    """Update the paper portfolio without running (or logging) the live pipeline."""
+    script_dir = Path(__file__).resolve().parent
+    fp = fp or str(script_dir / CONFIG.INPUT_FILE)
+    meta, prices = load_etf_data(fp)
+    ranking = build_ranking(meta, prices)
+    return run_paper_trade(script_dir, ranking, prices, force=force)
+
+
 def run_pipeline(fp=None, out=None):
     SCRIPT_DIR = Path(__file__).resolve().parent
     if fp is None:
@@ -1978,8 +2343,9 @@ def run_pipeline(fp=None, out=None):
     print(f"         {len(meta)} ETFs | {len(prices)} days "
           f"({prices.index[0].date()} -> {prices.index[-1].date()})")
 
-    print("[regime] Computing risk-on/risk-off regime filter ...")
-    regime = regime_status(prices, script_dir=SCRIPT_DIR)
+    variant = get_variant()
+    print(f"[regime] Computing risk-on/risk-off regime filter ... (variant: {variant['name']})")
+    regime = regime_status(prices, script_dir=SCRIPT_DIR, variant=variant)
 
     print("[scores] Screening + scoring all ETFs ...")
     ranking = build_ranking(meta, prices)
@@ -1997,7 +2363,7 @@ def run_pipeline(fp=None, out=None):
     print("[alloc]  Building allocation (WRH — hold & replace) ...")
     allocation = build_allocation(ranking, regime,
                                   prev_allocation=prev_alloc,
-                                  prices=prices)
+                                  prices=prices, variant=variant)
 
     print_summary(ranking, regime, allocation)
 
@@ -2018,10 +2384,18 @@ def run_pipeline(fp=None, out=None):
     save_excel(ranking, regime, allocation, out,
                prev_entry=prev_entry, changes=changes, log=log)
 
+    if CONFIG.PAPER_TRADE_ENABLED:
+        try:
+            run_paper_trade(SCRIPT_DIR, ranking, prices)
+        except Exception as e:   # the paper portfolio must never break the live run
+            print(f"[paper]  update failed (live run unaffected): {e}")
+
 
 if __name__ == "__main__":
     if "--tsl" in sys.argv:
         run_tsl_check()
+    elif "--paper" in sys.argv:
+        run_paper_only(force="--force" in sys.argv)
     else:
         fp_arg  = sys.argv[1] if len(sys.argv) > 1 else None
         out_arg = sys.argv[2] if len(sys.argv) > 2 else None

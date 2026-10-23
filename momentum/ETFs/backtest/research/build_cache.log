@@ -1,0 +1,16 @@
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+[load] C:\Users\ameet\Documents\Github\dhan_datahq\base files\History_ETFs.xlsx
+       283 tickers (non-empty) | 2609 trading days (2016-09-12 -> 2026-09-10)
+[regime/benchmark] Fetching ^CRSLDX (Nifty 500 Index) via yfinance ...
+       2462 rows (2016-09-12 -> 2026-09-11)
+0/470 2017-09-11
+50/470 2018-08-27
+100/470 2019-08-12
+150/470 2020-07-27
+200/470 2021-07-12
+250/470 2022-06-27
+300/470 2023-06-12
+350/470 2024-05-27
+400/470 2025-05-12
+450/470 2026-04-27
+saved cache.pkl 470 weeks

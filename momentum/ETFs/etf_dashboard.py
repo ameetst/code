@@ -10,11 +10,13 @@ Layout:
   - Tab 2: Full Rankings        (filterable ranking table)
   - Tab 3: Configuration        (editable strategy params + data source)
   - Tab 4: Tradelog & MTM       (active holdings with exit-rule alerts, transaction log)
+  - Tab 5: Paper Trade (v2)     (simulated portfolio on the 200-day-trend variant; no real orders)
 """
 
 import streamlit as st
 import pandas as pd
 import numpy as np
+import altair as alt
 import json
 import sys
 import os
@@ -165,7 +167,7 @@ def compute_regime_and_ranking(_meta, _prices):
     """Regime + ranking are pure functions of meta/prices -- safe to cache.
     Allocation is NOT cached here since it depends on real tradelog holdings
     (session-mutable state), not just meta/prices -- see build_live_allocation()."""
-    regime = emr.regime_status(_prices)
+    regime = emr.regime_status(_prices, variant=emr.get_variant())
     ranking = emr.build_ranking(_meta, _prices)
     return regime, ranking
 
@@ -190,7 +192,8 @@ def build_live_allocation(ranking, regime, active_holdings, prices):
         current_price = get_etf_latest_price(ticker, prices)
         peak = emr.compute_holding_peak(ticker, h.get("first_buy_date"), prices, current_price)
         prev_alloc.append({"ticker": ticker, "etf_name": etf_name, "sector": sector, "peak": peak})
-    return emr.build_allocation(ranking, regime, prev_allocation=prev_alloc, prices=prices)
+    return emr.build_allocation(ranking, regime, prev_allocation=prev_alloc, prices=prices,
+                                variant=emr.get_variant())
 
 
 # =========================================================
@@ -462,7 +465,8 @@ if "etf_live_prices" in st.session_state:
 tradelog = load_tradelog()
 tl_result = calculate_holdings_and_pnl(tradelog, latest_etf_prices)
 active_holdings   = tl_result["active_holdings"]
-holdings_metrics  = emr.evaluate_holdings_exit_rules(tl_result["holdings_metrics"], ranking, prices)
+holdings_metrics  = emr.evaluate_holdings_exit_rules(tl_result["holdings_metrics"], ranking, prices,
+                                                      variant=emr.get_variant())
 realized_pnl      = tl_result["realized_pnl"]
 unrealized_pnl    = tl_result["unrealized_pnl"]
 
@@ -487,7 +491,8 @@ data_range = f"{prices.index[0].strftime('%Y-%m-%d')} → {prices.index[-1].strf
 banner_cards = [
     ("Regime",         f"<span class='regime-pill {pill_class}'>{regime_emoji} {regime_label}</span>"),
     ("Price",          f"{regime['nifty_price']:.2f}"),
-    ("50 EMA (trend)", f"{regime['nifty_ema_50']:.2f}"),
+    (regime.get("regime_ma_label", "50 EMA (trend)"),
+     f"{regime.get('regime_ma', regime['nifty_ema_50']):.2f}"),
     ("New-Buy Slots",  f"{regime['active_slots']} / {emr.CONFIG.TOP_N}"),
     ("Current Holdings", f"{(allocation['TICKER'] != 'CASH').sum()} / {emr.CONFIG.TOP_N}"),
     ("Trend Ticker",   regime.get("trend_ticker", "N/A")),
@@ -509,9 +514,11 @@ st.divider()
 # =========================================================
 # TABS
 # =========================================================
-tab_alloc, tab_rankings, tab_config, tab_tradelog = st.tabs([
-    "📊 Current Recommendation", "📋 Full Rankings", "⚙️ Configuration", "📝 Tradelog & MTM"
-])
+# key= keeps the selected tab across reruns (otherwise every widget click snaps back to tab 1)
+tab_alloc, tab_rankings, tab_config, tab_tradelog, tab_paper = st.tabs([
+    "📊 Current Recommendation", "📋 Full Rankings", "⚙️ Configuration", "📝 Tradelog & MTM",
+    "🧪 Paper Trade (v2)"
+], key="main_tabs")
 
 
 # =========================================================
@@ -1250,3 +1257,294 @@ with tab_tradelog:
                     )
                     st.rerun()
 
+
+# =========================================================
+# TAB 5: PAPER TRADE (v2) -- simulated portfolio, no real orders
+# =========================================================
+def _fmt_num(x, nd=2, pct=False, signed=False):
+    if x is None or (isinstance(x, float) and np.isnan(x)):
+        return "—"
+    f = f"{x:+,.{nd}f}" if signed else f"{x:,.{nd}f}"
+    return f + ("%" if pct else "")
+
+
+def _pill(label):
+    cls = "bull" if label == "BULL" else "bear"
+    emoji = "🟢" if label == "BULL" else "🔴"
+    return f"<span class='regime-pill {cls}'>{emoji} {label}</span>"
+
+
+def _cards(items):
+    html = "".join(
+        f"<div class='regime-card'><div class='regime-card-label'>{k}</div>"
+        f"<div class='regime-card-value'>{v}</div></div>" for k, v in items)
+    st.markdown(f"<div class='regime-row'>{html}</div>", unsafe_allow_html=True)
+
+
+def render_paper_tab():
+    cfg = emr.CONFIG
+    variant = emr.get_variant(cfg.PAPER_VARIANT)
+    live_variant = emr.get_variant()
+    n_ma = variant.get("regime_window") or 200
+
+    st.markdown("## 🧪 Paper Trade — v2 (200-day trend)")
+    st.warning(
+        "**PAPER TRADE ONLY — simulated, no real orders.** This portfolio runs the *v2* rules in parallel "
+        "to your live strategy. It has its own state file (`paper_trade_log.json`) and never reads or writes "
+        "your tradelog, positions ledger or `holdings_log.json`. Fills are modelled at the latest close with "
+        f"{cfg.PAPER_SLIPPAGE_BPS} bps slippage per side, starting capital ₹{cfg.PAPER_START_CAPITAL:,.0f}."
+    )
+
+    if st.session_state.get("paper_msg"):
+        kind, msg = st.session_state.pop("paper_msg")
+        (st.success if kind == "ok" else st.warning)(msg)
+
+    plog = emr.load_paper_log(SCRIPT_DIR)
+    last_key = sorted(plog)[-1] if plog else None
+    last = plog[last_key] if last_key else None
+
+    # ── Data freshness ────────────────────────────────────────
+    asof = prices.index[-1]
+    age = int((pd.Timestamp.today().normalize() - asof.normalize()).days)
+    stale = age > cfg.PAPER_MAX_DATA_AGE_DAYS
+    _cards([
+        ("Mode", "📄 PAPER"),
+        ("Paper variant", variant["name"]),
+        ("Live variant", live_variant["name"]),
+        ("Price data as of", f"{asof.date()} ({age}d old)"),
+        ("Last paper update", f"{last['week']} · data {last['data_asof']}" if last else "never"),
+        ("Auto-update", "ON" if cfg.PAPER_TRADE_ENABLED else "OFF"),
+    ])
+    if stale:
+        st.error(f"⚠️ Price data is **{age} days old** (limit {cfg.PAPER_MAX_DATA_AGE_DAYS}). The paper portfolio will not "
+                 "update until ETF data is refreshed — the regime/holdings shown below are still computed on the latest data.")
+
+    # ── Compute the paper plan on CURRENT data (read-only) ────
+    try:
+        pv = emr.paper_preview(SCRIPT_DIR, ranking, prices)
+    except Exception as e:
+        st.error(f"Could not compute the paper plan: {e}")
+        return
+    preg, palloc, pexits, pstate = pv["regime"], pv["allocation"], pv["exits"], pv["state"]
+
+    # ── Regime ────────────────────────────────────────────────
+    st.markdown("### 🚦 Regime filter")
+    c_paper, c_live = st.columns(2)
+    with c_paper:
+        st.markdown(f"**Paper (v2): Nifty 500 vs {n_ma}-day SMA** &nbsp; {_pill(preg['label'])}", unsafe_allow_html=True)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Nifty 500", _fmt_num(preg["nifty_price"], 1))
+        m2.metric(f"{n_ma}-day SMA", _fmt_num(preg.get("regime_ma"), 1))
+        m3.metric("Distance", _fmt_num(preg.get("dist_pct"), 2, pct=True, signed=True))
+        since = preg.get("state_since")
+        since_txt = pd.Timestamp(since).strftime("%d %b %Y") if since is not None else "n/a"
+        st.caption(f"{'Risk-ON: new buys allowed.' if preg['risk_on'] else 'Risk-OFF: all positions liquidated, no new buys.'} "
+                   f"In this state since **{since_txt}** ({preg.get('state_days', 0)} trading days). "
+                   f"Trend source: {preg.get('trend_ticker', 'N/A')}."
+                   + (" ⚠️ Fewer than 200 observations: defaulting to risk-on." if preg.get("insufficient_history") else ""))
+    with c_live:
+        st.markdown(f"**Live: Nifty 500 vs {regime.get('regime_ma_label', '50-day EMA')}** &nbsp; {_pill(regime['label'])}",
+                    unsafe_allow_html=True)
+        l1, l2, l3 = st.columns(3)
+        live_ma = regime.get("regime_ma", regime["nifty_ema_50"])
+        l1.metric("Nifty 500", _fmt_num(regime["nifty_price"], 1))
+        l2.metric(regime.get("regime_ma_label", "50-day EMA"), _fmt_num(live_ma, 1))
+        l3.metric("Distance", _fmt_num((regime["nifty_price"] / live_ma - 1) * 100, 2, pct=True, signed=True))
+        st.caption("In risk-off the live rules keep existing holdings (they only close on their own exit rules); "
+                   "v2 sells everything.")
+    if preg["label"] != regime["label"]:
+        st.info(f"The two regimes **disagree** right now: paper = {preg['label']}, live = {regime['label']}.")
+
+    tf = emr.trend_frame(prices, SCRIPT_DIR, variant, tail=300)
+    if len(tf):
+        chart = tf[["price", "ma", "ema50"]].rename(columns={
+            "price": "Nifty 500", "ma": f"{n_ma}-day SMA (paper signal)", "ema50": "50-day EMA (live signal)"})
+        long = chart.rename_axis("Date").reset_index().melt("Date", var_name="Series", value_name="Index level").dropna()
+        st.altair_chart(
+            alt.Chart(long).mark_line().encode(
+                x="Date:T", y=alt.Y("Index level:Q", scale=alt.Scale(zero=False)),
+                color=alt.Color("Series:N", legend=alt.Legend(orient="bottom", title=None)),
+            ).properties(height=260),
+            use_container_width=True)
+
+    # ── Recommended paper holdings ────────────────────────────
+    st.markdown("### 📌 Recommended paper holdings (current data)")
+    rows = []
+    for _, r in palloc.iterrows():
+        t = r["TICKER"]
+        if t == "CASH":
+            continue
+        pos = pstate["positions"].get(t)
+        px = emr._last_close(prices, t)
+        if pos:
+            peak = max(pos.get("peak") or 0, px or 0)
+            rows.append({"Slot": int(r["SLOT"]), "Ticker": t, "ETF": r["ETF_NAME"], "Sector": r["SECTOR"],
+                         "Inv Rank": str(r["INV_RANK"]), "Status": "HOLD", "Entry Date": pos["entry_date"],
+                         "Entry Px": pos["entry_price"], "Last Px": px,
+                         "P&L %": (px / pos["entry_price"] - 1) * 100 if px else np.nan,
+                         "From Peak %": (px / peak - 1) * 100 if px and peak else np.nan})
+        else:
+            rows.append({"Slot": int(r["SLOT"]), "Ticker": t, "ETF": r["ETF_NAME"], "Sector": r["SECTOR"],
+                         "Inv Rank": str(r["INV_RANK"]), "Status": "NEW BUY", "Entry Date": "next update",
+                         "Entry Px": px, "Last Px": px, "P&L %": np.nan, "From Peak %": np.nan})
+    n_cash = int((palloc["TICKER"] == "CASH").sum())
+    if rows:
+        hdf = pd.DataFrame(rows)
+        st.dataframe(
+            hdf, use_container_width=True, hide_index=True,
+            column_config={
+                "Entry Px": st.column_config.NumberColumn(format="%.2f"),
+                "Last Px": st.column_config.NumberColumn(format="%.2f"),
+                "P&L %": st.column_config.NumberColumn(format="%+.2f%%"),
+                "From Peak %": st.column_config.NumberColumn(format="%+.2f%%",
+                                                             help=f"Trailing stop closes the position at -{cfg.TSL_THRESHOLD:.0%} from peak"),
+            })
+    else:
+        st.info("No holdings recommended: the paper portfolio is **100% cash**.")
+    reason = palloc[palloc["TICKER"] == "CASH"]["REASON"].iloc[0] if n_cash else ""
+    st.caption(f"{n_cash} of {cfg.TOP_N} slots in cash" + (f" — {reason}" if reason else ""))
+
+    # ── Pending actions ───────────────────────────────────────
+    st.markdown("### ⚡ Actions the paper portfolio would take on the next update")
+    pend = [{"Action": "SELL", "Ticker": e["ticker"],
+             "ETF": pstate["positions"][e["ticker"]]["name"], "Reason": e["reason"]} for e in pexits]
+    pend += [{"Action": "BUY", "Ticker": r["Ticker"], "ETF": r["ETF"], "Reason": f"Rank {r['Inv Rank']} in {r['Sector']}"}
+             for r in rows if r["Status"] == "NEW BUY"]
+    if pend:
+        st.dataframe(pd.DataFrame(pend), use_container_width=True, hide_index=True)
+    elif not preg["risk_on"] and not pstate["positions"]:
+        st.info(f"Nothing to do: v2 is risk-off and holds no positions, so it stays 100% cash until the Nifty 500 "
+                f"closes above its {n_ma}-day SMA.")
+    else:
+        st.success("No changes: every paper position passes all exit rules and there is nothing new to buy.")
+    if not plog:
+        st.caption("No paper history yet — the first update initialises the portfolio with the positions above.")
+
+    # ── Last executed update ──────────────────────────────────
+    if last:
+        st.markdown(f"### 🗓️ Last executed update — {last['week']}")
+        lr = last["regime"]
+        st.caption(f"Run {last['run_date']} · data as of {last['data_asof']} · regime {lr['label']} "
+                   f"(Nifty {_fmt_num(lr.get('nifty_price'), 1)} vs {lr.get('regime_ma_window')}-SMA {_fmt_num(lr.get('regime_ma'), 1)}) "
+                   f"· equity ₹{last['equity']:,.0f}")
+        if last["actions"]:
+            adf = pd.DataFrame(last["actions"])[["action", "ticker", "name", "price", "pnl_pct", "note"]]
+            adf.columns = ["Action", "Ticker", "ETF", "Price", "P&L %", "Note"]
+            st.dataframe(adf, use_container_width=True, hide_index=True,
+                         column_config={"Price": st.column_config.NumberColumn(format="%.2f"),
+                                        "P&L %": st.column_config.NumberColumn(format="%+.2f%%")})
+        else:
+            st.caption("No positions held and no trades that week (100% cash).")
+
+    # ── Performance ───────────────────────────────────────────
+    st.markdown("### 📈 Paper performance")
+    if last:
+        stt = last["state"]
+        eq_now = emr.paper_equity(stt, prices)
+        hist = pd.DataFrame(stt["equity_history"])
+        hist["date"] = pd.to_datetime(hist["date"])
+        hist = hist.drop_duplicates("date", keep="last").set_index("date")["equity"]
+        if hist.index[-1] < asof:
+            hist.loc[asof] = eq_now
+        closed = [t for t in stt["trades"] if t["type"] == "SELL"]
+        wins = [t for t in closed if t["pnl_pct"] > 0]
+        dd = (hist / hist.cummax() - 1).min() * 100
+        p1, p2, p3, p4, p5 = st.columns(5)
+        p1.metric("Equity (MTM)", f"₹{eq_now:,.0f}")
+        p2.metric("Return since start", _fmt_num((eq_now / stt["start_capital"] - 1) * 100, 2, pct=True, signed=True))
+        p3.metric("Max drawdown", _fmt_num(dd, 2, pct=True))
+        p4.metric("Closed trades", f"{len(closed)}" + (f" ({len(wins) / len(closed):.0%} win)" if closed else ""))
+        p5.metric("Cash", f"{stt['cash'] / eq_now:.0%}")
+        eq_df = hist.rename("Paper equity (₹)").rename_axis("Date").reset_index()
+        st.altair_chart(
+            alt.Chart(eq_df).mark_line(point=True).encode(
+                x="Date:T", y=alt.Y("Paper equity (₹):Q", scale=alt.Scale(zero=False))).properties(height=220),
+            use_container_width=True)
+        st.caption(f"Inception {stt['inception']}. History is weekly, so early numbers are noise — "
+                   "judge this over many months and against the live strategy, not week to week.")
+        with st.expander(f"Trade log ({len(stt['trades'])} paper fills)"):
+            tdf = pd.DataFrame(stt["trades"][::-1])
+            cols = [c for c in ["date", "type", "ticker", "name", "price", "shares", "value", "pnl_pct", "reason"] if c in tdf]
+            st.dataframe(tdf[cols], use_container_width=True, hide_index=True,
+                         column_config={"price": st.column_config.NumberColumn(format="%.2f"),
+                                        "shares": st.column_config.NumberColumn(format="%.2f"),
+                                        "value": st.column_config.NumberColumn(format="%,.0f"),
+                                        "pnl_pct": st.column_config.NumberColumn(format="%+.2f%%")})
+    else:
+        st.info("No performance yet — run the first paper update below (or **Run Weekly Rebalance**, which updates it too).")
+
+    # ── Live vs paper ─────────────────────────────────────────
+    st.markdown("### ⚖️ Live vs paper")
+    live_set = set(allocation.loc[allocation["TICKER"] != "CASH", "TICKER"])
+    paper_set = {r["Ticker"] for r in rows}
+    c1, c2, c3 = st.columns(3)
+    c1.markdown("**In both**"); c1.write(", ".join(sorted(live_set & paper_set)) or "—")
+    c2.markdown("**Live only**"); c2.write(", ".join(sorted(live_set - paper_set)) or "—")
+    c3.markdown("**Paper only**"); c3.write(", ".join(sorted(paper_set - live_set)) or "—")
+
+    # ── Top candidates ────────────────────────────────────────
+    with st.expander("Top-15 investable ranking (same score for live and paper)"):
+        top = ranking[ranking["SCREEN_PASS"] & ranking["RANK_INVESTABLE"].notna()].sort_values("RANK_INVESTABLE").head(15)
+        tdf = top[["RANK_INVESTABLE", "TICKER", "ETF_NAME", "SECTOR", "SHARPE_6M", "SHARPE_3M", "CLENOW_90D", "PCT_FROM_HIGH"]].copy()
+        tdf.insert(0, "Paper", tdf["TICKER"].map(lambda t: "★ held" if t in pstate["positions"] else ""))
+        tdf.columns = ["Paper", "Rank", "Ticker", "ETF", "Sector", "Sharpe 6M", "Sharpe 3M", "Clenow 90D", "% from 52w high"]
+        st.dataframe(tdf, use_container_width=True, hide_index=True)
+        st.caption(f"Under v2 a held position is only dropped on rank once it falls below **{variant['exit_max_rank']}** "
+                   f"(live: {cfg.EXIT_MAX_RANK}).")
+
+    # ── What v2 changes + evidence ────────────────────────────
+    with st.expander("What v2 changes, and the backtest evidence (read the caveats)"):
+        st.markdown(f"""
+| Rule | Live | Paper v2 |
+|---|---|---|
+| Regime signal | Nifty 500 vs 50-day EMA | Nifty 500 vs **{n_ma}-day SMA** |
+| In risk-off | keep holdings, no new buys | **sell everything**, no new buys |
+| Rank exit | rank worse than {cfg.EXIT_MAX_RANK} | rank worse than **{variant['exit_max_rank']}** |
+| Everything else | screen, blended Sharpe+Clenow rank, 5 slots, sector cap 1, {cfg.TSL_THRESHOLD:.0%} trailing stop, 25%-off-high exit | *unchanged* |
+
+**Backtest** (2017-09 → 2026-09, `backtest/research/`, from first trade): CAGR 18.6% vs 13.5%, max drawdown −15.1% vs −21.7%,
+Sharpe (CAGR/vol) 1.45 vs 0.96; better in both halves of the period, in 7 of 9 calendar years, and at 40 bp/side trading cost (1.13 vs 0.71).
+
+**Caveats:** the paired-bootstrap 95% interval on the Sharpe gain is −0.09 to +0.82 (94% probability > 0), so this is
+*suggestive, not proven*. About 130 variants were tried, so expect a smaller live gain. The gain rests on a handful of risk-off
+episodes; the ETF universe was only ~49 funds in 2017; taxes on the extra turnover, ETF liquidity and live execution are not modelled.
+Re-tuning parameters each year did **not** work in walk-forward testing — keep the rules fixed while paper trading.
+""")
+
+    # ── Switches & controls ───────────────────────────────────
+    st.markdown("### 🎛️ Switches & controls")
+    sw1, sw2 = st.columns(2)
+    with sw1:
+        enabled = st.toggle("Auto-update paper portfolio on every *Run Weekly Rebalance*",
+                            value=bool(cfg.PAPER_TRADE_ENABLED), key="paper_enabled_toggle")
+        if enabled != bool(cfg.PAPER_TRADE_ENABLED):
+            emr.save_config_to_json({"PAPER_TRADE_ENABLED": bool(enabled)}, SCRIPT_DIR)
+            cfg.PAPER_TRADE_ENABLED = bool(enabled)
+            st.toast(f"Paper auto-update {'enabled' if enabled else 'disabled'} (saved to strategy_config.json)")
+        st.caption("Other switches live in `strategy_config.json`: `STRATEGY_VARIANT` (rule-set used by the **live** "
+                   "pipeline; default `live`), `PAPER_VARIANT`, `PAPER_START_CAPITAL`, `PAPER_SLIPPAGE_BPS`, "
+                   "`PAPER_MAX_DATA_AGE_DAYS`. Changing `STRATEGY_VARIANT` changes your real recommendations — leave it on `live` while paper trading.")
+    with sw2:
+        force = st.checkbox("Allow stale price data (testing only)", value=False, key="paper_force")
+        if st.button("🔁 Update paper portfolio now", use_container_width=True, key="paper_update_btn"):
+            with st.spinner("Updating paper portfolio..."):
+                try:
+                    res = emr.run_paper_only(input_path, force=force)
+                    if res["status"] == "ok":
+                        st.session_state["paper_msg"] = ("ok", f"Paper portfolio updated (week {res['entry']['week']}, "
+                                                                f"data as of {res['entry']['data_asof']}).")
+                    else:
+                        st.session_state["paper_msg"] = ("warn", res["reason"])
+                    st.cache_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Paper update failed: {e}")
+        confirm = st.checkbox("I understand this archives the paper history and restarts from cash", key="paper_reset_ok")
+        if st.button("🗑️ Reset paper portfolio", use_container_width=True, key="paper_reset_btn", disabled=not confirm):
+            bak = emr.reset_paper_log(SCRIPT_DIR)
+            st.session_state["paper_msg"] = ("ok", f"Paper history archived to {bak.name if bak else '(nothing to archive)'}.")
+            st.rerun()
+
+
+with tab_paper:
+    render_paper_tab()

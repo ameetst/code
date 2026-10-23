@@ -59,13 +59,67 @@
     }
   }
 
+  // ── Paper-trade charts (dependency-free SVG line charts, y-axis zoomed to the data) ──
+  function lineChart(el, dates, series, { points = false } = {}) {
+    if (!el || !dates || dates.length < 2) { if (el) el.innerHTML = '<p class="caption" style="padding:12px">Not enough data to chart yet.</p>'; return; }
+    const W = el.clientWidth || 900, H = el.clientHeight || 260, m = { l: 62, r: 14, t: 10, b: 46 };
+    const vals = series.flatMap(s => s.data).filter(v => v !== null && Number.isFinite(v));
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const pad = (hi - lo) * 0.06 || Math.abs(hi) * 0.01 || 1;
+    lo -= pad; hi += pad;
+    const x = i => m.l + (i / (dates.length - 1)) * (W - m.l - m.r);
+    const y = v => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
+    const fmt = v => Math.abs(v) >= 1000 ? Math.round(v).toLocaleString("en-IN") : v.toFixed(2);
+    let g = "";
+    for (let k = 0; k <= 4; k++) {
+      const v = lo + (hi - lo) * k / 4, yy = y(v);
+      g += `<line x1="${m.l}" x2="${W - m.r}" y1="${yy}" y2="${yy}" stroke="#E8ECF1"/><text x="${m.l - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="#6B7A8D">${fmt(v)}</text>`;
+    }
+    const ticks = Math.min(6, dates.length);
+    for (let k = 0; k < ticks; k++) {
+      const i = Math.round(k * (dates.length - 1) / (ticks - 1 || 1));
+      g += `<text x="${x(i)}" y="${H - m.b + 18}" text-anchor="middle" font-size="11" fill="#6B7A8D">${dates[i]}</text>`;
+    }
+    for (const s of series) {
+      let d = "", pen = false;
+      s.data.forEach((v, i) => {
+        if (v === null || !Number.isFinite(v)) { pen = false; return; }
+        d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`; pen = true;
+      });
+      g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.width || 1.8}"/>`;
+      if (points) s.data.forEach((v, i) => { if (Number.isFinite(v)) g += `<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="${s.color}"/>`; });
+    }
+    const legend = series.length > 1
+      ? `<div class="legend">${series.map(s => `<span><i style="background:${s.color}"></i>${s.name}</span>`).join("")}</div>` : "";
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${g}</svg>${legend}`;
+  }
+  function drawPaperCharts() {
+    const pc = BOOT.paper_chart, pe = BOOT.paper_equity;
+    if (pc) lineChart($("#paper-trend-chart"), pc.dates, pc.series);
+    if (pe) lineChart($("#paper-equity-chart"), pe.dates, [{ name: "Paper equity (Rs)", color: "#1F4E79", data: pe.values }], { points: true });
+  }
+  window.addEventListener("resize", () => { if ($("#tab-paper.active")) drawPaperCharts(); });
+
+  // ── Paper-trade controls ──
+  $("#paper-toggle")?.addEventListener("change", e => {
+    api("POST", "/api/paper/toggle", { enabled: e.target.checked })
+      .then(d => toast(d.message))
+      .catch(err => { toast(err.message, "err"); e.target.checked = !e.target.checked; });
+  });
+  $("#btn-paper-update")?.addEventListener("click", e =>
+    act(e.currentTarget, () => api("POST", "/api/paper/update", { force: $("#paper-force").checked })));
+  $("#paper-reset-ok")?.addEventListener("change", e => { $("#btn-paper-reset").disabled = !e.target.checked; });
+  $("#btn-paper-reset")?.addEventListener("click", e =>
+    act(e.currentTarget, () => api("POST", "/api/paper/reset")));
+
   // ── Tabs (current tab lives in the URL hash so reloads stay put) ──
-  const TABS = ["recommendation", "rankings", "config", "tradelog"];
+  const TABS = ["recommendation", "rankings", "config", "tradelog", "paper"];
   function showTab(name) {
     if (!TABS.includes(name)) name = TABS[0];
     $$(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
     $$(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "tab-" + name));
     if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+    if (name === "paper") drawPaperCharts();          // SVG needs a visible, measured box
   }
   $$(".tab-btn").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
   window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));

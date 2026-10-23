@@ -1,6 +1,6 @@
 {
   "file": "NSEAll_updated.xlsx",
-  "capital": 2500000,
+  "capital": 2500000.0,
   "min_n": 5,
   "max_n": 25,
   "min_turnover": 1.0,
@@ -10,5 +10,5 @@
   "circuit_filter_enabled": false,
   "circuit_threshold": 20,
   "rel_dd_breach_threshold": -20,
-  "hold_rank_buffer": 75
+  "hold_rank_buffer": 76
 }

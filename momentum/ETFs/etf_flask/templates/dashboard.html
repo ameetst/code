@@ -42,6 +42,7 @@
     <button class="tab-btn" data-tab="rankings" role="tab">📋 Full Rankings</button>
     <button class="tab-btn" data-tab="config" role="tab">⚙️ Configuration</button>
     <button class="tab-btn" data-tab="tradelog" role="tab">📝 Tradelog &amp; MTM</button>
+    <button class="tab-btn" data-tab="paper" role="tab">🧪 Paper Trade (v2)</button>
   </nav>
 
   <!-- ═════════ TAB 1: CURRENT RECOMMENDATION ═════════ -->
@@ -340,6 +341,178 @@
           </tbody>
         </table>
       </div>
+    {% endif %}
+  </section>
+
+  <!-- ═════════ TAB 5: PAPER TRADE (v2) ═════════ -->
+  <section class="tab-panel" id="tab-paper" role="tabpanel">
+    <h2>🧪 Paper Trade — v2 (200-day trend)</h2>
+    {% if paper.error %}
+      <div class="alert error">❌ Could not build the paper-trade view: {{ paper.error }}</div>
+    {% else %}
+    <div class="alert warn paper-banner"><b>PAPER TRADE ONLY — simulated, no real orders.</b> This portfolio runs the <i>v2</i> rules
+      in parallel to your live strategy. It has its own state file (<code>paper_trade_log.json</code>) and never reads or writes
+      your tradelog, positions ledger or <code>holdings_log.json</code>. Fills are modelled at the latest close with
+      {{ paper.slip_bps }} bps slippage per side, starting capital Rs {{ '{:,.0f}'.format(paper.start_capital) }}.</div>
+
+    <div class="regime-row">
+      <div class="regime-card"><div class="regime-card-label">Mode</div><div class="regime-card-value">📄 PAPER</div></div>
+      <div class="regime-card"><div class="regime-card-label">Paper variant</div><div class="regime-card-value">{{ paper.variant_name }}</div></div>
+      <div class="regime-card"><div class="regime-card-label">Live variant</div><div class="regime-card-value">{{ paper.live_variant_name }}</div></div>
+      <div class="regime-card"><div class="regime-card-label">Price data as of</div><div class="regime-card-value">{{ paper.asof }} ({{ paper.age }}d old)</div></div>
+      <div class="regime-card"><div class="regime-card-label">Last paper update</div><div class="regime-card-value">{% if paper.last %}{{ paper.last.week }} · data {{ paper.last.data_asof }}{% else %}never{% endif %}</div></div>
+      <div class="regime-card"><div class="regime-card-label">Auto-update</div><div class="regime-card-value">{{ 'ON' if paper.enabled else 'OFF' }}</div></div>
+    </div>
+    {% if paper.stale %}<div class="alert error">⚠️ Price data is <b>{{ paper.age }} days old</b> (limit {{ paper.max_age }}). The paper portfolio will not update
+      until ETF data is refreshed — the regime/holdings below are still computed on the latest data.</div>{% endif %}
+
+    <h3>🚦 Regime filter</h3>
+    <div class="grid cols-2">
+      <div>
+        <p class="regime-title"><b>Paper (v2): Nifty 500 vs {{ paper.n_ma }}-day SMA</b>
+          <span class="regime-pill {{ 'bull' if paper.reg.paper.label == 'BULL' else 'bear' }}">{{ '🟢' if paper.reg.paper.label == 'BULL' else '🔴' }} {{ paper.reg.paper.label }}</span></p>
+        <div class="metrics three">
+          <div class="metric"><div class="label">Nifty 500</div><div class="value">{{ paper.reg.paper.price|fmt('{:,.1f}') }}</div></div>
+          <div class="metric"><div class="label">{{ paper.n_ma }}-day SMA</div><div class="value">{{ paper.reg.paper.ma|fmt('{:,.1f}') }}</div></div>
+          <div class="metric"><div class="label">Distance</div><div class="value">{{ paper.reg.paper.dist|fmt('{:+.2f}%') }}</div></div>
+        </div>
+        <p class="caption">{{ 'Risk-ON: new buys allowed.' if paper.reg.paper.risk_on else 'Risk-OFF: all positions liquidated, no new buys.' }}
+          In this state since <b>{{ paper.reg.paper.since }}</b> ({{ paper.reg.paper.days }} trading days). Trend source: {{ paper.reg.paper.source }}.
+          {% if paper.reg.paper.short_history %}⚠️ Fewer than {{ paper.n_ma }} observations: defaulting to risk-on.{% endif %}</p>
+      </div>
+      <div>
+        <p class="regime-title"><b>Live: Nifty 500 vs {{ paper.reg.live.ma_label }}</b>
+          <span class="regime-pill {{ 'bull' if paper.reg.live.label == 'BULL' else 'bear' }}">{{ '🟢' if paper.reg.live.label == 'BULL' else '🔴' }} {{ paper.reg.live.label }}</span></p>
+        <div class="metrics three">
+          <div class="metric"><div class="label">Nifty 500</div><div class="value">{{ paper.reg.live.price|fmt('{:,.1f}') }}</div></div>
+          <div class="metric"><div class="label">{{ paper.reg.live.ma_label }}</div><div class="value">{{ paper.reg.live.ma|fmt('{:,.1f}') }}</div></div>
+          <div class="metric"><div class="label">Distance</div><div class="value">{{ paper.reg.live.dist|fmt('{:+.2f}%') }}</div></div>
+        </div>
+        <p class="caption">In risk-off the live rules keep existing holdings (they only close on their own exit rules); v2 sells everything.</p>
+      </div>
+    </div>
+    {% if paper.reg.paper.label != paper.reg.live.label %}<div class="alert info">The two regimes <b>disagree</b> right now: paper = {{ paper.reg.paper.label }}, live = {{ paper.reg.live.label }}.</div>{% endif %}
+    {% if paper.chart %}<div class="chart-box"><div id="paper-trend-chart" class="chart"></div></div>{% endif %}
+
+    <h3>📌 Recommended paper holdings (current data)</h3>
+    {% if paper.rows %}
+      <div class="table-wrap">
+        <table class="data sortable-table"><thead><tr>
+          <th class="sortable">Slot</th><th class="sortable">Ticker</th><th class="sortable">ETF</th><th class="sortable">Sector</th><th>Inv Rank</th>
+          <th>Status</th><th>Entry Date</th><th class="num">Entry Px</th><th class="num">Last Px</th><th class="num">P&amp;L %</th>
+          <th class="num" title="The trailing stop closes a position at -{{ '%.0f'|format(paper.tsl*100) }}% from its peak">From Peak %</th>
+        </tr></thead><tbody>
+        {% for r in paper.rows %}
+          <tr class="{{ 'row-held' if r.status == 'HOLD' else 'row-buy' }}">
+            <td data-v="{{ r.slot }}">{{ r.slot }}</td><td>{{ r.ticker }}</td><td>{{ r.name }}</td><td>{{ r.sector }}</td><td>{{ r.rank }}</td>
+            <td><span class="badge {{ 'hold' if r.status == 'HOLD' else 'buy' }}">{{ r.status }}</span></td><td>{{ r.entry_date }}</td>
+            <td class="num">{{ r.entry_px|fmt }}</td><td class="num">{{ r.last_px|fmt }}</td>
+            <td class="num {{ 'pos' if (r.pnl or 0) > 0 else ('neg' if (r.pnl or 0) < 0 else '') }}">{{ r.pnl|fmt('{:+.2f}%') }}</td>
+            <td class="num">{{ r.from_peak|fmt('{:+.2f}%') }}</td>
+          </tr>
+        {% endfor %}
+        </tbody></table>
+      </div>
+    {% else %}<div class="alert info">No holdings recommended: the paper portfolio is <b>100% cash</b>.</div>{% endif %}
+    <p class="caption">{{ paper.n_cash }} of {{ paper.top_n }} slots in cash{% if paper.cash_reason %} — {{ paper.cash_reason }}{% endif %}</p>
+
+    <h3>⚡ Actions the paper portfolio would take on the next update</h3>
+    {% if paper.pending %}
+      <div class="table-wrap"><table class="data"><thead><tr><th>Action</th><th>Ticker</th><th>ETF</th><th>Reason</th></tr></thead><tbody>
+        {% for a in paper.pending %}<tr class="{{ 'row-sell' if a.action == 'SELL' else 'row-buy' }}">
+          <td><span class="badge {{ 'sell' if a.action == 'SELL' else 'buy' }}">{{ a.action }}</span></td><td>{{ a.ticker }}</td><td>{{ a.name }}</td><td>{{ a.reason }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    {% elif paper.flat_no_positions %}
+      <div class="alert info">Nothing to do: v2 is risk-off and holds no positions, so it stays 100% cash until the Nifty 500 closes above its {{ paper.n_ma }}-day SMA.</div>
+    {% else %}
+      <div class="alert success">No changes: every paper position passes all exit rules and there is nothing new to buy.</div>
+    {% endif %}
+    {% if not paper.has_history %}<p class="caption">No paper history yet — the first update initialises the portfolio with the positions above.</p>{% endif %}
+
+    {% if paper.last %}
+      <h3>🗓️ Last executed update — {{ paper.last.week }}</h3>
+      <p class="caption">Run {{ paper.last.run_date }} · data as of {{ paper.last.data_asof }} · regime {{ paper.last.regime }}
+        (Nifty {{ paper.last.price|fmt('{:,.1f}') }} vs {{ paper.last.ma_window }}-SMA {{ paper.last.ma|fmt('{:,.1f}') }}) · equity Rs {{ '{:,.0f}'.format(paper.last.equity) }}</p>
+      {% if paper.last.actions %}
+        <div class="table-wrap"><table class="data"><thead><tr><th>Action</th><th>Ticker</th><th>ETF</th><th class="num">Price</th><th class="num">P&amp;L %</th><th>Note</th></tr></thead><tbody>
+          {% for a in paper.last.actions %}<tr>
+            <td><span class="badge {{ a.action|lower }}">{{ a.action }}</span></td><td>{{ a.ticker }}</td><td>{{ a.name }}</td>
+            <td class="num">{{ a.price|fmt }}</td><td class="num">{{ a.pnl_pct|fmt('{:+.2f}%') }}</td><td>{{ a.note }}</td></tr>{% endfor %}
+        </tbody></table></div>
+      {% else %}<p class="caption">No positions held and no trades that week (100% cash).</p>{% endif %}
+    {% endif %}
+
+    <h3>📈 Paper performance</h3>
+    {% if paper.perf %}
+      <div class="metrics five">
+        <div class="metric"><div class="label">Equity (MTM)</div><div class="value">Rs {{ '{:,.0f}'.format(paper.perf.equity) }}</div></div>
+        <div class="metric"><div class="label">Return since start</div><div class="value">{{ paper.perf.ret|fmt('{:+.2f}%') }}</div></div>
+        <div class="metric"><div class="label">Max drawdown</div><div class="value">{{ paper.perf.max_dd|fmt('{:.2f}%') }}</div></div>
+        <div class="metric"><div class="label">Closed trades</div><div class="value">{{ paper.perf.n_closed }}{% if paper.perf.win_rate is not none %} ({{ '%.0f'|format(paper.perf.win_rate) }}% win){% endif %}</div></div>
+        <div class="metric"><div class="label">Cash</div><div class="value">{{ '%.0f'|format(paper.perf.cash_pct) }}%</div></div>
+      </div>
+      {% if paper.perf.dates|length > 1 %}<div class="chart-box"><div id="paper-equity-chart" class="chart short"></div></div>
+      {% else %}<p class="caption">The equity chart appears once there are two or more weekly data points.</p>{% endif %}
+      <p class="caption">Inception {{ paper.perf.inception }}. History is weekly, so early numbers are noise — judge this over many months and against the live strategy, not week to week.</p>
+      <details><summary>Trade log ({{ paper.perf.trades|length }} paper fills)</summary>
+        <div class="table-wrap scroll-500"><table class="data"><thead><tr><th>Date</th><th>Type</th><th>Ticker</th><th>ETF</th>
+          <th class="num">Price</th><th class="num">Shares</th><th class="num">Value</th><th class="num">P&amp;L %</th><th>Reason</th></tr></thead><tbody>
+          {% for t in paper.perf.trades %}<tr class="{{ 'row-sell' if t.type == 'SELL' else 'row-buy' }}"><td>{{ t.date }}</td><td>{{ t.type }}</td><td>{{ t.ticker }}</td><td>{{ t.name }}</td>
+            <td class="num">{{ t.price|fmt }}</td><td class="num">{{ t.shares|fmt }}</td><td class="num">{{ t.value|fmt('{:,.0f}') }}</td>
+            <td class="num">{{ t.pnl_pct|fmt('{:+.2f}%') }}</td><td>{{ t.reason }}</td></tr>{% endfor %}
+        </tbody></table></div>
+      </details>
+    {% else %}
+      <div class="alert info">No performance yet — run the first paper update below (or <b>Run Weekly Rebalance</b>, which updates it too).</div>
+    {% endif %}
+
+    <h3>⚖️ Live vs paper</h3>
+    <div class="grid cols-3">
+      <div><b>In both</b><p>{{ paper.both|join(', ') or '—' }}</p></div>
+      <div><b>Live only</b><p>{{ paper.live_only|join(', ') or '—' }}</p></div>
+      <div><b>Paper only</b><p>{{ paper.paper_only|join(', ') or '—' }}</p></div>
+    </div>
+
+    <details><summary>Top-15 investable ranking (same score for live and paper)</summary>
+      <div class="table-wrap"><table class="data"><thead><tr><th>Paper</th><th>Rank</th><th>Ticker</th><th>ETF</th><th>Sector</th>
+        <th class="num">Sharpe 6M</th><th class="num">Sharpe 3M</th><th class="num">Clenow 90D</th><th class="num">% from 52w high</th></tr></thead><tbody>
+        {% for r in paper.top_rows %}<tr class="{{ 'row-held' if r.held else '' }}"><td>{{ '★ held' if r.held else '' }}</td><td>{{ r.rank }}</td><td>{{ r.ticker }}</td><td>{{ r.name }}</td><td>{{ r.sector }}</td>
+          <td class="num">{{ r.s6|f3 }}</td><td class="num">{{ r.s3|f3 }}</td><td class="num">{{ '—' if r.cl is none else '%.1f'|format(r.cl) }}</td><td class="num">{{ r.pfh|fmt('{:.1f}') }}</td></tr>{% endfor %}
+      </tbody></table></div>
+      <p class="caption">Under v2 a held position is only dropped on rank once it falls below <b>{{ paper.exit_rank_v2 }}</b> (live: {{ paper.exit_rank_live }}).</p>
+    </details>
+
+    <details><summary>What v2 changes, and the backtest evidence (read the caveats)</summary>
+      <div class="table-wrap"><table class="data"><thead><tr><th>Rule</th><th>Live</th><th>Paper v2</th></tr></thead><tbody>
+        <tr><td>Regime signal</td><td>Nifty 500 vs 50-day EMA</td><td>Nifty 500 vs <b>{{ paper.n_ma }}-day SMA</b></td></tr>
+        <tr><td>In risk-off</td><td>keep holdings, no new buys</td><td><b>sell everything</b>, no new buys</td></tr>
+        <tr><td>Rank exit</td><td>rank worse than {{ paper.exit_rank_live }}</td><td>rank worse than <b>{{ paper.exit_rank_v2 }}</b></td></tr>
+        <tr><td>Everything else</td><td colspan="2">screen, blended Sharpe+Clenow rank, {{ paper.top_n }} slots, sector cap 1, {{ '%.0f'|format(paper.tsl*100) }}% trailing stop, 25%-off-high exit — <i>unchanged</i></td></tr>
+      </tbody></table></div>
+      <p><b>Backtest</b> (2017-09 → 2026-09, <code>backtest/research/</code>, from first trade): CAGR 18.6% vs 13.5%, max drawdown −15.1% vs −21.7%,
+        Sharpe (CAGR/vol) 1.45 vs 0.96; better in both halves of the period, in 7 of 9 calendar years, and at 40 bp/side trading cost (1.13 vs 0.71).</p>
+      <p><b>Caveats:</b> the paired-bootstrap 95% interval on the Sharpe gain is −0.09 to +0.82 (94% probability &gt; 0), so this is <i>suggestive, not proven</i>.
+        About 130 variants were tried, so expect a smaller live gain. The gain rests on a handful of risk-off episodes; the ETF universe was only ~49 funds in 2017;
+        taxes on the extra turnover, ETF liquidity and live execution are not modelled. Re-tuning parameters each year did <b>not</b> work in walk-forward
+        testing — keep the rules fixed while paper trading.</p>
+    </details>
+
+    <h3>🎛️ Switches &amp; controls</h3>
+    <div class="grid cols-2">
+      <div>
+        <label class="switch"><input type="checkbox" id="paper-toggle" {{ 'checked' if paper.enabled }}>
+          Auto-update paper portfolio on every <i>Run Weekly Rebalance</i></label>
+        <p class="caption">Other switches live in <code>strategy_config.json</code>: <code>STRATEGY_VARIANT</code> (rule-set used by the <b>live</b> pipeline; default <code>live</code>),
+          <code>PAPER_VARIANT</code>, <code>PAPER_START_CAPITAL</code>, <code>PAPER_SLIPPAGE_BPS</code>, <code>PAPER_MAX_DATA_AGE_DAYS</code>.
+          Changing <code>STRATEGY_VARIANT</code> changes your real recommendations — leave it on <code>live</code> while paper trading.</p>
+      </div>
+      <div>
+        <label class="switch"><input type="checkbox" id="paper-force"> Allow stale price data (testing only)</label>
+        <button class="btn block" id="btn-paper-update" data-busy="Updating paper portfolio…" style="margin-top:8px">🔁 Update paper portfolio now</button>
+        <label class="switch" style="margin-top:12px"><input type="checkbox" id="paper-reset-ok"> I understand this archives the paper history and restarts from cash</label>
+        <button class="btn danger block" id="btn-paper-reset" disabled style="margin-top:6px">🗑️ Reset paper portfolio</button>
+      </div>
+    </div>
     {% endif %}
   </section>
 
