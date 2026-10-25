@@ -92,9 +92,9 @@
   },
   {
     "date": "2026-10-25",
-    "Composite": 0.5,
-    "Breadth": 0.5,
-    "Momentum": 0.5,
-    "Dynamic N": 15
+    "Composite": 0.3153,
+    "Breadth": 0.396,
+    "Momentum": 0.48,
+    "Dynamic N": 13
   }
 ]
