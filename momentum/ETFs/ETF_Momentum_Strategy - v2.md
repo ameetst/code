@@ -1,289 +1,323 @@
 # ETF Momentum Strategy — Full Documentation
 
-> **Script:** `etf_momentum_ranking_v2.py`
-> **Universe:** NSE-listed ETFs (equity, sectoral, thematic, factor, gold, silver, bonds)
-> **Rebalance:** Weekly, every Monday between 2.30 PM to 3.30 PM (first trading day of week)
-> **Monitoring:** Daily trailing stop loss via `--tsl` flag (live) / automatic (backtest)
+> **Script:** `etf_momentum_ranking.py` (live) · **Config:** `strategy_config.json` (overrides the defaults in the script's `CONFIG` class)
+> **Dashboard:** `etf_dashboard.py` (Streamlit)
+> **Universe:** NSE-listed ETFs (equity, sectoral, thematic, factor, gold, silver, bonds); LIQUID funds are excluded from ranking
+> **Rebalance:** Weekly, first trading day of the week (Monday)
+> **Monitoring:** Daily trailing-stop check via `--tsl` (live, advisory only) / applied automatically in backtests
+> **Last verified against the code:** 25-Oct-2026 (`etf_momentum_ranking.py` last modified 22-Oct-2026, `strategy_config.json` 22-Oct-2026)
+
+---
+
+## What changed since the previous version of this document
+
+| Item | Previous document | Live now |
+|:---|:---|:---|
+| Score | Weighted Sharpe: 1M 40% / 3M 40% / 6M 20% | **50% Sharpe composite + 50% Clenow-90D**, both as cross-sectional z-scores |
+| Sharpe windows | 1M, 3M, 6M | **6M and 3M only**, 50/50 |
+| Risk-free rate | 6% | **5%** (`DAILY_RF_ANNUAL` in `strategy_config.json`) |
+| Regime | Three states (BULL 5 slots / PARTIAL 3 slots / BEAR 0) using EMA50 and EMA100 | **Binary**: Nifty 500 above its 50-day EMA = BULL, otherwise BEAR. EMA100 is display-only |
+| Risk-off behaviour | Cash parked in a liquid fund, all positions evaluated for exit | **Existing positions are kept**; they close only on their own exit rules. No new buys. Vacated slots stay in cash |
+| Rank exit | Not part of the rules | **Exit if investable rank > 40** |
+| Rebalance style | Monthly | **Weekly hold-and-replace** |
 
 ---
 
 ## Overview
 
-The strategy selects the **Top 5 ETFs** from a broad universe using a momentum-based ranking engine.
-A tiered market regime filter dynamically adjusts position count based on market conditions, and
-a sector cap enforces diversification across themes.
+The strategy holds up to **5 ETFs, equal-weighted (20% each)**, chosen from a broad NSE ETF universe by a momentum score
+that blends a risk-adjusted return measure (Sharpe) with a trend-quality measure (Clenow). A binary market regime gates
+**new** purchases, and a one-ETF-per-sector cap prevents duplicate exposure.
 
-The pipeline executes in this fixed order:
+The pipeline runs in this fixed order:
 
 ```
-SCREEN  -->  SCORE  -->  REGIME  -->  ALLOCATE
+SCREEN  -->  SCORE  -->  REGIME  -->  ALLOCATE (hold-and-replace)
 ```
 
 ---
 
-## Step 1 — Screen (Investability Filter)
-
-Each ETF must pass this hard filter before it is eligible for ranking:
-
-### 52-Week High Proximity Filter
+## Step 1 — Screen (investability filter)
 
 | Parameter | Value |
 |:---|:---|
-| Lookback window | 252 trailing trading days (~1 year) |
-| Max drawdown from high | 25% |
-| Rule | ETF NAV must be >= 75% of its 52-week high |
+| Lookback | Last 252 price rows (~1 year) |
+| Max distance below 52-week high | 25% (`MAX_DRAWDOWN_FROM_HIGH = 0.25`) |
+| Excluded sectors | `LIQUID` (`EXCLUDE_SECTORS`) |
 
 ```
-pct_from_high = (52wk_high - current_NAV) / 52wk_high
-PASS  if  pct_from_high <= 0.25
-FAIL  otherwise  (ETF excluded from investable universe)
+pct_from_high = (52wk_high - current_price) / 52wk_high
+PASS if pct_from_high <= 0.25 and sector not in EXCLUDE_SECTORS
 ```
 
-**Rationale:** Removes ETFs in sustained downtrends or bouncing off bottoms. Only ETFs close to
-their structural highs exhibit genuine upward momentum.
-
-> **This is the sole screen applied before ranking.** No EMA-based investability filter is applied.
-> 52-week high and current NAV are both derived dynamically from the historical price grid
-> in ETF.xlsx — no manual input required.
-> ETFs with missing price data default to PASS (no penalty for insufficient history).
+- ETFs that fail get no investable rank and are not part of the z-score reference pool.
+- ETFs with missing price/high data pass the 52-week test (no penalty for short history).
+- LIQUID funds are removed because their near-zero volatility produces extreme Sharpe values that distort the z-scores.
+- The 52-week-high test is the only price screen. There is no EMA-based investability filter.
 
 ---
 
-## Step 2 — Score (Ranking Metrics)
+## Step 2 — Score
 
-All ETFs in the universe are scored on two metrics. Only screen-pass ETFs are ranked for
-allocation purposes.
+Both components are z-scored **across the screen-pass ETFs only**, then blended.
 
-### A. Weighted Sharpe — Primary Ranking Metric (used for allocation)
+### A. Sharpe composite
 
 | Parameter | Value |
 |:---|:---|
-| 1-Month Sharpe weight | 40% |
-| 3-Month Sharpe weight | 40% |
-| 6-Month Sharpe weight | 20% |
-
-| Lookback 1M | 21 trading days |
-| Lookback 3M | 63 trading days |
-| Lookback 6M | 126 trading days |
-
-| Risk-free rate | 6% p.a. (0.06 / 252 per day) |
-| Annualisation factor | 252 |
+| 6M window | 126 trading days (`WINDOW_6M`) |
+| 3M window | 63 trading days (`WINDOW_3M`) |
+| Weights | 0.5 / 0.5 (`SHARPE_W6M`, `SHARPE_W3M`) |
+| Risk-free rate | 5% p.a., applied daily (`DAILY_RF_ANNUAL`) |
+| Annualisation | 252 |
 
 ```
-Sharpe(window)    = (mean(excess log returns) / std(excess log returns)) * sqrt(252)
-Weighted Sharpe   = 0.40 * Sharpe_1M + 0.40 * Sharpe_3M - 0.20 * Sharpe_6M
+Sharpe(window)    = mean(daily log return - rf_daily) / std(daily log return - rf_daily) * sqrt(252)
+Sharpe composite  = 0.5 * Z(Sharpe_6M) + 0.5 * Z(Sharpe_3M)
 ```
 
-**Data rules:**
-- ETFs with < 3 months of data are excluded entirely (both Sharpe windows return NaN → WTD_SHARPE = NaN)
-- ETFs with 3–6 months of data: Sharpe_6M is excluded (NaN), and WTD_SHARPE = (0.40 * Sharpe_1M + 0.40 * Sharpe_3M ) alone (the 6M window gets no weight, it is not zeroed)
+A window needs at least `window + 1` price points, otherwise that Sharpe is NaN. If only one window is available, the
+composite uses that window's z-score with its own weight (0.5) and is not rescaled.
 
-### b. Additional Reference Columns (output only)
-
-| Column | Description |
-|:---|:---|
-| EMA 50 | 50-day exponential moving average of ETF NAV |
-| EMA 100 | 100-day exponential moving average of ETF NAV |
-| % From EOM | Return since last trading day of previous month |
-| % From 52Wk High | Drawdown from the 52-week peak |
-
----
-
-## Step 3 — Regime Filter
-
-**Proxy ticker:** `^CRSLDX` (Nifty 500 index via Yahoo Finance)
-**Fallbacks (in order):** `MONIFTY500` → `BSE500IETF` → `HDFCBSE500` → `NIFTYBEES`
-**In backtest:** `^CRSLDX` (Nifty 500 index via Yahoo Finance — real historical data)
-
-**Rationale for Nifty 500:** Covers large, mid, and small caps. Mid/small caps typically roll over
-before large caps during Indian market corrections — this makes Nifty 500 a more sensitive
-early-warning indicator than Nifty 50.
-
-> Both EMA50 and EMA100 are **exponential moving averages** (EWM, `adjust=False`) — not simple SMAs.
-
-### Three-State Tiered Regime
-
-| State | Condition | Active Slots | Portfolio Action |
-|:---|:---|:---:|:---|
-| **BUY** | Price > EMA50 | **5** | Fully invested — enter Top 5 ETFs |
-| **HOLD** | Price < EMA100 | **5** | Continue to hold existing ETFs, exit based on when rules get triggered, no new investments till BUY signal is triggered again | all cash invested in LIQUIDCASE (liquid fund) |
-
-```
-EMA50  = 50-day EMA of ^CRSLDX
-EMA100 = 100-day EMA of ^CRSLDX
-
-if   EMA50 > EMA100  AND  Price > EMA50   ->  BULL    (5 slots)
-elif Price > EMA100  AND  Price < EMA50   ->  PARTIAL (3 slots)
-elif Price <= EMA100                       ->  BEAR    (0 slots, full cash)
-else                                      ->  BEAR    (0 slots, full cash)
-```
-
-> Regime is evaluated using the **most recent available close** in the loaded price data
-> (last trading day with data — typically the prior day or current day depending on refresh time).
-> No look-ahead bias.
-
-## Step 4 — Allocation
+### B. Clenow 90-day score
 
 | Parameter | Value |
 |:---|:---|
-| Max slots — BUY | 5 ETFs |
-| Max slots — HOLD | 0 (100% cash) |
-| Position sizing | Equal weight — 1/5th of total portfolio per slot |
-| Sector cap | 1 ETF per sector |
-| Transaction cost | INR 20 per trade leg |
+| Window | 90 trading days (`CLENOW_WINDOW`) |
+| Annualisation | 250 (`CLENOW_TRADING_DAYS`) |
+| Gap exclusion | Any 1-day move > 15% inside the window gives NaN (`CLENOW_GAP_MAX`) |
 
-### Sector Cap
+```
+slope  = OLS slope of ln(price) over the last 90 closes
+score  = (exp(slope * 250) - 1) * 100 * R^2
+Clenow z = Z(score)
+```
 
-A maximum of 1 ETF per sector is included in the allocation. This prevents concentration in
-multiple ETFs tracking the same underlying index (e.g., two Nifty Banking ETFs).
+### C. Final blended score and rank
 
-Sectors are auto-classified from the ETF name using keyword matching (most-specific first):
-PSU_BANK, PRIVATE_BANK, BANKING_BROAD, IT_TECH, HEALTHCARE, METAL, ENERGY, INFRA,
-CONSUMPTION, REALTY, DEFENCE, PSE, AUTO, CHEMICALS, FIN_SERVICES, GOLD, SILVER,
-GOVT_BONDS, FACTOR_MOMENTUM, FACTOR_VALUE, FACTOR_QUALITY, FACTOR_LOW_VOL,
-INTERNATIONAL, MIDCAP, SMALLCAP, BROAD_MARKET, and more.
+```
+Blend = BLEND_W_SHARPE * Sharpe composite + BLEND_W_CLENOW * Clenow z      (0.5 / 0.5)
+RANK_INVESTABLE = rank of Blend among screen-pass ETFs (1 = best)
+```
 
----
+- If one component is NaN for an ETF, the other is used at its own weight (not rescaled).
+- Setting `BLEND_W_CLENOW = 0` reproduces the earlier Sharpe-only ranking exactly.
+- The Rankings sheet also shows universe-wide `WTD_SHARPE`, `WTD_CLENOW` and `WTD_BLEND` (z-scored over all ETFs except excluded sectors). These are for display; allocation uses `RANK_INVESTABLE`.
 
-## Entry Criteria
+### Reference columns (output only)
 
-An ETF enters the portfolio when ALL of the following are simultaneously true:
-
-1. **Screen PASS** — NAV is within 25% of its 52-week high
-2. **Top Weighted Sharpe rank** — ranks in the top N among all screen-pass ETFs, after sector cap
-3. **Regime allows entry** — current regime is BULL (5 slots) or PARTIAL (3 slots)
-4. **Sector slot available** — no other ETF from the same sector is already selected
+`EMA 100`, `% From EOM` (return since the last trading day of the previous month), `% From 52Wk High`.
 
 ---
 
-## Exit Criteria
+## Step 3 — Regime filter (binary)
 
-| Trigger | Timing | Description |
+| State | Condition | Effect |
 |:---|:---|:---|
-| **Weekly Rebalance** | Every Monday of each week / first trading day of each week | ALL positions are evaluated and exited based on whether exit conditions are fulfilled. Fresh rankings are computed and new positions entered depending on whether regime signal is BUY and there are empty positions to be fulfilled |
-| **Trailing Stop Loss (5%)** | Daily — intra-week | If any position drops 5% from its intra-week running peak (highest NAV since entry), it is immediately exited. Capital stays in cash (2% p.a.) until the next weekly rebalance. |
-| **Regime turns HOLD** | Next weekly rebalance | No new positions are entered. All existing positions are evalauted for exit.  Capital goes to cash. |
+| **BULL (risk-on)** | Nifty 500 price > its 50-day EMA | Up to 5 positions; open slots are refilled from the ranking |
+| **BEAR (risk-off)** | Nifty 500 price <= its 50-day EMA | **No new buys.** Existing holdings stay until their own exit rule fires; vacated slots sit in cash |
+
+```
+risk_on = nifty_price > EMA50(nifty)          # EMA with span 50, adjust=False
+```
+
+**Trend source, in priority order:**
+1. Live Nifty 500 index via yfinance (`REGIME_INDEX_TICKER = ^CRSLDX`)
+2. `REGIME_TICKER = MONIFTY500` from the ETF price file
+3. `REGIME_FALLBACKS`: `BSE500IETF`, `HDFCBSE500`, `NIFTYBEES`
+4. If nothing is available, the regime defaults to BULL (a warning is printed)
+
+With fewer than 50 observations the regime also defaults to BULL. `TREND_EMA_WINDOW` (100) is computed for display only.
 
 ---
 
-## Monitoring Schedule
+## Step 4 — Allocation (weekly hold-and-replace)
+
+| Parameter | Value |
+|:---|:---|
+| Slots | 5 (`TOP_N`) |
+| Position size | Equal weight, 1/5 of the portfolio per slot |
+| Sector cap | 1 ETF per sector (`SECTOR_CAP`) |
+| Empty slots | Held as cash |
+
+Each weekly run:
+1. **Evaluate every held position** against the exit rules below. Any that trigger are closed.
+2. **Keep every survivor**, regardless of regime.
+3. **If risk-on**, fill open slots (up to 5) by walking down `RANK_INVESTABLE`, skipping ETFs already held and ETFs whose sector is already filled.
+4. **If risk-off**, do not open positions. Open slots stay in cash.
+5. On the first run (no previous allocation) it behaves as a fresh top-5 pick when risk-on, or all cash when risk-off.
+
+The previous allocation comes from `holdings_log.json` (keyed by week), or from the positions ledger when one is seeded.
+
+Because replacements are drawn from the full ranked list after the sector cap, a new buy can have a rank well below 5.
+
+---
+
+## Entry criteria
+
+An ETF is bought only when **all** of these hold:
+
+1. It passes the 52-week-high screen and is not in an excluded sector
+2. It is the next-best-ranked investable ETF after skipping held names and capped sectors
+3. The regime is BULL
+4. A slot is open
+
+## Exit criteria
+
+A held position is closed if **any** of these fires:
+
+| Trigger | Rule | When checked |
+|:---|:---|:---|
+| **52-week-high drawdown** | More than 25% below the 52-week high (`EXIT_MAX_DD_FROM_HIGH`) | Weekly |
+| **Rank degradation** | `RANK_INVESTABLE` > 40 (`EXIT_MAX_RANK`), or the ticker is no longer in the ranking | Weekly |
+| **Trailing stop** | Drawdown from its peak since entry >= 5% (`TSL_THRESHOLD`) | Daily via `--tsl` (advisory, no auto-sell); also evaluated at the weekly rebalance |
+
+The regime never closes a position on its own in the live rules.
+
+---
+
+## Variants and paper trading
+
+`STRATEGY_VARIANT` (currently `live`) selects the rule set. A second variant is paper-traded alongside it:
+
+| Variant | Regime | On risk-off | Rank exit |
+|:---|:---|:---|:---|
+| `live` | Price vs 50-day EMA | Hold existing, no new buys | > 40 |
+| `v2_trend200` | Price vs 200-day SMA | **Liquidate all positions** | > 60 |
+
+With `PAPER_TRADE_ENABLED = true`, every run also updates a simulated portfolio running `PAPER_VARIANT` (currently `v2_trend200`): ₹10,00,000 start capital, 20 bps one-way slippage on fills, and no real orders. It writes only to `paper_trade_log.json`. It is skipped if the price data is more than 7 days old (`PAPER_MAX_DATA_AGE_DAYS`).
+
+---
+
+## Monitoring schedule
 
 | Event | Frequency | Action |
 |:---|:---|:---|
-| Portfolio rebalance | Weekly — Every Monday or first trading day | Evaluate ETFS → exit → evaluate regime → enter Top N |
-| TSL check | Daily — via `python etf_momentum_ranking_v2.py --tsl` | Fetches live NAVs via yfinance, compares against stored peaks, alerts on ≥10% drawdown |
-| Regime evaluation | Weekly — at rebalance | Uses previous week-end close of ^CRSLDX |
-| Cash interest accrual | Daily | 2% p.a. on all idle/cash capital |
-
-
-```python
-# etf_momentum_ranking_v2.py  CONFIG class
-
-INPUT_FILE             = "ETF.xlsx"
-OUTPUT_FILE            = "etf_rankings_v2.xlsx"
-
-WINDOW_6M              = 126          # 6-month lookback (trading days)
-WINDOW_3M              = 63           # 3-month lookback (trading days)
-WINDOW_1M              = 21           # 1-month lookback (trading days)
-ANNUALIZE              = 252          # annualisation factor
-
-TOP_N                  = 5            # active slots in BULL regime
-MAX_DRAWDOWN_FROM_HIGH = 0.25         # 52-week high screen threshold (25%)
-
-SHARPE_W6M             = 0.2          # weight of 6M Sharpe in composite
-SHARPE_W3M             = 0.4          # weight of 3M Sharpe in composite
-SHARPE_W1M             = 0.4          # weight of 1M Sharpe in composite
-
-REGIME_TICKER          = "^CRSLDX"
-REGIME_FALLBACKS       = ["MONIFTY500", "BSE500IETF", "HDFCBSE500", "NIFTYBEES"]
-TREND_FAST_EMA_WINDOW  = 50           # fast EMA for regime (EMA50)
-TREND_EMA_WINDOW       = 100          # slow EMA for regime (EMA100)
-
-SECTOR_CAP             = 1            # max ETFs per sector in allocation
-DAILY_RF               = 0.06 / 252  # daily risk-free rate (6% p.a.)
-TSL_THRESHOLD          = 0.05         # 5% trailing stop loss (live + backtest)
-
-# Backtest only (etf_backtest.py)
-CASH_INTEREST_PA       = 0.02         # 2% p.a. interest on idle cash
-TRADE_COST_FIXED       = 20.0         # INR per trade leg
-```
-
-### Live TSL Monitoring
+| Portfolio rebalance | Weekly, Monday / first trading day | Evaluate exits, check regime, refill open slots |
+| TSL check | Daily | `python etf_momentum_ranking.py --tsl` fetches live NAVs via yfinance for held ETFs, compares them with stored peaks and flags breaches |
+| Paper portfolio only | On demand | `python etf_momentum_ranking.py --paper [--force]` |
 
 ```bash
-# Monthly rebalance (standard run)
-python etf_momentum_ranking_v2.py
+# Weekly rebalance (standard run; optional args: input file, output file)
+python etf_momentum_ranking.py
 
-# Daily TSL check — fetches live NAVs via yfinance for held ETFs
+# Daily trailing-stop check
 python etf_momentum_ranking.py --tsl
+
+# Dashboard
+streamlit run etf_dashboard.py
 ```
 
-The `--tsl` flag loads `holdings_log.json`, fetches real-time prices for the 3-5 held
-positions via yfinance (appends `.NS` for NSE), and displays a dashboard showing:
-- Entry price, peak price, TSL trigger price, current NAV, drawdown %
-- Flags any position with ≥10% drawdown as `!! TSL BREACH !!`
-- Advisory only — does not auto-sell. Updated peaks are saved back to `holdings_log.json`.
+---
+
+## Configuration (`strategy_config.json`, values currently in force)
+
+```json
+{
+  "INPUT_FILE": "ETF_updated.xlsx",   "OUTPUT_FILE": "etf_rankings.xlsx",
+  "WINDOW_6M": 126, "WINDOW_3M": 63,  "ANNUALIZE": 252,
+  "TOP_N": 5,       "TOP_N_PARTIAL": 3,
+  "MAX_DRAWDOWN_FROM_HIGH": 0.25,     "EXCLUDE_SECTORS": ["LIQUID"],
+  "SHARPE_W6M": 0.5, "SHARPE_W3M": 0.5,
+  "CLENOW_WINDOW": 90, "CLENOW_TRADING_DAYS": 250, "CLENOW_GAP_MAX": 0.15,
+  "BLEND_W_SHARPE": 0.5, "BLEND_W_CLENOW": 0.5,
+  "REGIME_TICKER": "MONIFTY500", "REGIME_FALLBACKS": ["BSE500IETF", "HDFCBSE500", "NIFTYBEES"],
+  "REGIME_INDEX_TICKER": "^CRSLDX",
+  "TREND_FAST_EMA_WINDOW": 50, "TREND_EMA_WINDOW": 100,
+  "SECTOR_CAP": 1, "DAILY_RF_ANNUAL": 0.05,
+  "TSL_THRESHOLD": 0.05, "EXIT_MAX_DD_FROM_HIGH": 0.25, "EXIT_MAX_RANK": 40,
+  "HISTORY_PERIODS": 52,
+  "STRATEGY_VARIANT": "live", "PAPER_TRADE_ENABLED": true, "PAPER_VARIANT": "v2_trend200",
+  "PAPER_START_CAPITAL": 1000000, "PAPER_SLIPPAGE_BPS": 20, "PAPER_MAX_DATA_AGE_DAYS": 7
+}
+```
+
+Notes on defaults in the script vs the JSON:
+- `TOP_N_PARTIAL` is unused by the binary regime; it is kept for compatibility with older logs.
+- The `CONFIG` class in the script carries a 7% risk-free default, but the JSON sets 5%, so **5% is what runs**.
 
 ---
 
-## Data Input Format (ETF.xlsx)
+## Data input (`ETF_updated.xlsx`)
 
-| Column | Content |
+| Layout | Content |
 |:---|:---|
-| Column A | ETF full name |
-| Column B | NSE ticker symbol |
-| Column C+ | Historical daily NAV — dates auto-generated in Row 1 via Excel formula |
+| Sheet | `DATA` |
+| Column A | Ticker (the current layout has no ETF name column; names are enriched from a legacy `ETF.xlsx` in the same folder when present) |
+| Columns B+ | Daily prices with real, static dates in row 1 |
 
-**Notes:**
-- Zeros treated as missing data (NaN)
-- Data forward-filled across trading holidays and weekends
-- 52-week high and current price derived dynamically — no static input columns needed
-- Date headers in Row 1 are a dynamic Excel array formula (`=TRANSPOSE(FILTER(...SEQUENCE...TODAY()...))`)
-  The ranking script reads prices directly via openpyxl and reconstructs dates using `pd.bdate_range`
+- Zeros are treated as missing.
+- A legacy layout (`ETF_NAME`, `TICKER`, prices) is also supported, with dates rebuilt as the last N business days.
+- Sector comes from `ETF_SECTOR.xlsx` / name-keyword classification (`classify_sector`).
+- `etf_update_prices_dhan.py` is the price-refresh script in this folder.
 
 ---
 
-## Output Files
+## Output files
 
-### `etf_rankings_v2.xlsx` — 4 sheets
+### `etf_rankings.xlsx` — sheets: Rankings, Rebalance, Allocation, Regime
 
 | Sheet | Description |
 |:---|:---|
-| **Rankings** | All ETFs ranked by investable rank first, then universe rank; all scoring metrics |
-| **Rebalance** | Current allocation + BUY/SELL/HOLD diff vs previous month + 12-month history grid |
-| **Allocation** | 5 allocation slots with sector, weight, and detail on why each ETF was selected or skipped |
-| **Regime** | Live regime state: MONIFTY500 price, EMA50, EMA100, active slots |
+| **Rankings** | All ETFs, investable rank first, with all scoring columns |
+| **Rebalance** | Current allocation, BUY/SELL/HOLD changes versus the previous week, and a history grid (`HISTORY_PERIODS = 52` weeks) |
+| **Allocation** | The 5 slots with sector, weight and the reason each ETF was selected, held or skipped |
+| **Regime** | Nifty 500 price, EMA50, EMA100, label and active slots |
 
-### Supporting Files
+### Supporting files
 
 | File | Description |
 |:---|:---|
-| `holdings_log.json` | Auto-maintained monthly holdings history (keyed by `YYYY-MM`). Never edit manually. |
-| `backtest_trade_log.csv` | Every buy/sell with entry/exit date, price, P&L, and exit reason |
-| `backtest_equity.csv` | Daily portfolio equity series |
-| `equity_curve.png` | Equity curve chart vs Nifty 500 benchmark |
+| `holdings_log.json` | Weekly model-allocation history. Maintained by the script; do not edit manually |
+| `ETF_tradelog.json` / `ETF_positions_ledger.json` | Real trades and positions used by the dashboard's Tradelog & MTM tab |
+| `paper_trade_log.json` | Simulated portfolio for the paper variant |
 
-### Key Output Columns in etf_rankings_v2.xlsx — Rankings sheet
+### Key Rankings-sheet columns
 
-| Column | Description |
-|:---|:---|
-| `RANK_INVESTABLE` | Rank within screen-pass universe — drives allocation; 0 if screened out |
-| `RANK_UNIVERSE` | Rank across all ETFs regardless of screen |
-| `SCREEN_PASS` | True/False — 52-week high proximity filter (sole investability screen) |
-| `WTD_SHARPE` | Primary ranking metric |
-| `SHARPE_6M` / `SHARPE_3M` / `SHARPE_1M` | Component Sharpe ratios |
-| `% From 52Wk High` | Drawdown from 52-week peak |
-| `% From EOM` | Return since prev month-end |
-| `EMA 50` | 50-day EMA of ETF NAV |
-| `EMA 100` | 100-day EMA of ETF NAV |
+`RANK_INVESTABLE`, `SCREEN_PASS`, `SHARPE_6M`, `SHARPE_3M`, `CLENOW_90D`, `WTD_SHARPE`, `WTD_CLENOW`, `WTD_BLEND`, `PCT_FROM_HIGH`, `EOM_PCT`, `EMA_100`, `SECTOR`.
 
-### Rebalance Sheet — Change Codes
+### Rebalance sheet change codes
 
-| Code | Meaning |
-|:---|:---|
-| 🟢 **BUY** | New entry this month |
-| 🔴 **SELL** | Exited this month |
-| 🔵 **ADD** | Weight increased |
-| 🟡 **TRIM** | Weight reduced |
-| ⬜ **HOLD** | No change (rank drift ≥3 flagged in note) |
-| ⬛ **REGIME** | Regime state changed (shown first) |
+BUY, SELL, ADD, TRIM, HOLD, REGIME.
+
+### Dashboard tabs
+
+Current Recommendation · Full Rankings · Configuration · Tradelog & MTM (active holdings with exit-rule alerts) · Paper Trade (v2).
+
+---
+
+## Backtest evidence (as of the 18–19 Oct 2026 runs)
+
+Backtest engine (`backtest/etf_backtest_current_vs_nifty500.py` and the scripts built on it): weekly hold-and-replace, binary Nifty 500 > EMA50 regime, top 5, sector cap 1, the three exit rules above, idle cash earning 2% p.a., and a **flat ₹20 per trade leg with no spread or slippage**. Data: `History_ETFs.xlsx`, 283 tickers, 2016-09-12 to 2026-09-10, with 70 bad-print fixes applied.
+
+Source: `backtest/noentry_run.log`. "Sharpe" in these logs is CAGR divided by volatility, with no risk-free rate subtracted.
+
+| Full period 2016-09 to 2026-09 | CAGR | Volatility | Max drawdown | CAGR / vol |
+|:---|:---:|:---:|:---:|:---:|
+| **Live algorithm (Sharpe + Clenow blend, 52-week-high filter)** | 12.21% | 13.3% | -21.7% | 0.92 |
+| Previous algorithm (Sharpe only, 52-week-high filter) | 10.71% | 12.5% | -21.5% | 0.85 |
+| Nifty 500 buy & hold | 11.96% | 15.8% | -38.3% | 0.76 |
+
+Trading profile of the live algorithm: 185 buys, 52% win rate, average hold 74 days, notional traded about 8.6x average equity per year.
+
+**Cost sensitivity.** An estimate made by deducting a one-way cost from the saved equity curve at each trade date, over 2017-09-11 to 2026-09-10 (the first trade date):
+
+| Assumption | CAGR | Max drawdown |
+|:---|:---:|:---:|
+| As backtested (₹20 per leg) | 13.47% | -21.7% |
+| 10 bps one-way | 12.57% | -22.4% |
+| 20 bps one-way | 11.67% | -23.1% |
+| 30 bps one-way | 10.78% | -23.8% |
+| Nifty 500 buy & hold (same dates) | 11.23% | -38.3% |
+
+At realistic ETF spreads and impact (the paper portfolio assumes 20 bps), the return advantage over the index is small. The main benefit is the much shallower drawdown (about -23% against -38%).
+
+Related runs: `blend_methods_noliquid_run.log` (blended vs Clenow-only vs Sharpe-only sleeves), `momaccel_live_run.log` (momentum-acceleration screen, not adopted), `noentry_run.log` (removing the 52-week-high entry filter, not adopted).
+
+---
+
+## Known limitations
+
+- Backtests use a flat ₹20 per trade and no spread or market impact. Treat the cost-sensitivity table above as the more realistic picture.
+- The 52-week-high entry filter adds about 0.6 percentage points of CAGR over the full period (12.21% with it, 11.60% without), most of it in the 2018–2020 sub-period (8.5% against 6.8% CAGR).
+- The strategy was tuned on one 10-year sample of this ETF universe; the number of backtest variants run raises the risk of overfitting.

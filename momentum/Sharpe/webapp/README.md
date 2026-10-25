@@ -234,6 +234,15 @@ Done:
   Configuration. Normally unnecessary (the cache key tracks the data files and every setting);
   it writes no file, so it works in read-only mode too. Live prices are deliberately not cleared,
   as in Streamlit.
+  **Damaged price file guard**: `momentum_lib.load_prices` raises `PriceDataError` when the
+  NIFTY500 benchmark row is empty or has no close on the latest populated date (a failed
+  price refresh). The webapp then shows a 503 "Price data problem" page, and the Streamlit
+  dashboards show "Error loading data", instead of computing a neutral regime / zero Res_mom /
+  blank Beta. A holding with no usable price is valued at cost (0 PnL) with a warning banner,
+  never at ₹0. After re-running the price update, click Refresh Rankings (Streamlit caches the
+  loaded file by path) or restart the webapp. The Dhan updater itself now aborts without
+  overwriting the existing file if the benchmark fetch fails or more than 2% of tickers fail
+  (`--allow-partial` overrides).
   **Deliberate simplification vs. Streamlit**: this page does not
   live-preview ranking impact as you type — the ranking cache is keyed on the *saved* config,
   so a change takes effect project-wide only after Save (and the next page load). Streamlit's

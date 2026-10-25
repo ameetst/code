@@ -34,11 +34,6 @@
     "entry_price": 807.9,
     "qty": 123.0
   },
-  "ATHERENERG": {
-    "entry_date": "2026-09-21",
-    "entry_price": 1590.5,
-    "qty": 62.0
-  },
   "DIACABS": {
     "entry_date": "2026-09-21",
     "entry_price": 370.6,
@@ -63,5 +58,20 @@
     "entry_date": "2026-08-31",
     "entry_price": 9217.0,
     "qty": 11.0
+  },
+  "SBC": {
+    "entry_date": "2026-10-25",
+    "entry_price": 61.05,
+    "qty": null
+  },
+  "TBZ": {
+    "entry_date": "2026-10-25",
+    "entry_price": 679.4,
+    "qty": null
+  },
+  "SHREEJISPG": {
+    "entry_date": "2026-10-25",
+    "entry_price": 776.6,
+    "qty": null
   }
 }

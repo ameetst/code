@@ -440,11 +440,18 @@ def calculate_holdings_and_pnl(transactions, latest_prices=None):
 
     unrealized_pnl = 0.0
     holdings_metrics = []
+    missing_price_tickers = []
     
     for ticker, h in active_holdings.items():
         curr_price = h["avg_price"]
-        if latest_prices is not None and ticker in latest_prices:
-            curr_price = latest_prices[ticker]
+        if latest_prices is not None:
+            px = latest_prices.get(ticker)
+            if isinstance(px, (int, float)) and px == px and px > 0:
+                curr_price = px
+            else:
+                # No usable price: value at cost (0 PnL) and report it -- never at 0.0,
+                # which would book the whole cost basis as a loss.
+                missing_price_tickers.append(ticker)
         
         market_val = h["qty"] * curr_price
         u_pnl = market_val - h["total_cost"]
@@ -469,7 +476,8 @@ def calculate_holdings_and_pnl(transactions, latest_prices=None):
         "holdings_metrics": holdings_metrics,
         "realized_pnl": realized_pnl,
         "realized_pnl_by_ticker": realized_pnl_by_ticker,
-        "unrealized_pnl": unrealized_pnl
+        "unrealized_pnl": unrealized_pnl,
+        "missing_price_tickers": missing_price_tickers,
     }
 
 def export_tradelog_to_xlsx_bytes(transactions):
@@ -726,10 +734,12 @@ dynamic_n = regime_detail["dynamic_n"]
 allow_new = regime_detail["allow_new"]
 
 # Load trade log and synchronize the positions ledger
-latest_prices = {ticker: get_latest_price(ticker, prices_df) for ticker in stock_tickers}
+# Tickers with no usable price are left OUT (not stored as 0.0), so every consumer falls
+# back to cost basis / entry price instead of valuing the position at zero.
+latest_prices = {t: px for t in stock_tickers if (px := get_latest_price(t, prices_df)) > 0}
 if "live_prices" in st.session_state:
     for tk, price in st.session_state.live_prices.items():
-        if tk in latest_prices:
+        if price and price > 0 and tk in prices_df.index:
             latest_prices[tk] = price
 
 tradelog = load_tradelog(universe)
@@ -1427,6 +1437,11 @@ with tab_tradelog:
                                  delta=f"{total_unrealized_pnl_pct:+.2f}%"), unsafe_allow_html=True)
     with tc4:
         st.markdown(_metric_card("Realized PnL (Rs)", f"Rs {realized_pnl:,.2f}"), unsafe_allow_html=True)
+    if tradelog_result.get("missing_price_tickers"):
+        st.warning("⚠️ No price available for "
+                   + ", ".join(tradelog_result["missing_price_tickers"])
+                   + " — valued at cost (0 PnL) in the totals above. Check the price file, "
+                   "or use Refresh Live Market Prices.")
 
     st.divider()
 

@@ -120,17 +120,22 @@ def get_cached_live_prices() -> dict | None:
     return _live_price_cache.get("value")
 
 
-def apply_cached_prices(prices: dict) -> dict:
+def apply_cached_prices(prices: dict, known=None) -> dict:
     """Overrides `prices` with whatever refresh_live_prices() last cached, for any
     ticker present in both -- the same global-override semantics the dashboard got
     from st.session_state.live_prices (set once by Tradelog's "Refresh Live Market
     Prices" button, visible everywhere that reads latest_prices, including the
     Top-N Rankings LTP column). `prices` itself is left untouched; a new dict is
-    returned."""
+    returned.
+
+    A ticker the price file has no usable close for is omitted from `prices` (see
+    rankings.Bundle.latest_prices), so pass `known` (the workbook's tickers) to let a live
+    price fill it. Tickers in neither `prices` nor `known` are ignored, as are non-positive
+    live prices."""
     merged = dict(prices)
     cached = get_cached_live_prices()
     if cached:
         for ticker, price in cached["prices"].items():
-            if ticker in merged:
+            if price and price > 0 and (ticker in merged or (known is not None and ticker in known)):
                 merged[ticker] = price
     return merged

@@ -29,7 +29,7 @@ def _effective_prices(bundle: rankings.Bundle) -> dict:
     the "Refresh Live Market Prices" button last fetched -- same override
     semantics as the dashboard's st.session_state.live_prices. Shared with
     Rankings' LTP column via dhan_client.apply_cached_prices()."""
-    return dhan_client.apply_cached_prices(bundle.latest_prices)
+    return rankings.effective_prices(bundle)
 
 
 def _build_context(universe: str, bundle: rankings.Bundle, *, form_ticker=None,
@@ -39,6 +39,7 @@ def _build_context(universe: str, bundle: rankings.Bundle, *, form_ticker=None,
     tl = tradelog.load_tradelog(universe)
     pnl = tradelog.calculate_holdings_and_pnl(tl, live_prices)
     holdings_metrics = pnl["holdings_metrics"]
+    missing_price_tickers = pnl["missing_price_tickers"]
     cached_live = dhan_client.get_cached_live_prices()
 
     total_invested = sum(h["Cost Value"] for h in holdings_metrics)
@@ -73,6 +74,7 @@ def _build_context(universe: str, bundle: rankings.Bundle, *, form_ticker=None,
         "total_invested": total_invested, "total_market": total_market,
         "total_unrealized": total_unrealized, "total_unrealized_pct": total_unrealized_pct,
         "realized_pnl": pnl["realized_pnl"],
+        "missing_price_tickers": missing_price_tickers,
         "holdings_rows": holdings_rows,
         "history_rows": history_rows,
         "stock_tickers": stock_tickers,

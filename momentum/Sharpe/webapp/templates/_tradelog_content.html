@@ -1,6 +1,7 @@
 {# The swap target for every mutating tradelog action (#tradelog-content). #}
 {% if error %}<div class="banner error">❌ {{ error }}</div>{% endif %}
 {% if success %}<div class="banner success">✅ {{ success }}</div>{% endif %}
+{% if missing_price_tickers %}<div class="banner error">⚠️ No price available for {{ missing_price_tickers|join(", ") }} — valued at cost (0 PnL) in the totals below. Check the price file, or use Refresh Live Market Prices.</div>{% endif %}
 
 <div class="metric-row">
   <div class="metric">

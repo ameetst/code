@@ -68,7 +68,7 @@ def _view_model(limit: int | None):
             "data_end": rankings.fmt_date(bundle.dates[-1]),
         },
         "rows": rankings.top_rows(bundle, limit or max_n, rankings.held_tickers(universe),
-                                   prices=dhan_client.apply_cached_prices(bundle.latest_prices)),
+                                   prices=rankings.effective_prices(bundle)),
         "hidden": rankings.top_hidden(bundle, limit or max_n, rankings.held_tickers(universe)),
     }
 

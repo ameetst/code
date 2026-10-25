@@ -305,4 +305,4 @@ def test_cached_live_price_also_overrides_the_rankings_ltp_column(client, monkey
                          {"value": {"prices": {ticker: fake_price}, "source": "Dhan", "unmatched": []}})
 
     html = client.get(f"/rankings/table?limit={len(bundle.result)}").data.decode()
-    assert f"Rs {fake_price:,.2f}" in html
+    assert f"Rs {fake_price:.2f}" in html  # the table prints LTP without a thousands separator

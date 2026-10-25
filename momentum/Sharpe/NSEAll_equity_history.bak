@@ -1021,5 +1021,16 @@
     "invested_frac": 0.56,
     "qty_weighted": true,
     "price_date": "2026-10-21"
+  },
+  {
+    "date": "2026-10-23",
+    "portfolio_nav": 105.9343,
+    "benchmark_nav": 93.2711,
+    "portfolio_ret": -0.010372,
+    "benchmark_ret": -0.006473,
+    "n_held": 13,
+    "invested_frac": 0.52,
+    "qty_weighted": true,
+    "price_date": "2026-10-22"
   }
 ]

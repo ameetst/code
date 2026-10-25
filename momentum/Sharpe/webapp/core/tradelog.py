@@ -89,10 +89,17 @@ def calculate_holdings_and_pnl(transactions: list[dict], latest_prices: dict | N
 
     unrealized_pnl = 0.0
     holdings_metrics = []
+    missing_price_tickers = []
     for ticker, h in active_holdings.items():
         curr_price = h["avg_price"]
-        if latest_prices is not None and ticker in latest_prices:
-            curr_price = latest_prices[ticker]
+        if latest_prices is not None:
+            px = latest_prices.get(ticker)
+            if isinstance(px, (int, float)) and px == px and px > 0:
+                curr_price = px
+            else:
+                # No usable price: value at cost (0 PnL) and report it -- never at 0.0,
+                # which would book the whole cost basis as a loss.
+                missing_price_tickers.append(ticker)
         market_val = h["qty"] * curr_price
         u_pnl = market_val - h["total_cost"]
         unrealized_pnl += u_pnl
@@ -107,7 +114,7 @@ def calculate_holdings_and_pnl(transactions: list[dict], latest_prices: dict | N
     return {
         "active_holdings": active_holdings, "holdings_metrics": holdings_metrics,
         "realized_pnl": realized_pnl, "realized_pnl_by_ticker": realized_pnl_by_ticker,
-        "unrealized_pnl": unrealized_pnl,
+        "unrealized_pnl": unrealized_pnl, "missing_price_tickers": missing_price_tickers,
     }
 
 

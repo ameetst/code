@@ -18,7 +18,7 @@ import pandas as pd
 
 import momentum_lib as ml
 
-from webapp.core import config_store
+from webapp.core import config_store, dhan_client
 from webapp.settings import DATA_DIR
 
 # Same constants the dashboard defines locally (not exported by momentum_lib).
@@ -134,7 +134,8 @@ def get_bundle(cfg: dict) -> Bundle:
             regime_score=float(regime_score),
             regime_detail=regime_detail,
             dates=list(dates),
-            latest_prices={t: _latest_price(t, prices_df) for t in stock_tickers},
+            # unpriced tickers are omitted (not 0.0) so consumers fall back to cost / entry price
+            latest_prices={t: px for t in stock_tickers if (px := _latest_price(t, prices_df)) > 0},
             market_caps_raw=_load_market_caps_raw(),
             purchase_block=ml.compute_purchase_blocks(
                 result, prices_df,
@@ -222,6 +223,13 @@ def top_hidden(bundle: Bundle, limit: int, held: set) -> list[dict]:
     buying them (see _visible_and_hidden), for the table's explanatory caption."""
     return [{"ticker": t, "reason": r, "held": t in held}
             for t, r in _visible_and_hidden(bundle, limit)[1]]
+
+
+def effective_prices(bundle: Bundle) -> dict:
+    """bundle.latest_prices overridden by the last "Refresh Live Market Prices" fetch, including
+    tickers the workbook has no usable close for."""
+    known = bundle.prices_df.index if bundle.prices_df is not None else None
+    return dhan_client.apply_cached_prices(bundle.latest_prices, known=known)
 
 
 def top_rows(bundle: Bundle, limit: int, held: set, prices: dict | None = None) -> list[dict]:

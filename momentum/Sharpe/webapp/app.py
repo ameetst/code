@@ -8,6 +8,7 @@ import datetime
 import threading
 
 from flask import Flask
+from markupsafe import escape
 
 from webapp import settings
 from webapp.blueprints import actions as actions_bp
@@ -18,6 +19,7 @@ from webapp.blueprints import performance as performance_bp
 from webapp.blueprints import rankings as rankings_bp
 from webapp.blueprints import tradelog as tradelog_bp
 from webapp.core import actions, config_store, rankings, regime, tradelog
+from momentum_lib import PriceDataError
 
 
 def _warm_cache() -> None:
@@ -68,6 +70,15 @@ def create_app() -> Flask:
     app.register_blueprint(tradelog_bp.bp)
     app.register_blueprint(cash_ledger_bp.bp)
     app.register_blueprint(configuration_bp.bp)
+
+    @app.errorhandler(PriceDataError)
+    def price_data_error(e):
+        # Standalone page (not base.html): the shell itself needs the same price data.
+        return (f"<!doctype html><meta charset='utf-8'><title>Price data problem</title>"
+                f"<body style='font-family:sans-serif;max-width:640px;margin:48px auto'>"
+                f"<h2>⚠️ Price data problem</h2><p>{escape(str(e))}</p>"
+                f"<p>Nothing was computed from this file. Re-run the price update, "
+                f"then reload.</p></body>", 503)
 
     @app.context_processor
     def inject_globals():

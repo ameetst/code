@@ -184,6 +184,32 @@ def _infer_dates_for_columns(date_indices: list[int]) -> list:
     return result
 
 
+class PriceDataError(ValueError):
+    """The price workbook loaded but is unusable (e.g. an empty benchmark row from a failed
+    refresh). Raised instead of letting the pipeline quietly compute on missing data."""
+
+
+def _check_benchmark_present(prices_df: pd.DataFrame, nifty_series: pd.Series, filepath: str) -> None:
+    """A failed price refresh can leave the NIFTY500 row empty. Everything benchmark-based
+    then degrades silently: regime score -> neutral 0.5, Res_mom -> 0, Beta / Rel_52H_DD ->
+    blank, benchmark return -> 0. Fail loudly instead.
+
+    The benchmark must have a close on the latest column that is actually populated, i.e.
+    the last one where more than half of the stocks have a price (a holiday column is empty
+    for everyone and a just-appended column may be only partly filled, so those are skipped)."""
+    if not nifty_series.notna().any():
+        raise PriceDataError(
+            f"NIFTY500 benchmark row in {Path(filepath).name} has no prices at all -- the last "
+            f"price refresh looks incomplete. Re-run the price update and try again.")
+    coverage = prices_df.notna().mean(axis=0)
+    live = [c for c, frac in coverage.items() if frac > 0.5]
+    if live and pd.isna(nifty_series.get(live[-1])):
+        raise PriceDataError(
+            f"NIFTY500 benchmark has no price for {live[-1]}, the latest date with stock prices "
+            f"in {Path(filepath).name} -- the last price refresh looks incomplete. "
+            f"Re-run the price update and try again.")
+
+
 def load_prices(filepath: str):
     """
     Load the DATA sheet from an n500-format xlsx file.
@@ -261,9 +287,12 @@ def load_prices(filepath: str):
     if n_dupes:
         print(f"  Warning: {n_dupes} duplicate ticker row(s) found — keeping first occurrence only.")
     prices_df     = prices_df[~prices_df.index.duplicated(keep="first")]
+    if "NIFTY500" not in prices_df.index:
+        raise PriceDataError(f"No NIFTY500 benchmark row in {Path(filepath).name}.")
     nifty_series  = prices_df.loc["NIFTY500"].copy()
     stock_tickers = [t for t in prices_df.index if t != "NIFTY500"]
     prices_df     = prices_df.loc[stock_tickers]
+    _check_benchmark_present(prices_df, nifty_series, filepath)
 
     return prices_df, nifty_series, stock_tickers, dates
 
