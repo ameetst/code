@@ -73,12 +73,12 @@
     let g = "";
     for (let k = 0; k <= 4; k++) {
       const v = lo + (hi - lo) * k / 4, yy = y(v);
-      g += `<line x1="${m.l}" x2="${W - m.r}" y1="${yy}" y2="${yy}" stroke="#E8ECF1"/><text x="${m.l - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="#6B7A8D">${fmt(v)}</text>`;
+      g += `<line x1="${m.l}" x2="${W - m.r}" y1="${yy}" y2="${yy}" stroke="#E3E6EB"/><text x="${m.l - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="#5E6878">${fmt(v)}</text>`;
     }
     const ticks = Math.min(6, dates.length);
     for (let k = 0; k < ticks; k++) {
       const i = Math.round(k * (dates.length - 1) / (ticks - 1 || 1));
-      g += `<text x="${x(i)}" y="${H - m.b + 18}" text-anchor="middle" font-size="11" fill="#6B7A8D">${dates[i]}</text>`;
+      g += `<text x="${x(i)}" y="${H - m.b + 18}" text-anchor="middle" font-size="11" fill="#5E6878">${dates[i]}</text>`;
     }
     for (const s of series) {
       let d = "", pen = false;
@@ -96,9 +96,28 @@
   function drawPaperCharts() {
     const pc = BOOT.paper_chart, pe = BOOT.paper_equity;
     if (pc) lineChart($("#paper-trend-chart"), pc.dates, pc.series);
-    if (pe) lineChart($("#paper-equity-chart"), pe.dates, [{ name: "Paper equity (Rs)", color: "#1F4E79", data: pe.values }], { points: true });
+    if (pe) lineChart($("#paper-equity-chart"), pe.dates, [{ name: "Paper equity (Rs)", color: "#4F46E5", data: pe.values }], { points: true });
   }
-  window.addEventListener("resize", () => { if ($("#tab-paper.active")) drawPaperCharts(); });
+  window.addEventListener("resize", () => {
+    if ($("#tab-paper.active")) drawPaperCharts();
+    if ($("#tab-rotation.active")) drawRotationCharts();
+  });
+
+  // ── Rotation sleeve (paper) chart + controls ──
+  function drawRotationCharts() {
+    const re = BOOT.rotation_equity;
+    if (re) lineChart($("#rot-equity-chart"), re.dates, [{ name: "Rotation sleeve equity (Rs)", color: "#0F766E", data: re.values }], { points: true });
+  }
+  $("#rot-toggle")?.addEventListener("change", e => {
+    api("POST", "/api/rotation/toggle", { enabled: e.target.checked })
+      .then(d => toast(d.message))
+      .catch(err => { toast(err.message, "err"); e.target.checked = !e.target.checked; });
+  });
+  $("#btn-rot-update")?.addEventListener("click", e =>
+    act(e.currentTarget, () => api("POST", "/api/rotation/update", { force: $("#rot-force").checked })));
+  $("#rot-reset-ok")?.addEventListener("change", e => { $("#btn-rot-reset").disabled = !e.target.checked; });
+  $("#btn-rot-reset")?.addEventListener("click", e =>
+    act(e.currentTarget, () => api("POST", "/api/rotation/reset")));
 
   // ── Paper-trade controls ──
   $("#paper-toggle")?.addEventListener("change", e => {
@@ -113,13 +132,14 @@
     act(e.currentTarget, () => api("POST", "/api/paper/reset")));
 
   // ── Tabs (current tab lives in the URL hash so reloads stay put) ──
-  const TABS = ["recommendation", "rankings", "config", "tradelog", "paper"];
+  const TABS = ["recommendation", "rankings", "config", "tradelog", "paper", "rotation"];
   function showTab(name) {
     if (!TABS.includes(name)) name = TABS[0];
     $$(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
     $$(".tab-panel").forEach(p => p.classList.toggle("active", p.id === "tab-" + name));
     if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
     if (name === "paper") drawPaperCharts();          // SVG needs a visible, measured box
+    if (name === "rotation") drawRotationCharts();
   }
   $$(".tab-btn").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
   window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));

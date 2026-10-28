@@ -1,0 +1,73 @@
+﻿  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+[load] C:\Users\ameet\Documents\Github\dhan_datahq\base files\History_ETFs.xlsx
+       283 tickers (non-empty) | 2609 trading days (2016-09-12 -> 2026-09-10)
+[regime/benchmark] Fetching ^CRSLDX (Nifty 500 Index) via yfinance ...
+       2462 rows (2016-09-12 -> 2026-09-11)
+[window] 2017-10-02 -> 2026-09-10
+
+Part A: live-strategy variants (this is the slow part: first run builds the ranking cache) ...
+  done A0 live (cash 2%)
+  done A1 live + idle cash at 5.5%
+  done A2 A1 + abs-mom ENTRY (6M)
+  done A3 A1 + abs-mom ENTRY+EXIT (6M)
+  done A4 A3, no regime gate
+  done A5 A1 + abs-mom ENTRY+EXIT (3M)
+  done A6 A1 + abs-mom ENTRY+EXIT (12M)
+  done A7 A3 with hurdle 0% (time-series mom)
+
+[regression] A0 full period 2016-09 -> 2026-09: CAGR 12.21% MaxDD -21.7%  (earlier run: 12.21% / -21.7%)
+
+Part B: classic dual momentum (monthly, curated universe) ...
+  universe: ['NIFTYBEES', 'JUNIORBEES', 'BANKBEES', 'MOM100', 'MID150BEES', 'CPSEETF', 'HNGSNGBEES', 'GOLDBEES', 'SILVERBEES']
+
+==============================================================================================================
+HEADLINE (Rs20/leg costs; idle cash 5.5% except A0; window 2017-10-02 -> 2026-09-10)
+==============================================================================================================
+                                        CAGR   Vol  MaxDD  CAGR/vol  (CAGR-5.5%)/vol    Buys  IdleCash%  AnnTurnover
+A0 live (cash 2%)                      0.139 0.140 -0.217     0.991            0.599 185.000     16.193          NaN
+A1 live + idle cash at 5.5%            0.144 0.140 -0.213     1.024            0.632 185.000     16.210          NaN
+A2 A1 + abs-mom ENTRY (6M)             0.124 0.138 -0.213     0.899            0.500 193.000     17.768          NaN
+A3 A1 + abs-mom ENTRY+EXIT (6M)        0.115 0.139 -0.205     0.826            0.430 217.000     19.440          NaN
+A4 A3, no regime gate                  0.119 0.161 -0.355     0.737            0.396 286.000      2.679          NaN
+A5 A1 + abs-mom ENTRY+EXIT (3M)        0.122 0.138 -0.199     0.885            0.486 224.000     20.831          NaN
+A6 A1 + abs-mom ENTRY+EXIT (12M)       0.145 0.136 -0.207     1.067            0.661 230.000     17.838          NaN
+A7 A3 with hurdle 0% (time-series mom) 0.145 0.141 -0.213     1.033            0.642 203.000     17.447          NaN
+B1 GEM top1, 12M, abs                  0.263 0.287 -0.450     0.918            0.726     NaN        NaN        6.376
+B2 top3, 12M, abs                      0.198 0.172 -0.277     1.155            0.835     NaN        NaN        4.205
+B3 top3, 12M, relative only            0.212 0.180 -0.277     1.183            0.876     NaN        NaN        4.303
+B4 top3, 6M, abs                       0.171 0.176 -0.377     0.972            0.659     NaN        NaN        5.054
+B5 top3, avg(3/6/12M), abs             0.199 0.174 -0.277     1.143            0.826     NaN        NaN        4.913
+B6 top5, 12M, abs                      0.137 0.133 -0.217     1.031            0.616     NaN        NaN        3.485
+EW all curated ETFs (monthly)          0.146 0.124 -0.276     1.177            0.734     NaN        NaN          NaN
+Nifty 500 buy&hold                     0.116 0.162 -0.383     0.717            0.377     NaN        NaN          NaN
+
+==============================================================================================================
+COST CHECK: Part B at 20 bps one-way (CAGR / MaxDD)
+==============================================================================================================
+  B1 GEM top1, 12M, abs             24.7% /  -45.0%
+  B2 top3, 12M, abs                 18.8% /  -27.8%
+  B3 top3, 12M, relative only       20.2% /  -27.8%
+  B4 top3, 6M, abs                  15.9% /  -39.0%
+  B5 top3, avg(3/6/12M), abs        18.7% /  -27.8%
+  B6 top5, 12M, abs                 12.9% /  -21.8%
+
+Cost check: Part A, A1 vs A3 at 20 bps one-way
+  A1 live + idle cash at 5.5%           12.5% /  -22.6%
+  A3 A1 + abs-mom ENTRY+EXIT (6M)        9.4% /  -24.7%
+
+==============================================================================================================
+CALENDAR-YEAR RETURNS (%)
+==============================================================================================================
+            A0 live (cash 2%  A1 live + idle c  A3 A1 + abs-mom   A4 A3, no regime  B1 GEM top1, 12M  B2 top3, 12M, ab  Nifty 500 buy&ho
+2017-12-31               6.4               6.4               5.6               6.4               3.7               9.1              10.4
+2018-12-31               2.1               2.8              -4.0              -7.6              -5.5              -5.6              -3.4
+2019-12-31               1.9               2.4              -1.7              -5.0              15.2               8.7               7.7
+2020-12-31              22.6              23.1              10.9              -3.8              27.1               9.1              16.7
+2021-12-31               6.6               6.7               6.4              25.4              11.2              28.6              30.2
+2022-12-31              19.3              19.9              16.9              15.0              17.0               4.0               3.0
+2023-12-31              34.5              35.1              35.6              27.4              47.6              36.2              25.8
+2024-12-31              29.0              29.3              29.3              32.6              27.5              26.2              15.2
+2025-12-31               1.1               1.6               3.6              16.1             121.1              67.6               6.7
+2026-12-31               5.8               6.0               6.0               7.4               3.8               7.2              -3.9
+
+Chart -> C:\Users\ameet\Documents\Github\code\momentum\ETFs\backtest\dual_momentum_equity_curve.png

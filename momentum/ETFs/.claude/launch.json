@@ -4,14 +4,39 @@
     {
       "name": "etf-dashboard",
       "runtimeExecutable": "streamlit",
-      "runtimeArgs": ["run", "etf_dashboard.py", "--server.headless", "true"],
+      "runtimeArgs": [
+        "run",
+        "etf_dashboard.py",
+        "--server.headless",
+        "true"
+      ],
       "port": 8501
     },
     {
       "name": "etf-dashboard-flask",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["etf_flask/app.py"],
+      "runtimeArgs": [
+        "etf_flask/app.py"
+      ],
       "port": 8502
+    },
+    {
+      "name": "sharpe-flask",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-c",
+        "import os,sys; os.chdir(r'C:\\Users\\ameet\\Documents\\Github\\code\\momentum\\Sharpe'); sys.path.insert(0,'.'); from webapp.app import app; app.run(host='127.0.0.1', port=8000)"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "sharpe-dhan-streamlit",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-c",
+        "import os,sys; os.chdir('C:/Users/ameet/Documents/Github/code/momentum/Sharpe'); sys.path.insert(0,'.'); from streamlit.web import cli; sys.argv=['streamlit','run','sharpe_dashboard_dhan.py','--server.headless','true','--server.port','8504']; cli.main()"
+      ],
+      "port": 8504
     }
   ]
 }

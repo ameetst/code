@@ -28,6 +28,7 @@ from flask import Flask, abort, jsonify, render_template, request, send_file
 
 import core
 from core import ROOT, ValidationError, emr
+import etf_rotation_sleeve as rot      # separate paper-only monthly sleeve; core put ROOT on sys.path
 
 # run_pipeline prints non-ASCII characters; don't let a cp1252 console kill it.
 for _stream in (sys.stdout, sys.stderr):
@@ -128,8 +129,9 @@ def build_view() -> dict:
     # ── Regime banner ──
     is_bull = regime["label"] == "BULL"
     data_range = f"{prices.index[0]:%Y-%m-%d} → {prices.index[-1]:%Y-%m-%d}"
+    price_date = f"{prices.index[-1].day} {prices.index[-1]:%b}"      # top-bar status pill
     banner = [
-        ("Regime",           f"{'🟢' if is_bull else '🔴'} {regime['label']}", "bull" if is_bull else "bear"),
+        ("Regime",           regime['label'], "bull" if is_bull else "bear"),
         ("Price",            f"{regime['nifty_price']:.2f}", None),
         (regime.get("regime_ma_label", "50 EMA (trend)"),
                              f"{regime.get('regime_ma', regime['nifty_ema_50']):.2f}", None),
@@ -174,9 +176,15 @@ def build_view() -> dict:
         log.exception("paper tab failed")
         paper = dict(error=f"{type(e).__name__}: {e}")
 
+    try:
+        rotation = build_rotation_view(model)
+    except Exception as e:                    # same rule: a sleeve problem must never take the whole page down
+        log.exception("rotation tab failed")
+        rotation = dict(error=f"{type(e).__name__}: {e}")
+
     return dict(
-        fatal=None, notices=notices,
-        banner=banner, paper=paper,
+        fatal=None, notices=notices, price_date=price_date,
+        banner=banner, paper=paper, rotation=rotation,
         alloc_rows=alloc_rows,
         rank_rows=rank_rows,
         sectors=sorted({r["sector"] for r in rank_rows}),
@@ -205,7 +213,9 @@ def build_view() -> dict:
         boot=dict(prices=latest, tickers=etf_tickers, topn_max=len(rank_rows),
                   paper_chart=paper.get("chart"),
                   paper_equity=(dict(dates=paper["perf"]["dates"], values=paper["perf"]["equity_series"])
-                                if paper.get("perf") else None)),
+                                if paper.get("perf") else None),
+                  rotation_equity=(dict(dates=rotation["perf"]["dates"], values=rotation["perf"]["equity_series"])
+                                   if rotation.get("perf") else None)),
     )
 
 
@@ -307,9 +317,9 @@ def build_paper_view(model: dict, held: set) -> dict:
     chart = None
     if len(tf):
         chart = dict(dates=[d.strftime("%Y-%m-%d") for d in tf.index],
-                     series=[dict(name=f"{n_ma}-day SMA (paper signal)", color="#1F4E79", data=[_num(v) for v in tf["ma"]]),
-                             dict(name="50-day EMA (live signal)", color="#64B5F6", data=[_num(v) for v in tf["ema50"]]),
-                             dict(name="Nifty 500", color="#E53935", data=[_num(v) for v in tf["price"]])])
+                     series=[dict(name=f"{n_ma}-day SMA (paper signal)", color="#4F46E5", data=[_num(v) for v in tf["ma"]]),
+                             dict(name="50-day EMA (live signal)", color="#98A1AE", data=[_num(v) for v in tf["ema50"]]),
+                             dict(name="Nifty 500", color="#B42318", data=[_num(v) for v in tf["price"]])])
 
     return dict(
         variant_name=variant["name"], live_variant_name=emr.get_variant()["name"], n_ma=n_ma,
@@ -321,6 +331,39 @@ def build_paper_view(model: dict, held: set) -> dict:
         live_only=sorted(held - paper_set), paper_only=sorted(paper_set - held), both=sorted(held & paper_set),
         flat_no_positions=(not preg["risk_on"]) and not pstate["positions"],
         chart=chart,
+    )
+
+
+# =========================================================
+# ROTATION SLEEVE TAB -- monthly dual momentum, paper only
+# =========================================================
+def build_rotation_view(model: dict) -> dict:
+    """Everything the Rotation Sleeve tab shows. Read-only: nothing is written here."""
+    prices, meta = model["prices"], model["meta"]
+    names = dict(zip(meta["TICKER"], meta["ETF_NAME"])) if "ETF_NAME" in meta.columns else {}
+    nm = lambda t: names.get(t) or t                                   # noqa: E731
+    pv = rot.preview(ROOT, prices)
+    cfg, sig, perf = pv["cfg"], pv["signal"], pv["perf"]
+
+    rows = [dict(rank=r["rank"], ticker=r["ticker"], name=nm(r["ticker"]),
+                 ret=None if r["ret"] is None else r["ret"] * 100.0, abs_ok=r["abs_ok"], selected=r["selected"],
+                 weight=r["weight"] * 100.0, status=r["status"])
+            for r in (sig["rows"] if sig else [])]
+    pending = [dict(action=t["type"], ticker=t["ticker"], name=nm(t["ticker"]), shares=t["shares"], price=t["price"],
+                    value=t["value"], reason=t["reason"]) for t in pv["pending"]]
+    positions = [dict(p, name=nm(p["ticker"])) for p in pv["positions"]]
+    if perf:
+        perf = dict(perf, trades=[dict(t, name=nm(t["ticker"])) for t in perf["trades"]])
+    history = [dict(signal_date=r["signal_date"], exec_date=r["exec_date"], lag=r["lag_days"], late=r.get("late"),
+                    holdings=", ".join(r["targets"]) or "100% cash", cash=r["cash_weight"] * 100.0,
+                    equity=r["equity"]) for r in pv["rebalances"][:12]]
+    n_ok = sum(1 for r in rows if r["status"] == "OK")
+    return dict(
+        cfg=cfg, asof=pv["asof"], age=pv["age"], stale=pv["stale"], signal=sig, rows=rows, issues=sig["issues"] if sig else [],
+        hurdle=(sig["hurdle"] * 100.0) if sig else None, cash_target=(sig["cash_weight"] * 100.0) if sig else None,
+        n_ok=n_ok, due=pv["due"], lag=pv["lag_days"], late=pv["late"], pending=pending, positions=positions,
+        cash=pv["cash"], perf=perf, has_history=pv["has_history"], history=history, next_signal=pv["next_signal"],
+        last_signal=pv["last_signal"], enabled=bool(cfg["AUTO_UPDATE"]), lookback_m=round(cfg["LOOKBACK_DAYS"] / 21),
     )
 
 
@@ -505,7 +548,16 @@ def rebalance():
             _save_config(body["config"])
         emr.run_pipeline(input_path())
         invalidate_model()
-    return {"message": "Weekly rebalance complete."}
+        note = ""
+        if rot.load_config(ROOT)["AUTO_UPDATE"]:     # monthly paper sleeve; a failure here must not fail the rebalance
+            try:
+                res = rot.run_update(ROOT, get_model()["prices"])
+                note = (f" Rotation sleeve: {'rebalanced' if res.get('rebalanced') else 'marked to market'}."
+                        if res["status"] == "ok" else f" Rotation sleeve skipped: {res['reason']}")
+            except Exception as e:
+                log.exception("rotation sleeve auto-update failed")
+                note = f" Rotation sleeve update failed ({type(e).__name__}); see the Rotation tab."
+    return {"message": "Weekly rebalance complete." + note}
 
 
 # ── Paper trade (simulated; own state file, never touches the live logs) ──
@@ -539,6 +591,37 @@ def paper_toggle():
         emr.CONFIG.PAPER_TRADE_ENABLED = enabled
     return {"message": f"Paper auto-update {'enabled' if enabled else 'disabled'}."}
 
+
+
+# ── Rotation sleeve (paper only; own state file rotation_paper_log.json) ──
+@app.post("/api/rotation/update")
+@api
+def rotation_update():
+    force = bool(_json_body().get("force"))
+    with LOCK:
+        res = rot.run_update(ROOT, get_model()["prices"], force=force)
+    if res["status"] != "ok":
+        raise ValidationError(res["reason"])
+    what = (f"rebalanced ({res['n_trades']} paper trade(s), signal {res['signal_date']})"
+            if res["rebalanced"] else "marked to market (this month's rebalance was already applied)")
+    return {"message": f"Rotation sleeve {what}."}
+
+
+@app.post("/api/rotation/reset")
+@api
+def rotation_reset():
+    with LOCK:
+        bak = rot.reset_log(ROOT)
+    return {"message": f"Rotation history archived to {bak.name}." if bak else "Nothing to reset."}
+
+
+@app.post("/api/rotation/toggle")
+@api
+def rotation_toggle():
+    enabled = bool(_json_body().get("enabled"))
+    with LOCK:
+        rot.save_config(ROOT, {"AUTO_UPDATE": enabled})
+    return {"message": f"Rotation sleeve auto-update {'enabled' if enabled else 'disabled'}."}
 
 
 @app.post("/api/upload")

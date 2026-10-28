@@ -17,7 +17,10 @@
 {%- endmacro %}
 
 <main class="page">
-  <h1>📈 ETF Momentum Strategy</h1>
+  <div class="topbar">
+    <h1>ETF Momentum Strategy</h1>
+    {% if price_date %}<span class="status-pill">Prices · close of {{ price_date }}</span>{% endif %}
+  </div>
   <p class="subtitle">Screen → Score → Regime → Allocate</p>
 
   {% for n in notices %}<div class="alert warn">⚠️ {{ n }}</div>{% endfor %}
@@ -38,16 +41,17 @@
   <hr>
 
   <nav class="tabs" role="tablist">
-    <button class="tab-btn" data-tab="recommendation" role="tab">📊 Current Recommendation</button>
-    <button class="tab-btn" data-tab="rankings" role="tab">📋 Full Rankings</button>
-    <button class="tab-btn" data-tab="config" role="tab">⚙️ Configuration</button>
-    <button class="tab-btn" data-tab="tradelog" role="tab">📝 Tradelog &amp; MTM</button>
-    <button class="tab-btn" data-tab="paper" role="tab">🧪 Paper Trade (v2)</button>
+    <button class="tab-btn" data-tab="recommendation" role="tab">Current Recommendation</button>
+    <button class="tab-btn" data-tab="rankings" role="tab">Full Rankings</button>
+    <button class="tab-btn" data-tab="config" role="tab">Configuration</button>
+    <button class="tab-btn" data-tab="tradelog" role="tab">Tradelog &amp; MTM</button>
+    <button class="tab-btn" data-tab="paper" role="tab">Paper Trade (v2)</button>
+    <button class="tab-btn" data-tab="rotation" role="tab">Rotation Sleeve (paper)</button>
   </nav>
 
   <!-- ═════════ TAB 1: CURRENT RECOMMENDATION ═════════ -->
   <section class="tab-panel" id="tab-recommendation" role="tabpanel">
-    <h2>📊 Top 5 Ranking</h2>
+    <h2>Top 5 Ranking</h2>
     <div class="table-wrap">
       <table class="data selectable-table sortable-table" id="alloc-table">
         <thead><tr>
@@ -67,11 +71,11 @@
     <p class="caption">💡 Select a row above to auto-fill it in <b>Log New Transaction</b> (Tradelog &amp; MTM tab).</p>
     <hr>
 
-    <h2>⚡ Actions</h2>
+    <h2>Actions</h2>
     <div class="grid cols-2">
-      <button class="btn block" id="btn-rebalance" data-busy="Running full pipeline… this can take a minute">🔁 Run Weekly Rebalance</button>
+      <button class="btn block" id="btn-rebalance" data-busy="Running full pipeline… this can take a minute">Run Weekly Rebalance</button>
       {% if output_exists %}
-        <a class="btn block" href="{{ url_for('download_rankings') }}">📥 Download Rankings Excel</a>
+        <a class="btn block" href="{{ url_for('download_rankings') }}">Download Rankings Excel</a>
       {% else %}
         <div class="alert info" style="margin:0">Run the weekly rebalance first to generate the Excel output.</div>
       {% endif %}
@@ -80,7 +84,7 @@
 
   <!-- ═════════ TAB 2: FULL RANKINGS ═════════ -->
   <section class="tab-panel" id="tab-rankings" role="tabpanel">
-    <h2>📋 Full Rankings</h2>
+    <h2>Full Rankings</h2>
     <div class="grid cols-3">
       <label class="field"><span>Screen Filter</span>
         <select id="f-screen"><option value="all">All</option><option value="pass">PASS only</option><option value="fail">FAIL only</option></select>
@@ -126,11 +130,11 @@
 
   <!-- ═════════ TAB 3: CONFIGURATION ═════════ -->
   <section class="tab-panel" id="tab-config" role="tabpanel">
-    <h2>⚙️ Strategy Configuration</h2>
+    <h2>Strategy Configuration</h2>
     <p>Edit parameters below and click <b>Save</b> to persist to <code>strategy_config.json</code> and refresh the rankings shown here.
        <b>Run Rebalance</b> saves and then also regenerates the Excel output and holdings log.</p>
 
-    <h3>📁 Data Source</h3>
+    <h3>Data Source</h3>
     <div class="radio-group" id="ds-radios">
       <label><input type="radio" name="ds" value="default" {{ '' if uploaded_name else 'checked' }}> Default ({{ default_input }})</label>
       <label><input type="radio" name="ds" value="upload" {{ 'checked' if uploaded_name else '' }}> Upload custom file</label>
@@ -146,14 +150,14 @@
     <hr>
 
     <form id="cfg-form" novalidate>
-      <h3>📊 Portfolio Allocation</h3>
+      <h3>Portfolio Allocation</h3>
       <div class="grid cols-2">
         {{ num('TOP_N', 'Top N (risk-on)', 'Number of ETF slots held while the regime is risk-on (price above its 50-EMA). No separate partial tier anymore.') }}
         {{ num('SECTOR_CAP', 'Sector Cap') }}
       </div>
       <hr>
 
-      <h3>📈 Momentum Scoring</h3>
+      <h3>Momentum Scoring</h3>
       <h4>Sharpe composite</h4>
       <div class="grid cols-2">
         <div class="grid">{{ num('WINDOW_6M', '6M Window (days)') }}{{ num('SHARPE_W6M', 'Sharpe 6M Weight') }}</div>
@@ -174,7 +178,7 @@
       <p class="caption">Currently: <b>{{ score_mode }}</b>.</p>
       <hr>
 
-      <h3>🔍 Screening</h3>
+      <h3>Screening</h3>
       {{ num('MAX_DRAWDOWN_FROM_HIGH', 'Max Drawdown from 52W High', 'ETFs must be within this % of their 52-week high (0.25 = must be ≥ 75%)') }}
       <label class="field" style="margin-top:12px"><span>Excluded Sectors (comma-separated)</span>
         <input type="text" name="EXCLUDE_SECTORS" value="{{ cfg_exclude }}">
@@ -182,7 +186,7 @@
       </label>
       <hr>
 
-      <h3>🎯 Regime Filter</h3>
+      <h3>Regime Filter</h3>
       <p class="caption">Binary risk-on/risk-off: <b>risk-on</b> while price is above its Fast EMA, <b>risk-off</b> otherwise.
         Risk-off blocks new buys only — existing holdings are left alone and close solely via their own exit rule
         (52wk-high DD, rank cutoff, or TSL), not because of a regime flip.</p>
@@ -201,14 +205,14 @@
       </label>
       <hr>
 
-      <h3>⚠️ Risk Management</h3>
+      <h3>Risk Management</h3>
       <div class="grid cols-2">
         {{ num('DAILY_RF_ANNUAL', 'Risk-Free Rate (annual)', 'Annual risk-free rate used for Sharpe calculation') }}
         {{ num('TSL_THRESHOLD', 'TSL Threshold', 'Trailing stop loss drawdown trigger (0.05 = 5%)') }}
       </div>
       <hr>
 
-      <h3>🚪 Weekly Exit Triggers</h3>
+      <h3>Weekly Exit Triggers</h3>
       <div class="grid cols-2">
         {{ num('EXIT_MAX_DD_FROM_HIGH', 'Exit: Max DD from 52W High', 'Exit position if >X% away from 52-week high (0.25 = 25%)') }}
         {{ num('EXIT_MAX_RANK', 'Exit: Max Investable Rank', 'Exit position if investable rank exceeds this value') }}
@@ -216,20 +220,20 @@
       <hr>
 
       <div class="grid cols-2">
-        <button type="button" class="btn block" id="btn-cfg-save">💾 Save Configuration</button>
-        <button type="button" class="btn block" id="btn-cfg-run" data-busy="Saving config and running full pipeline… this can take a minute">🔁 Run Rebalance with New Config</button>
+        <button type="button" class="btn block" id="btn-cfg-save">Save Configuration</button>
+        <button type="button" class="btn block" id="btn-cfg-run" data-busy="Saving config and running full pipeline… this can take a minute">Run Rebalance with New Config</button>
       </div>
     </form>
     <hr>
 
-    <h3>📄 Current Config File</h3>
+    <h3>Current Config File</h3>
     {% if cfg_file_text %}<pre>{{ cfg_file_text }}</pre>
     {% else %}<div class="alert info">No <code>strategy_config.json</code> found — using hardcoded defaults.</div>{% endif %}
   </section>
 
   <!-- ═════════ TAB 4: TRADELOG & MTM ═════════ -->
   <section class="tab-panel" id="tab-tradelog" role="tabpanel">
-    <h2>📝 Tradelog &amp; Real-time MTM</h2>
+    <h2>Tradelog &amp; Real-time MTM</h2>
     <div class="metrics">
       <div class="metric"><div class="label">Total Invested</div><div class="value">{{ totals.invested|inr }}</div></div>
       <div class="metric"><div class="label">Current Market Value</div><div class="value">{{ totals.market|inr }}</div></div>
@@ -240,8 +244,8 @@
     <hr>
 
     <div class="row-head">
-      <h3 style="margin:0">💼 Active Holdings</h3>
-      <button class="btn" id="btn-refresh" data-busy="Fetching latest NAVs from Yahoo Finance (.NS)…">🔄 Refresh Live Market Prices</button>
+      <h3 style="margin:0">Active Holdings</h3>
+      <button class="btn" id="btn-refresh" data-busy="Fetching latest NAVs from Yahoo Finance (.NS)…">Refresh Live Market Prices</button>
     </div>
 
     {% if not holdings %}
@@ -283,7 +287,7 @@
     {% endif %}
     <hr>
 
-    <h3>➕ Log New Transaction</h3>
+    <h3>Log New Transaction</h3>
     {% if not etf_tickers %}
       <div class="alert warn">No ETF tickers available. Ensure ETF.xlsx loaded correctly.</div>
     {% else %}
@@ -306,18 +310,18 @@
         <label class="field"><span>Price per Unit (INR)</span><input type="number" id="tl-price" min="0.01" step="any" value="{{ boot.prices[etf_tickers[0]] }}" required></label>
         <div></div>
       </div>
-      <button type="submit" class="btn block" style="margin-top:14px">💾 Record Transaction</button>
+      <button type="submit" class="btn block" style="margin-top:14px">Record Transaction</button>
     </form>
     {% endif %}
     <hr>
 
-    <h3>🕒 Transaction History &amp; Management</h3>
+    <h3>Transaction History &amp; Management</h3>
     {% if not transactions %}
       <div class="alert info">No transactions logged yet.</div>
     {% else %}
       <div class="row-head" style="margin-bottom:8px">
         <span class="caption" id="tx-sel-count">No transactions selected</span>
-        <button class="btn danger small" id="btn-delete" disabled>🗑️ Delete Selected</button>
+        <button class="btn danger small" id="btn-delete" disabled>Delete Selected</button>
       </div>
       <div class="table-wrap scroll-500">
         <table class="data sortable-table" id="tx-table">
@@ -335,7 +339,7 @@
               <td class="num" data-v="{{ tx.quantity }}">{{ '{:,.0f}'.format(tx.quantity) }}</td>
               <td class="num" data-v="{{ tx.price }}">{{ tx.price|inr }}</td>
               <td class="num" data-v="{{ tx.total }}">{{ tx.total|inr }}</td>
-              <td><button class="btn secondary small tx-edit">✏️ Edit</button></td>
+              <td><button class="btn secondary small tx-edit">Edit</button></td>
             </tr>
           {% endfor %}
           </tbody>
@@ -346,7 +350,7 @@
 
   <!-- ═════════ TAB 5: PAPER TRADE (v2) ═════════ -->
   <section class="tab-panel" id="tab-paper" role="tabpanel">
-    <h2>🧪 Paper Trade — v2 (200-day trend)</h2>
+    <h2>Paper Trade — v2 (200-day trend)</h2>
     {% if paper.error %}
       <div class="alert error">❌ Could not build the paper-trade view: {{ paper.error }}</div>
     {% else %}
@@ -356,7 +360,7 @@
       {{ paper.slip_bps }} bps slippage per side, starting capital Rs {{ '{:,.0f}'.format(paper.start_capital) }}.</div>
 
     <div class="regime-row">
-      <div class="regime-card"><div class="regime-card-label">Mode</div><div class="regime-card-value">📄 PAPER</div></div>
+      <div class="regime-card"><div class="regime-card-label">Mode</div><div class="regime-card-value">PAPER</div></div>
       <div class="regime-card"><div class="regime-card-label">Paper variant</div><div class="regime-card-value">{{ paper.variant_name }}</div></div>
       <div class="regime-card"><div class="regime-card-label">Live variant</div><div class="regime-card-value">{{ paper.live_variant_name }}</div></div>
       <div class="regime-card"><div class="regime-card-label">Price data as of</div><div class="regime-card-value">{{ paper.asof }} ({{ paper.age }}d old)</div></div>
@@ -366,11 +370,11 @@
     {% if paper.stale %}<div class="alert error">⚠️ Price data is <b>{{ paper.age }} days old</b> (limit {{ paper.max_age }}). The paper portfolio will not update
       until ETF data is refreshed — the regime/holdings below are still computed on the latest data.</div>{% endif %}
 
-    <h3>🚦 Regime filter</h3>
+    <h3>Regime filter</h3>
     <div class="grid cols-2">
       <div>
         <p class="regime-title"><b>Paper (v2): Nifty 500 vs {{ paper.n_ma }}-day SMA</b>
-          <span class="regime-pill {{ 'bull' if paper.reg.paper.label == 'BULL' else 'bear' }}">{{ '🟢' if paper.reg.paper.label == 'BULL' else '🔴' }} {{ paper.reg.paper.label }}</span></p>
+          <span class="regime-pill {{ 'bull' if paper.reg.paper.label == 'BULL' else 'bear' }}">{{ paper.reg.paper.label }}</span></p>
         <div class="metrics three">
           <div class="metric"><div class="label">Nifty 500</div><div class="value">{{ paper.reg.paper.price|fmt('{:,.1f}') }}</div></div>
           <div class="metric"><div class="label">{{ paper.n_ma }}-day SMA</div><div class="value">{{ paper.reg.paper.ma|fmt('{:,.1f}') }}</div></div>
@@ -382,7 +386,7 @@
       </div>
       <div>
         <p class="regime-title"><b>Live: Nifty 500 vs {{ paper.reg.live.ma_label }}</b>
-          <span class="regime-pill {{ 'bull' if paper.reg.live.label == 'BULL' else 'bear' }}">{{ '🟢' if paper.reg.live.label == 'BULL' else '🔴' }} {{ paper.reg.live.label }}</span></p>
+          <span class="regime-pill {{ 'bull' if paper.reg.live.label == 'BULL' else 'bear' }}">{{ paper.reg.live.label }}</span></p>
         <div class="metrics three">
           <div class="metric"><div class="label">Nifty 500</div><div class="value">{{ paper.reg.live.price|fmt('{:,.1f}') }}</div></div>
           <div class="metric"><div class="label">{{ paper.reg.live.ma_label }}</div><div class="value">{{ paper.reg.live.ma|fmt('{:,.1f}') }}</div></div>
@@ -394,7 +398,7 @@
     {% if paper.reg.paper.label != paper.reg.live.label %}<div class="alert info">The two regimes <b>disagree</b> right now: paper = {{ paper.reg.paper.label }}, live = {{ paper.reg.live.label }}.</div>{% endif %}
     {% if paper.chart %}<div class="chart-box"><div id="paper-trend-chart" class="chart"></div></div>{% endif %}
 
-    <h3>📌 Recommended paper holdings (current data)</h3>
+    <h3>Recommended paper holdings (current data)</h3>
     {% if paper.rows %}
       <div class="table-wrap">
         <table class="data sortable-table"><thead><tr>
@@ -416,7 +420,7 @@
     {% else %}<div class="alert info">No holdings recommended: the paper portfolio is <b>100% cash</b>.</div>{% endif %}
     <p class="caption">{{ paper.n_cash }} of {{ paper.top_n }} slots in cash{% if paper.cash_reason %} — {{ paper.cash_reason }}{% endif %}</p>
 
-    <h3>⚡ Actions the paper portfolio would take on the next update</h3>
+    <h3>Actions the paper portfolio would take on the next update</h3>
     {% if paper.pending %}
       <div class="table-wrap"><table class="data"><thead><tr><th>Action</th><th>Ticker</th><th>ETF</th><th>Reason</th></tr></thead><tbody>
         {% for a in paper.pending %}<tr class="{{ 'row-sell' if a.action == 'SELL' else 'row-buy' }}">
@@ -430,7 +434,7 @@
     {% if not paper.has_history %}<p class="caption">No paper history yet — the first update initialises the portfolio with the positions above.</p>{% endif %}
 
     {% if paper.last %}
-      <h3>🗓️ Last executed update — {{ paper.last.week }}</h3>
+      <h3>Last executed update — {{ paper.last.week }}</h3>
       <p class="caption">Run {{ paper.last.run_date }} · data as of {{ paper.last.data_asof }} · regime {{ paper.last.regime }}
         (Nifty {{ paper.last.price|fmt('{:,.1f}') }} vs {{ paper.last.ma_window }}-SMA {{ paper.last.ma|fmt('{:,.1f}') }}) · equity Rs {{ '{:,.0f}'.format(paper.last.equity) }}</p>
       {% if paper.last.actions %}
@@ -442,7 +446,7 @@
       {% else %}<p class="caption">No positions held and no trades that week (100% cash).</p>{% endif %}
     {% endif %}
 
-    <h3>📈 Paper performance</h3>
+    <h3>Paper performance</h3>
     {% if paper.perf %}
       <div class="metrics five">
         <div class="metric"><div class="label">Equity (MTM)</div><div class="value">Rs {{ '{:,.0f}'.format(paper.perf.equity) }}</div></div>
@@ -466,7 +470,7 @@
       <div class="alert info">No performance yet — run the first paper update below (or <b>Run Weekly Rebalance</b>, which updates it too).</div>
     {% endif %}
 
-    <h3>⚖️ Live vs paper</h3>
+    <h3>Live vs paper</h3>
     <div class="grid cols-3">
       <div><b>In both</b><p>{{ paper.both|join(', ') or '—' }}</p></div>
       <div><b>Live only</b><p>{{ paper.live_only|join(', ') or '—' }}</p></div>
@@ -497,7 +501,7 @@
         testing — keep the rules fixed while paper trading.</p>
     </details>
 
-    <h3>🎛️ Switches &amp; controls</h3>
+    <h3>Switches &amp; controls</h3>
     <div class="grid cols-2">
       <div>
         <label class="switch"><input type="checkbox" id="paper-toggle" {{ 'checked' if paper.enabled }}>
@@ -508,9 +512,152 @@
       </div>
       <div>
         <label class="switch"><input type="checkbox" id="paper-force"> Allow stale price data (testing only)</label>
-        <button class="btn block" id="btn-paper-update" data-busy="Updating paper portfolio…" style="margin-top:8px">🔁 Update paper portfolio now</button>
+        <button class="btn block" id="btn-paper-update" data-busy="Updating paper portfolio…" style="margin-top:8px">Update paper portfolio now</button>
         <label class="switch" style="margin-top:12px"><input type="checkbox" id="paper-reset-ok"> I understand this archives the paper history and restarts from cash</label>
-        <button class="btn danger block" id="btn-paper-reset" disabled style="margin-top:6px">🗑️ Reset paper portfolio</button>
+        <button class="btn danger block" id="btn-paper-reset" disabled style="margin-top:6px">Reset paper portfolio</button>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- ═════════ TAB 6: ROTATION SLEEVE (paper) ═════════ -->
+  <section class="tab-panel" id="tab-rotation" role="tabpanel">
+    <h2>Rotation Sleeve — monthly dual momentum (paper)</h2>
+    {% if rotation.error %}
+      <div class="alert error">❌ Could not build the rotation-sleeve view: {{ rotation.error }}</div>
+    {% else %}
+    <div class="alert warn paper-banner"><b>PAPER TRADE ONLY — simulated, no real orders.</b> A separate monthly strategy on a few distinct
+      asset-class ETFs, run next to your live weekly strategy. It has its own state file (<code>rotation_paper_log.json</code>) and never reads or writes
+      your tradelog, positions ledger, <code>holdings_log.json</code> or <code>paper_trade_log.json</code>. Fills are modelled at the latest close with
+      {{ '%.0f'|format(rotation.cfg.SLIPPAGE_BPS) }} bps slippage plus Rs {{ '%.0f'|format(rotation.cfg.FEE_PER_LEG) }} per trade leg, starting capital
+      Rs {{ '{:,.0f}'.format(rotation.cfg.START_CAPITAL) }}. Cash and the cash hurdle use an <b>assumed</b> {{ '%.1f'|format(rotation.cfg.CASH_PA*100) }}% a year
+      (there is no usable cash history in the data).</div>
+
+    <div class="regime-row">
+      <div class="regime-card"><div class="regime-card-label">Mode</div><div class="regime-card-value">PAPER</div></div>
+      <div class="regime-card"><div class="regime-card-label">Signal date</div><div class="regime-card-value">{{ rotation.signal.signal_date if rotation.signal else 'n/a' }}</div></div>
+      <div class="regime-card"><div class="regime-card-label">Price data as of</div><div class="regime-card-value">{{ rotation.asof }} ({{ rotation.age }}d old)</div></div>
+      <div class="regime-card"><div class="regime-card-label">Last rebalance applied</div><div class="regime-card-value">{{ rotation.last_signal or 'never' }}</div></div>
+      <div class="regime-card"><div class="regime-card-label">Next signal</div><div class="regime-card-value">close of {{ rotation.next_signal }}</div></div>
+      <div class="regime-card"><div class="regime-card-label">Auto-update</div><div class="regime-card-value">{{ 'ON' if rotation.enabled else 'OFF' }}</div></div>
+    </div>
+    {% if rotation.stale %}<div class="alert error">⚠️ Price data is <b>{{ rotation.age }} days old</b> (limit {{ rotation.cfg.MAX_DATA_AGE_DAYS }}). The sleeve will not update
+      until ETF data is refreshed — the signal below is still computed on the latest data.</div>{% endif %}
+    {% if rotation.late and rotation.due %}<div class="alert warn">⚠️ The month-end signal is {{ rotation.lag }} days old. Fills would happen at today's close, not the day after the signal as in the backtest.
+      {% if not rotation.has_history %}For a faithful start, wait for the first update after the close of {{ rotation.next_signal }} (fresh signal), or start now from the {{ rotation.signal.signal_date }} signal.{% endif %}</div>{% endif %}
+    {% if rotation.n_ok < rotation.cfg.UNIVERSE|length %}<div class="alert warn">⚠️ Not every ETF could be scored:
+      {{ rotation.issues|join('; ') }}. An unscored ETF is never bought, and the slot stays in cash.</div>{% endif %}
+
+    <h3>This month's signal</h3>
+    {% if rotation.signal %}
+      <p class="caption">Data up to <b>{{ rotation.signal.signal_date }}</b> (last trading day of the most recent completed month). Rank the {{ rotation.cfg.UNIVERSE|length }} ETFs by
+        {{ rotation.lookback_m }}-month return, take the top {{ rotation.cfg.TOP_N }}, and hold each only if its return beats cash ({{ '%.1f'|format(rotation.hurdle) }}% over the window). Equal weight, {{ '%.0f'|format(100 / rotation.cfg.TOP_N) }}% per slot.</p>
+      <div class="table-wrap"><table class="data sortable-table"><thead><tr>
+        <th class="sortable">Rank</th><th class="sortable">Ticker</th><th class="sortable">ETF</th>
+        <th class="sortable num">{{ rotation.lookback_m }}M return</th><th>Beats cash</th><th>Top {{ rotation.cfg.TOP_N }}</th><th class="sortable num">Target weight</th><th>Status</th>
+      </tr></thead><tbody>
+      {% for r in rotation.rows %}
+        <tr class="{{ 'row-held' if r.weight > 0 else ('row-fail' if r.status != 'OK' else '') }}">
+          <td data-v="{{ r.rank if r.rank else 999 }}">{{ r.rank or '—' }}</td><td>{{ r.ticker }}</td><td>{{ r.name }}</td>
+          <td class="num {{ 'pos' if (r.ret or 0) > 0 else ('neg' if (r.ret or 0) < 0 else '') }}" data-v="{{ r.ret if r.ret is not none else '' }}">{{ r.ret|fmt('{:+.1f}%') }}</td>
+          <td>{% if r.status == 'OK' %}{{ 'yes' if r.abs_ok else 'no' }}{% else %}—{% endif %}</td>
+          <td>{{ '✓' if r.selected else '' }}</td>
+          <td class="num" data-v="{{ r.weight }}">{{ '%.0f'|format(r.weight) }}%</td>
+          <td>{{ r.status }}</td>
+        </tr>
+      {% endfor %}
+      </tbody></table></div>
+      <p class="caption">Target: {{ '%.0f'|format(100 - rotation.cash_target) }}% invested, <b>{{ '%.0f'|format(rotation.cash_target) }}% cash</b>.</p>
+    {% else %}<div class="alert info">Not enough price history for a month-end signal yet.</div>{% endif %}
+
+    <h3>Paper holdings</h3>
+    {% if rotation.positions %}
+      <div class="table-wrap"><table class="data sortable-table"><thead><tr>
+        <th class="sortable">Ticker</th><th class="sortable">ETF</th><th>Entry date</th><th class="num">Shares</th>
+        <th class="num">Entry Px</th><th class="num">Last Px</th><th class="num">Value (Rs)</th><th class="num">P&amp;L %</th>
+      </tr></thead><tbody>
+      {% for p in rotation.positions %}
+        <tr class="row-held"><td>{{ p.ticker }}</td><td>{{ p.name }}</td><td>{{ p.entry_date }}</td><td class="num">{{ p.shares|fmt('{:,.2f}') }}</td>
+          <td class="num">{{ p.entry_px|fmt }}</td><td class="num">{{ p.last_px|fmt }}</td><td class="num">{{ p.value|fmt('{:,.0f}') }}</td>
+          <td class="num {{ 'pos' if (p.pnl or 0) > 0 else ('neg' if (p.pnl or 0) < 0 else '') }}">{{ p.pnl|fmt('{:+.2f}%') }}</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% else %}<div class="alert info">No positions: the sleeve is <b>100% cash</b>{% if not rotation.has_history %} (nothing has been paper-traded yet){% endif %}.</div>{% endif %}
+    <p class="caption">Cash: Rs {{ '{:,.0f}'.format(rotation.cash) }}</p>
+
+    <h3>Actions the sleeve would take on the next update</h3>
+    {% if rotation.due and rotation.pending %}
+      <div class="table-wrap"><table class="data"><thead><tr><th>Action</th><th>Ticker</th><th>ETF</th><th class="num">Shares</th><th class="num">Price</th><th class="num">Value (Rs)</th><th>Reason</th></tr></thead><tbody>
+        {% for a in rotation.pending %}<tr class="{{ 'row-sell' if a.action == 'SELL' else 'row-buy' }}">
+          <td><span class="badge {{ 'sell' if a.action == 'SELL' else 'buy' }}">{{ a.action }}</span></td><td>{{ a.ticker }}</td><td>{{ a.name }}</td>
+          <td class="num">{{ a.shares|fmt('{:,.2f}') }}</td><td class="num">{{ a.price|fmt }}</td><td class="num">{{ a.value|fmt('{:,.0f}') }}</td><td>{{ a.reason }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    {% elif rotation.due %}
+      <div class="alert info">This month's signal ({{ rotation.signal.signal_date }}) is not applied yet; it asks for no trades (100% cash stays 100% cash).</div>
+    {% else %}
+      <div class="alert success">Nothing to do: this month's rebalance ({{ rotation.last_signal }} signal) is already applied. The next one is due after the close of {{ rotation.next_signal }}.</div>
+    {% endif %}
+    {% if not rotation.has_history %}<p class="caption">No history yet — the first update initialises the paper portfolio with the allocation above.</p>{% endif %}
+
+    <h3>Paper performance</h3>
+    {% if rotation.perf %}
+      <div class="metrics five">
+        <div class="metric"><div class="label">Equity (MTM)</div><div class="value">Rs {{ '{:,.0f}'.format(rotation.perf.equity) }}</div></div>
+        <div class="metric"><div class="label">Return since start</div><div class="value">{{ rotation.perf.ret|fmt('{:+.2f}%') }}</div></div>
+        <div class="metric"><div class="label">Max drawdown (at updates)</div><div class="value">{{ rotation.perf.max_dd|fmt('{:.2f}%') }}</div></div>
+        <div class="metric"><div class="label">Closed trades</div><div class="value">{{ rotation.perf.n_closed }}{% if rotation.perf.win_rate is not none %} ({{ '%.0f'|format(rotation.perf.win_rate) }}% win){% endif %}</div></div>
+        <div class="metric"><div class="label">Cash</div><div class="value">{{ '%.0f'|format(rotation.perf.cash_pct) }}%</div></div>
+      </div>
+      {% if rotation.perf.dates|length > 1 %}<div class="chart-box"><div id="rot-equity-chart" class="chart short"></div></div>
+      {% else %}<p class="caption">The equity chart appears once there are two or more update points.</p>{% endif %}
+      <p class="caption">Inception {{ rotation.perf.inception }}. The sleeve rebalances monthly, so a few data points mean nothing — judge it over many months and next to the live strategy.</p>
+      <details><summary>Paper trade log ({{ rotation.perf.trades|length }} fills)</summary>
+        <div class="table-wrap scroll-500"><table class="data"><thead><tr><th>Date</th><th>Type</th><th>Ticker</th><th>ETF</th>
+          <th class="num">Price</th><th class="num">Shares</th><th class="num">Value</th><th class="num">P&amp;L %</th><th>Reason</th></tr></thead><tbody>
+          {% for t in rotation.perf.trades %}<tr class="{{ 'row-sell' if t.type == 'SELL' else 'row-buy' }}"><td>{{ t.date }}</td><td>{{ t.type }}</td><td>{{ t.ticker }}</td><td>{{ t.name }}</td>
+            <td class="num">{{ t.price|fmt }}</td><td class="num">{{ t.shares|fmt }}</td><td class="num">{{ t.value|fmt('{:,.0f}') }}</td>
+            <td class="num">{{ t.pnl_pct|fmt('{:+.2f}%') }}</td><td>{{ t.reason }}</td></tr>{% endfor %}
+        </tbody></table></div>
+      </details>
+      <details><summary>Monthly rebalance history</summary>
+        <div class="table-wrap"><table class="data"><thead><tr><th>Signal date</th><th>Applied on</th><th class="num">Lag (days)</th><th>Holdings</th><th class="num">Cash %</th><th class="num">Equity (Rs)</th></tr></thead><tbody>
+          {% for h in rotation.history %}<tr><td>{{ h.signal_date }}</td><td>{{ h.exec_date }}</td><td class="num">{{ h.lag }}{{ ' ⚠️' if h.late }}</td><td>{{ h.holdings }}</td>
+            <td class="num">{{ '%.0f'|format(h.cash) }}</td><td class="num">{{ '{:,.0f}'.format(h.equity) }}</td></tr>{% endfor %}
+        </tbody></table></div>
+      </details>
+    {% else %}
+      <div class="alert info">No performance yet — press <b>Update rotation sleeve now</b> below (or <b>Run Weekly Rebalance</b>, which updates it when auto-update is on).</div>
+    {% endif %}
+
+    <details><summary>Rules and backtest evidence (read the caveats)</summary>
+      <div class="table-wrap"><table class="data"><thead><tr><th>Item</th><th>Rule</th></tr></thead><tbody>
+        <tr><td>Universe</td><td>{{ rotation.cfg.UNIVERSE|join(', ') }} — distinct asset classes, no near-duplicates</td></tr>
+        <tr><td>Relative momentum</td><td>rank by {{ rotation.lookback_m }}-month return, hold the top {{ rotation.cfg.TOP_N }}</td></tr>
+        <tr><td>Absolute momentum</td><td>a pick must beat cash ({{ '%.1f'|format(rotation.cfg.CASH_PA*100) }}% a year, assumed); otherwise its slot stays in cash</td></tr>
+        <tr><td>Sizing / cadence</td><td>equal weight, rebalanced once a month from the last completed month-end</td></tr>
+      </tbody></table></div>
+      <p><b>Backtest</b> (Oct 2017 → Sep 2026, <code>backtest/etf_backtest_dual_momentum.py</code>, these 7 ETFs, Rs20/leg): CAGR 14.5%, max drawdown −17.5%, volatility 13.8%;
+        at 20 bps one-way 13.6% / −17.6%. Equal-weighting the same ETFs gave 13.8% / −29.9%; the live strategy 14.4% / −21.3%. Monthly-return correlation with the live strategy is 0.70;
+        a 70/30 live/sleeve blend cut the monthly max drawdown from about −20% to −14% at similar CAGR.</p>
+      <p><b>Caveats:</b> the ETFs were chosen with hindsight, from what exists today; it is one 9-year in-sample test (about 25 variants were run across the dual-momentum study);
+        the gain over equal-weighting is mostly <i>lower drawdown</i> — excluding 2025 (a gold and Hang Seng year) the sleeve's CAGR was 12.1% against 12.3% for equal weight;
+        the cash yield is an assumption; taxes on switching, ETF liquidity and live execution are not modelled. Keep the rules fixed while paper trading.</p>
+    </details>
+
+    <h3>Switches &amp; controls</h3>
+    <div class="grid cols-2">
+      <div>
+        <label class="switch"><input type="checkbox" id="rot-toggle" {{ 'checked' if rotation.enabled }}>
+          Auto-update the sleeve on every <i>Run Weekly Rebalance</i></label>
+        <p class="caption">It only trades once per month (the first update after a month-end); other updates just mark the portfolio to market.
+          Rules and costs live in <code>rotation_sleeve_config.json</code> (optional; defaults are used if it does not exist). Command line:
+          <code>python etf_rotation_sleeve.py [--update]</code>.</p>
+      </div>
+      <div>
+        <label class="switch"><input type="checkbox" id="rot-force"> Allow stale price data (testing only)</label>
+        <button class="btn block" id="btn-rot-update" data-busy="Updating rotation sleeve…" style="margin-top:8px">Update rotation sleeve now</button>
+        <label class="switch" style="margin-top:12px"><input type="checkbox" id="rot-reset-ok"> I understand this archives the sleeve history and restarts from cash</label>
+        <button class="btn danger block" id="btn-rot-reset" disabled style="margin-top:6px">Reset rotation sleeve</button>
       </div>
     </div>
     {% endif %}
@@ -519,7 +666,7 @@
   <!-- Edit-transaction dialog -->
   <dialog id="edit-dialog">
     <form id="edit-form" method="dialog">
-      <h3 style="margin-top:0">✏️ Edit Transaction</h3>
+      <h3 style="margin-top:0">Edit Transaction</h3>
       <div class="grid" style="grid-template-columns: 1fr 1fr 1fr">
         <label class="field"><span>Ticker</span><input type="text" id="ed-ticker" list="etf-list" required></label>
         <div class="field"><span>Action</span>
@@ -535,7 +682,7 @@
         <label class="field"><span>Price (INR)</span><input type="number" id="ed-price" min="0.01" step="any" required></label>
       </div>
       <div class="grid cols-2" style="margin-top:16px">
-        <button type="submit" class="btn">💾 Save Changes</button>
+        <button type="submit" class="btn">Save Changes</button>
         <button type="button" class="btn secondary" id="ed-cancel">Cancel</button>
       </div>
     </form>

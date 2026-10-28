@@ -1,0 +1,89 @@
+﻿  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+[load] C:\Users\ameet\Documents\Github\dhan_datahq\base files\History_ETFs.xlsx
+       283 tickers (non-empty) | 2609 trading days (2016-09-12 -> 2026-09-10)
+[data] 283 ETFs | excluded sectors ['LIQUID']: 1 ETFs | 66 sector labels
+[window] first rebalance executes 2017-10-02 -> 2026-09-10
+
+====================================================================================================
+HEADLINE  (window 2017-10-02 -> 2026-09-10, 20 bps one-way + Rs20/leg)
+====================================================================================================
+                               CAGR   Vol  MaxDD  CAGR/vol  (CAGR-6%)/vol  AnnTurnover  AvgHeld  AvgMaxW
+EW-pool (sector1+screen)      0.077 0.114 -0.293     0.675          0.147        7.818   27.750    0.047
+MAA-broad                     0.112 0.185 -0.345     0.606          0.281       11.547   22.907    0.155
+MAA-sector                    0.075 0.163 -0.297     0.460          0.093       16.020   10.889    0.311
+MAA-sector-cap25              0.067 0.137 -0.284     0.485          0.047       14.182   10.889    0.198
+Live strategy (Sharpe+Clenow) 0.139 0.140 -0.217     0.991          0.563          NaN      NaN      NaN
+Nifty 500 buy&hold            0.116 0.162 -0.383     0.717          0.347          NaN      NaN      NaN
+
+====================================================================================================
+COST LADDER (CAGR / MaxDD) -- one-way bps on traded notional, plus Rs20 per leg
+====================================================================================================
+                                      0bps             10bps             20bps             30bps
+EW-pool (sector1+screen)    9.4% /  -26.5%    8.5% /  -27.9%    7.7% /  -29.3%    6.8% /  -30.8%
+MAA-broad                  13.8% /  -34.4%   12.5% /  -34.5%   11.2% /  -34.5%    9.9% /  -34.6%
+MAA-sector                 11.0% /  -24.7%    9.3% /  -27.2%    7.5% /  -29.7%    5.8% /  -32.2%
+MAA-sector-cap25            9.7% /  -24.9%    8.2% /  -26.5%    6.7% /  -28.4%    5.1% /  -30.9%
+Live strategy (Sharpe+Clenow)     13.9% /  -21.7%   (live strategy cost: Rs20/leg only)
+Nifty 500 buy&hold                11.6% /  -38.3%   (live strategy cost: Rs20/leg only)
+
+====================================================================================================
+SENSITIVITY on MAA-sector-cap25 (20 bps one-way)
+====================================================================================================
+                            CAGR   Vol  MaxDD  CAGR/vol  (CAGR-6%)/vol  AvgHeld
+MAA-sector-cap25 (default) 0.067 0.137 -0.284     0.485          0.047      NaN
+L=63 (3M)                  0.045 0.134 -0.307     0.333         -0.114   10.537
+L=126 (6M)                 0.059 0.137 -0.341     0.430         -0.008   11.167
+WR=25%                     0.042 0.105 -0.243     0.398         -0.173   12.435
+WR=100%                    0.093 0.154 -0.330     0.602          0.213    8.287
+WV=10%                     0.087 0.157 -0.304     0.556          0.173   10.296
+cap 15%                    0.068 0.115 -0.267     0.595          0.074   10.889
+cap 35%                    0.068 0.150 -0.298     0.450          0.051   10.889
+
+====================================================================================================
+CALENDAR-YEAR RETURNS (%), 20 bps
+====================================================================================================
+            EW-pool (sector1+screen)  MAA-broad  MAA-sector  MAA-sector-cap25  Live strategy (Sharpe+Clenow)  Nifty 500 buy&hold
+2017-12-31                       8.9        3.1         5.2               5.2                            6.4                10.4
+2018-12-31                      -9.7      -10.4        -9.4             -11.2                            2.1                -3.4
+2019-12-31                       0.3        7.7        -1.7              -6.1                            1.9                 7.7
+2020-12-31                       1.3       22.8         7.2               8.3                           22.6                16.7
+2021-12-31                      16.3       17.1        13.1              13.1                            6.6                30.2
+2022-12-31                       4.3        8.0        11.4               8.0                           19.3                 3.0
+2023-12-31                      27.2       13.5        17.5              20.5                           34.5                25.8
+2024-12-31                      16.5        1.7        13.6              13.6                           29.0                15.2
+2025-12-31                       7.4       46.7        13.3              12.0                            1.1                 6.7
+2026-12-31                       0.3       -1.4        -0.2              -0.1                            5.8                -3.9
+
+====================================================================================================
+DIVERSIFICATION vs LIVE STRATEGY (monthly returns; blends rebalanced monthly)
+====================================================================================================
+                     alt  corr  live weight  CAGR   Vol  MaxDD(monthly)  CAGR/vol
+EW-pool (sector1+screen) 0.692        1.000 0.137 0.143          -0.207     0.953
+EW-pool (sector1+screen) 0.692        0.800 0.124 0.134          -0.182     0.927
+EW-pool (sector1+screen) 0.692        0.500 0.104 0.125          -0.165     0.835
+               MAA-broad 0.618        1.000 0.137 0.143          -0.207     0.953
+               MAA-broad 0.618        0.800 0.133 0.138          -0.168     0.964
+               MAA-broad 0.618        0.500 0.126 0.139          -0.148     0.902
+              MAA-sector 0.722        1.000 0.137 0.143          -0.207     0.953
+              MAA-sector 0.722        0.800 0.124 0.138          -0.187     0.903
+              MAA-sector 0.722        0.500 0.105 0.136          -0.185     0.778
+        MAA-sector-cap25 0.813        1.000 0.137 0.143          -0.207     0.953
+        MAA-sector-cap25 0.813        0.800 0.122 0.137          -0.190     0.891
+        MAA-sector-cap25 0.813        0.500 0.100 0.131          -0.180     0.765
+
+AVERAGE ALLOCATION BY SECTOR -- MAA-sector-cap25 (share of book, avg over rebalances)
+  GOLD                    11.8%
+  NIFTY GSEC               6.4%
+  NIFTY 50                 5.3%
+  SENSEX                   4.8%
+  HANG SENG INDEX          4.6%
+  NIFTY BANK               4.5%
+  CPSE ETF                 4.4%
+  GSEC10 NSE INDEX         4.2%
+  NIFTY 100                3.6%
+  CONSUMPTION              3.4%
+  MIDCAP                   3.3%
+  SILVER                   2.5%
+  CASH                     7.6%
+
+Chart -> C:\Users\ameet\Documents\Github\code\momentum\ETFs\backtest\keller_maa_equity_curve.png
