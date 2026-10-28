@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% set active_tab = "full" %}
 {% block content %}
-<h2>📋 Full Universe Rankings</h2>
+<h2>Full Universe Rankings</h2>
 
 <form class="filter-row" hx-get="{{ url_for('rankings.full_table_partial') }}"
       hx-target="#full-table" hx-trigger="change" hx-swap="innerHTML">

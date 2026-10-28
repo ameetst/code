@@ -31,10 +31,10 @@ def load_stockdb() -> dict:
 def tier_color(pct: float) -> tuple[str, str, str]:
     """(fill, track-background, text) hex colors for a given %-positive value."""
     if pct >= 60:
-        return "#2E7D32", "#E8F5E9", "#2E7D32"
+        return "#067647", "#E8F5EE", "#067647"
     if pct >= 30:
-        return "#F57F17", "#FFF8E1", "#E65100"
-    return "#C62828", "#FFEBEE", "#C62828"
+        return "#B54708", "#FEF6EA", "#B54708"
+    return "#B42318", "#FDEDEB", "#B42318"
 
 
 def compute_cap_tier_dual(result_df: pd.DataFrame, prices_df: pd.DataFrame,

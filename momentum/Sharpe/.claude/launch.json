@@ -12,6 +12,15 @@
       "runtimeExecutable": "webapp/.venv/Scripts/python.exe",
       "runtimeArgs": ["-m", "waitress", "--host=127.0.0.1", "--port=8000", "webapp.app:app"],
       "port": 8000
+    },
+    {
+      "name": "etf-dashboard-flask",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-c",
+        "import os,sys; os.chdir(r'C:\\Users\\ameet\\Documents\\Github\\code\\momentum\\ETFs'); sys.path.insert(0, r'C:\\Users\\ameet\\Documents\\Github\\code\\momentum\\ETFs\\etf_flask'); import app; app.app.run(host='127.0.0.1', port=8512, debug=False, threaded=True)"
+      ],
+      "port": 8512
     }
   ]
 }

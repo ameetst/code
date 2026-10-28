@@ -5,9 +5,9 @@
  * components.html() blob: window.initEquityChart(containerId, records).
  */
 (function () {
-  const ACCENT = "#1F4E79";   // portfolio line — navy, same as headers/buttons
-  const BENCH = "#6B7A8D";    // benchmark line — muted slate, same as metric labels
-  const TEXT_MUTED = "#6B7A8D";
+  const ACCENT = "#4F46E5";   // portfolio line — indigo, same as the theme accent
+  const BENCH = "#98A1AE";    // benchmark line — faint grey
+  const TEXT_MUTED = "#5E6878";
 
   const NS = "http://www.w3.org/2000/svg";
   function el(tag, attrs) {
@@ -106,7 +106,7 @@
       // flag non-weighted days with a small dot on the portfolio line
       data.forEach((d, i) => {
         if (d.method !== "weighted") {
-          svg.appendChild(el("circle", { cx: xPos(i), cy: yPos(d.port), r: 2.75, fill: "#B8860B", class: "eq-fallback-dot" }));
+          svg.appendChild(el("circle", { cx: xPos(i), cy: yPos(d.port), r: 2.75, fill: "#B54708", class: "eq-fallback-dot" }));
         }
       });
 

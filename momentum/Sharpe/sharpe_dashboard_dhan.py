@@ -67,28 +67,10 @@ except Exception as _dhan_import_err:
 st.set_page_config(page_title="Sharpe Momentum", page_icon="📊",
                    layout="wide", initial_sidebar_state="expanded")
 
-st.markdown("""
-<style>
-.stApp { background-color: #FFFFFF; }
-div[data-testid="stMetric"] {
-    background: #F5F7FA; border: 1px solid #E8ECF1;
-    border-radius: 10px; padding: 14px 18px;
-}
-div[data-testid="stMetric"] label { color: #6B7A8D !important; font-size: 13px !important; }
-div[data-testid="stMetric"] div[data-testid="stMetricValue"] { color: #1A1A2E !important; }
-thead tr th { background-color: #1F4E79 !important; color: #FFFFFF !important; }
-.stButton > button {
-    background: #1F4E79; color: white; border: none;
-    border-radius: 8px; font-weight: 600; padding: 8px 24px;
-}
-.stButton > button:hover { background: #163D5E; }
-h2 { color: #1F4E79 !important; border-bottom: 2px solid #E8ECF1; padding-bottom: 8px; }
-.score-high  { background:#E8F5E9; color:#2E7D32; padding:6px 16px; border-radius:20px; font-weight:700; display:inline-block; }
-.score-mid   { background:#FFF8E1; color:#F57F17; padding:6px 16px; border-radius:20px; font-weight:700; display:inline-block; }
-.score-low   { background:#FFEBEE; color:#C62828; padding:6px 16px; border-radius:20px; font-weight:700; display:inline-block; }
-#MainMenu {visibility:hidden;} footer {visibility:hidden;}
-</style>
-""", unsafe_allow_html=True)
+from theme import inject_theme
+inject_theme()
+st.markdown("<style>#MainMenu {visibility:hidden;} footer {visibility:hidden;}</style>",
+            unsafe_allow_html=True)
 
 # ── TRADELOG & MTM HELPERS ───────────────────────────────────────────────────
 def safe_write_json(path, data):
@@ -744,11 +726,15 @@ def load_ledger(path):
 
 
 # ── TITLE ─────────────────────────────────────────────────────────────────────
-st.markdown(
-    "<h1 style='color:#1F4E79; margin-bottom:0;'>📊 Sharpe Momentum Strategy</h1>"
-    "<p style='color:#6B7A8D; margin-top:4px;'>Rank &rarr; Filter &rarr; Size &rarr; Allocate"
-    " &nbsp;|&nbsp; Dynamic Regime Engine</p>",
-    unsafe_allow_html=True)
+def _render_topbar(price_date=None):
+    _pill = f"<span class='dm-pill'>Prices · close of {price_date}</span>" if price_date else ""
+    return (
+        f"<div class='dm-topbar'><span class='dm-topbar-title'>Sharpe Momentum Strategy</span>{_pill}</div>"
+        "<div class='dm-subtitle'>Rank &rarr; Filter &rarr; Size &rarr; Allocate"
+        " &nbsp;|&nbsp; Dynamic Regime Engine</div>")
+
+_topbar_slot = st.empty()
+_topbar_slot.markdown(_render_topbar(), unsafe_allow_html=True)
 
 # ── LOAD DATA ─────────────────────────────────────────────────────────────────
 if not Path(input_path).exists():
@@ -758,6 +744,8 @@ try:
     prices_df, nifty_series, stock_tickers, dates = load_data(input_path)
 except Exception as e:
     st.error(f"Error loading data: {e}"); st.stop()
+
+_topbar_slot.markdown(_render_topbar(f"{dates[-1].day} {dates[-1]:%b}"), unsafe_allow_html=True)
 
 # Load volume data (optional — returns None if VOLUME sheet absent)
 try:
@@ -910,57 +898,36 @@ def _metric_card(label, value, delta=None):
     _delta_html = ""
     if delta:
         _neg = str(delta).strip().startswith("-")
-        _dc = "#C62828" if _neg else "#2E7D32"
+        _dc = "var(--neg)" if _neg else "var(--pos)"
         _arrow = "▼" if _neg else "▲"
         _delta_html = f" <span style='font-size:13px; font-weight:600; color:{_dc};'>{_arrow} {delta}</span>"
     return (
-        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
-        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>{label}</p>"
-        f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap;'>{value}{_delta_html}</p>"
+        f"<div class='dm-metric'>"
+        f"<p class='dm-label'>{label}</p>"
+        f"<p class='dm-value'>{value}{_delta_html}</p>"
         f"</div>")
 
 
 entry_label = "NEW BUYS ALLOWED" if allow_new else f"NO NEW BUYS (< {NEW_ENTRY_THRESHOLD})"
 
-c1, c2, c3, c4, c5 = st.columns([1.0, 0.85, 1.5, 0.85, 1.8])
-with c1:
-    st.markdown(
-        f"<div style='text-align:center; padding:10px;'>"
-        f"<span class='{badge_cls}' style='font-size:17px;'>"
-        f"{emoji} Score: {regime_score:.2f}</span></div>",
-        unsafe_allow_html=True)
-with c2:
-    st.markdown(
-        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
-        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Dynamic N</p>"
-        f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap;'>{dynamic_n} stocks</p>"
-        f"</div>",
-        unsafe_allow_html=True)
-with c3:
-    st.markdown(
-        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
-        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Entry Gate</p>"
-        f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap;'>{entry_label}</p>"
-        f"</div>",
-        unsafe_allow_html=True)
-with c4:
-    eligible_count = (result['PCT_FROM_52H'] >= -25).sum()
-    st.markdown(
-        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
-        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Eligible (52H)</p>"
-        f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap;'>{eligible_count}</p>"
-        f"</div>",
-        unsafe_allow_html=True)
-with c5:
-    st.markdown(
-        f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
-        f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Data Range</p>"
-        f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap;'>{dates[0].strftime('%d-%b-%y')} to {dates[-1].strftime('%d-%b-%y')}</p>"
-        f"</div>",
-        unsafe_allow_html=True)
+eligible_count = (result['PCT_FROM_52H'] >= -25).sum()
+st.markdown(
+    f"<div class='dm-strip'>"
+    f"<div class='dm-strip-item'><p class='dm-label'>Regime</p>"
+    f"<span><span class='{badge_cls}'>Score: {regime_score:.2f}</span></span></div>"
+    f"<div class='dm-strip-item'><p class='dm-label'>Dynamic N</p>"
+    f"<p class='dm-value'>{dynamic_n} stocks</p></div>"
+    f"<div class='dm-strip-item'><p class='dm-label'>Entry Gate</p>"
+    f"<p class='dm-value'>{entry_label}</p></div>"
+    f"<div class='dm-strip-item'><p class='dm-label'>Eligible (52H)</p>"
+    f"<p class='dm-value'>{eligible_count}</p></div>"
+    f"<div class='dm-strip-item'><p class='dm-label'>Data Range</p>"
+    f"<p class='dm-value'>{dates[0].strftime('%d-%b-%y')} to {dates[-1].strftime('%d-%b-%y')}</p></div>"
+    f"</div>",
+    unsafe_allow_html=True)
 
 # Signal breakdown + trend
-with st.expander("📡 Regime Score Breakdown", expanded=False):
+with st.expander("Regime Score Breakdown", expanded=False):
     live_vix, vix_source = get_live_vix()
     vix_str = f"{live_vix:.2f}" if live_vix else "N/A"
     vix_help = f"Source: {vix_source}" if vix_source else "Live VIX unavailable (both Dhan and Yahoo Finance failed)"
@@ -980,7 +947,7 @@ with st.expander("📡 Regime Score Breakdown", expanded=False):
     st.progress(regime_score, text=f"Composite Regime Score: {regime_score:.3f}")
 
     st.markdown("---")
-    st.markdown("**📈 Regime Score Trend**")
+    st.markdown("**Regime Score Trend**")
     if len(regime_history) >= 2:
         hist_df = pd.DataFrame(regime_history)
         hist_df["date"] = pd.to_datetime(hist_df["date"]).dt.normalize()
@@ -997,11 +964,15 @@ with st.expander("📡 Regime Score Breakdown", expanded=False):
             .encode(
                 x=alt.X("date:T", title=None, axis=alt.Axis(format="%b %d", labelAngle=0)),
                 y=alt.Y("Score:Q", title=None),
-                color=alt.Color("Series:N", title=None, legend=alt.Legend(orient="right")),
+                color=alt.Color("Series:N", title=None, legend=alt.Legend(orient="right"),
+                                scale=alt.Scale(domain=["Composite", "Breadth", "Momentum", "Entry Threshold"],
+                                                range=["#4F46E5", "#067647", "#B54708", "#B42318"])),
                 tooltip=[alt.Tooltip("date:T", title="Date", format="%b %d, %Y"),
                          alt.Tooltip("Series:N"),
                          alt.Tooltip("Score:Q", format=".3f")])
-            .properties(height=260))
+            .properties(height=260)
+            .configure_view(strokeWidth=0)
+            .configure_axis(gridColor="#E3E6EB", domainColor="#D0D5DD", labelColor="#5E6878"))
         st.altair_chart(trend_chart, use_container_width=True)
         st.caption(
             f"📊 {len(regime_history)} day(s) recorded  |  "
@@ -1011,30 +982,30 @@ with st.expander("📡 Regime Score Breakdown", expanded=False):
         st.caption("📅 Trend chart appears after 2+ days of recorded data. Come back tomorrow!")
 
 # Cap Tier breakdown
-with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
+with st.expander("Market Cap Momentum Breakdown", expanded=False):
 
 
     def _tier_color(pct):
-        if pct >= 60:  return "#2E7D32", "#E8F5E9", "#2E7D32"
-        elif pct >= 30: return "#F57F17", "#FFF8E1", "#E65100"
-        else:           return "#C62828", "#FFEBEE", "#C62828"
+        if pct >= 60:  return "#067647", "#E8F5EE", "#067647"
+        elif pct >= 30: return "#B54708", "#FEF6EA", "#B54708"
+        else:           return "#B42318", "#FDEDEB", "#B42318"
 
     def _delta_color(d):
-        if d > 0:  return "#2E7D32"   # green  — Sharpe sees more positive
-        if d < 0:  return "#C62828"   # red    — Sharpe sees less positive
-        return "#9E9E9E"              # grey   — identical
+        if d > 0:  return "#067647"   # green  — Sharpe sees more positive
+        if d < 0:  return "#B42318"   # red    — Sharpe sees less positive
+        return "#98A1AE"              # grey   — identical
 
     def _render_dual_bars(dual_df):
         """Render side-by-side bars: 63-day return vs 3M Sharpe per cap tier."""
         hdr1, hdr2 = st.columns(2)
         hdr1.markdown(
-            "<div style='font-weight:700; font-size:13px; color:#1A1A2E; "
+            "<div style='font-weight:700; font-size:13px; color:#0E1726; "
             "padding:4px 0 4px 14px;'>📈 63-Day Raw Return &gt; 0%</div>",
             unsafe_allow_html=True)
         hdr2.markdown(
-            "<div style='font-weight:700; font-size:13px; color:#1F4E79; "
+            "<div style='font-weight:700; font-size:13px; color:#4F46E5; "
             "padding:4px 0 4px 14px;'>⚡ 3M Sharpe Score &gt; 0 &nbsp;"
-            "<span style='font-size:11px; color:#9E9E9E;'>(risk-adjusted)</span></div>",
+            "<span style='font-size:11px; color:#98A1AE;'>(risk-adjusted)</span></div>",
             unsafe_allow_html=True)
 
         for _, row in dual_df.iterrows():
@@ -1054,11 +1025,11 @@ with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown(f"""
-                <div style='background:#F8F9FA; border:1px solid #E8ECF1; border-radius:8px;
+                <div style='background:#F4F5F8; border:1px solid #E3E6EB; border-radius:8px;
                             padding:8px 14px; display:flex; align-items:center; gap:12px; margin-bottom:4px;'>
                     <div style='min-width:100px;'>
-                        <div style='font-weight:600; font-size:13px; color:#1A1A2E;'>{tier}</div>
-                        <div style='font-size:11px; color:#9E9E9E; margin-top:1px;'>{ret_pos} of {total}</div>
+                        <div style='font-weight:600; font-size:13px; color:#0E1726;'>{tier}</div>
+                        <div style='font-size:11px; color:#98A1AE; margin-top:1px;'>{ret_pos} of {total}</div>
                     </div>
                     <div style='flex:1; background:{rt}; border-radius:999px; height:8px; overflow:hidden;'>
                         <div style='width:{min(100,ret_pct):.1f}%; height:100%; background:{rf};
@@ -1069,11 +1040,11 @@ with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
                 </div>""", unsafe_allow_html=True)
             with col2:
                 st.markdown(f"""
-                <div style='background:#F8F9FA; border:1px solid #E8ECF1; border-radius:8px;
+                <div style='background:#F4F5F8; border:1px solid #E3E6EB; border-radius:8px;
                             padding:8px 14px; display:flex; align-items:center; gap:12px; margin-bottom:4px;'>
                     <div style='min-width:100px;'>
-                        <div style='font-weight:600; font-size:13px; color:#1A1A2E;'>{tier}</div>
-                        <div style='font-size:11px; color:#9E9E9E; margin-top:1px;'>
+                        <div style='font-weight:600; font-size:13px; color:#0E1726;'>{tier}</div>
+                        <div style='font-size:11px; color:#98A1AE; margin-top:1px;'>
                             {sharpe_pos} of {total} &nbsp;
                             <span style='color:{dcol}; font-weight:600;'>({delta_str})</span>
                         </div>
@@ -1108,7 +1079,7 @@ with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
 
     # ── Optional: Yahoo Finance market cap fetch (slow) ────────────────────────
     st.markdown("---")
-    with st.expander("📡 Yahoo Finance Market Cap View (slow, ~15s)", expanded=False):
+    with st.expander("Yahoo Finance Market Cap View (slow, ~15s)", expanded=False):
         st.markdown("Fetches live market cap from Yahoo Finance for classification. Cached for 24h.")
         if "cap_tier_summary" in st.session_state:
             def _render_tier_bars(tier_summary):
@@ -1120,11 +1091,11 @@ with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
                     fill, track, txt = _tier_color(pct)
                     bar_w    = min(100, max(0, pct))
                     cards_html += f"""
-                    <div style='background:#F8F9FA; border:1px solid #E8ECF1; border-radius:8px;
+                    <div style='background:#F4F5F8; border:1px solid #E3E6EB; border-radius:8px;
                                 padding:8px 14px; display:flex; align-items:center; gap:12px;'>
                         <div style='min-width:160px;'>
-                            <div style='font-weight:600; font-size:13px; color:#1A1A2E;'>{tier}</div>
-                            <div style='font-size:11px; color:#9E9E9E; margin-top:1px;'>
+                            <div style='font-weight:600; font-size:13px; color:#0E1726;'>{tier}</div>
+                            <div style='font-size:11px; color:#98A1AE; margin-top:1px;'>
                                 {positive} of {total} stocks
                             </div>
                         </div>
@@ -1159,10 +1130,10 @@ st.divider()
 SHOW_CASH_LEDGER_TAB = True  # toggle to re-enable the Cash Ledger tab
 
 _actions_dot = "🔴" if n_exits > 0 else "🟢"
-_tab_labels = [f"📊 Top {MAX_N} Rankings", f"{_actions_dot} Actions Monitor", "📝 Tradelog & MTM"]
+_tab_labels = [f"Top {MAX_N} Rankings", f"{_actions_dot} Actions Monitor", "Tradelog & MTM"]
 if SHOW_CASH_LEDGER_TAB:
-    _tab_labels.append("💰 Cash Ledger")
-_tab_labels += ["📋 Full Rankings", "⚙️ Configuration", "📈 Performance Tracker"]
+    _tab_labels.append("Cash Ledger")
+_tab_labels += ["Full Rankings", "Configuration", "Performance Tracker"]
 
 _tabs = iter(st.tabs(_tab_labels))
 tab_top, tab_exits, tab_tradelog = next(_tabs), next(_tabs), next(_tabs)
@@ -1173,9 +1144,10 @@ tab_calcs, tab_config, tab_perf = next(_tabs), next(_tabs), next(_tabs)
 # ── TAB 1: TOP N RANKINGS ─────────────────────────────────────────────────────
 with tab_top:
     st.markdown(
-        f"## 📊 Top {MAX_N} Rankings  —  "
-        f"Regime Score: **{regime_score:.2f}**  |  "
-        f"Dynamic N (Strategy): **{dynamic_n}**")
+        f"## Top {MAX_N} Rankings <span class='dm-h-meta'>— "
+        f"Regime Score: {regime_score:.2f} | "
+        f"Dynamic N (Strategy): {dynamic_n}</span>",
+        unsafe_allow_html=True)
 
     DISPLAY_N = MAX_N
     held_tickers = set(active_holdings.keys())
@@ -1246,7 +1218,7 @@ with tab_top:
 
     def style_top25(row):
         if row["Ticker"] in held_tickers:
-            return ["background-color:#FFFDE7;"] * len(row)
+            return ["background-color:#FEF6EA;"] * len(row)
         return ["background-color:#FFFFFF;"] * len(row)
 
     st.dataframe(
@@ -1261,7 +1233,7 @@ with tab_top:
         height=min(950, (DISPLAY_N + 2) * 36))
 
 
-    st.caption("🟡 Yellow rows = currently held positions  |  White rows = not yet in portfolio")
+    st.caption("Tinted rows = currently held positions  |  White rows = not yet in portfolio")
     if _hidden:
         _hid_txt = "; ".join(
             f"{t}{' [held]' if t in held_tickers else ''} ({r})" for t, r in _hidden[:10])
@@ -1306,8 +1278,8 @@ with tab_exits:
             st.markdown("#### Exits Required")
 
             def style_exit_rows(row):
-                if "SELL IMMEDIATELY" in str(row["Action"]): return ["background-color:#FFEBEE; font-weight:bold;"] * len(row)
-                if "SELL" in str(row["Action"]):             return ["background-color:#FFF3E0;"] * len(row)
+                if "SELL IMMEDIATELY" in str(row["Action"]): return ["background-color:#FDEDEB; font-weight:bold;"] * len(row)
+                if "SELL" in str(row["Action"]):             return ["background-color:#FEF6EA;"] * len(row)
                 return [""] * len(row)
 
             st.dataframe(
@@ -1441,7 +1413,7 @@ with tab_exits:
                         entry_df = pd.DataFrame(entry_rows)
 
                         def style_entry_rows(row):
-                            return ["background-color:#E8F5E9;"] * len(row)
+                            return ["background-color:#E8F5EE;"] * len(row)
 
                         st.dataframe(
                             entry_df.style.apply(style_entry_rows, axis=1).format(
@@ -1461,13 +1433,13 @@ with tab_exits:
 
         # ── Section 4: Full holdings summary ──────────────────────────────────
         st.divider()
-        st.markdown("#### 📋 All Positions")
+        st.markdown("#### All Positions")
 
         def style_all_positions(row):
-            if "SELL IMMEDIATELY" in str(row["Action"]): return ["background-color:#FFEBEE; font-weight:bold;"] * len(row)
-            if "SELL" in str(row["Action"]):             return ["background-color:#FFF3E0;"] * len(row)
-            if "Locked"  in str(row["Action"]):          return ["background-color:#FFF8E1;"] * len(row)
-            return ["background-color:#E8F5E9;"] * len(row)
+            if "SELL IMMEDIATELY" in str(row["Action"]): return ["background-color:#FDEDEB; font-weight:bold;"] * len(row)
+            if "SELL" in str(row["Action"]):             return ["background-color:#FEF6EA;"] * len(row)
+            if "Locked"  in str(row["Action"]):          return ["background-color:#EFF7FC;"] * len(row)
+            return ["background-color:#E8F5EE;"] * len(row)
 
         st.dataframe(exit_df.style.apply(style_all_positions, axis=1).format(
                          {"Rank": "{:.0f}", "Unrealised P&L": "Rs {:,.0f}"}, na_rep="—"),
@@ -1483,7 +1455,7 @@ with tab_exits:
 
 # ── TAB 3: TRADELOG & MTM ─────────────────────────────────────────────────────
 with tab_tradelog:
-    st.markdown("## 📝 Tradelog & Real-time MTM")
+    st.markdown("## Tradelog & Real-time MTM")
 
     # 1. Metric Cards
     total_invested_val = sum(h["Cost Value"] for h in holdings_metrics)
@@ -1512,9 +1484,9 @@ with tab_tradelog:
     # 2. Active Holdings Table
     hc1, hc2 = st.columns([0.7, 0.3])
     with hc1: 
-        st.markdown("### 💼 Active Holdings")
+        st.markdown("### Active Holdings")
     with hc2:
-        if st.button("🔄 Refresh Live Market Prices", use_container_width=True):
+        if st.button("Refresh Live Market Prices", use_container_width=True):
             live_prices = {}
             price_source = None
             held_tickers_list = [h["Ticker"] for h in holdings_metrics]
@@ -1578,9 +1550,9 @@ with tab_tradelog:
         def style_holdings(row):
             pnl = row["Unrealized PnL"]
             if pnl > 0:
-                return ["background-color:#E8F5E9;"] * len(row)
+                return ["background-color:#E8F5EE;"] * len(row)
             elif pnl < 0:
-                return ["background-color:#FFEBEE;"] * len(row)
+                return ["background-color:#FDEDEB;"] * len(row)
             return [""] * len(row)
 
         event = st.dataframe(
@@ -1618,7 +1590,7 @@ with tab_tradelog:
     st.divider()
 
     # 3. Log Trade Form & Transaction History
-    st.markdown("### ➕ Log New Transaction")
+    st.markdown("### Log New Transaction")
     
     # Deferred reset: apply pending resets BEFORE widgets are instantiated
     if st.session_state.get("_pending_trade_reset"):
@@ -1660,7 +1632,7 @@ with tab_tradelog:
         with col_p:
             trade_price = st.number_input("Price per Share (INR)", min_value=0.01, step=0.01, value=float(st.session_state.tradelog_price))
             
-        submit_trade = st.form_submit_button("💾 Record Transaction", use_container_width=True)
+        submit_trade = st.form_submit_button("Record Transaction", use_container_width=True)
         
         if submit_trade:
             # Update the ticker in session state from the form selection
@@ -1708,13 +1680,13 @@ with tab_tradelog:
     # 4. Chronological Transaction Table & Deletion
     th_col1, th_col2 = st.columns([3, 1])
     with th_col1:
-        st.markdown("### 🕒 Transaction History & Management")
+        st.markdown("### Transaction History & Management")
     if not tradelog:
         st.info("No transactions logged yet.")
     else:
         with th_col2:
             st.download_button(
-                "📥 Download Excel", export_tradelog_to_xlsx_bytes(tradelog),
+                "Download Excel", export_tradelog_to_xlsx_bytes(tradelog),
                 file_name=f"{universe}_tradelog.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         display_tx = []
@@ -1732,9 +1704,9 @@ with tab_tradelog:
         
         def style_txs(row):
             if row["Action"] == "BUY":
-                return ["background-color:#E8F5E9;"] * len(row)
+                return ["background-color:#E8F5EE;"] * len(row)
             elif row["Action"] == "SELL":
-                return ["background-color:#FFEBEE;"] * len(row)
+                return ["background-color:#FDEDEB;"] * len(row)
             return [""] * len(row)
             
         st.dataframe(
@@ -1743,7 +1715,7 @@ with tab_tradelog:
             ),
             use_container_width=True, hide_index=True
         )
-        st.markdown("#### ✏️ Edit Existing Transaction")
+        st.markdown("#### Edit Existing Transaction")
         tx_options_edit = [
             f"{tx['date']} | {tx['action']} {tx['quantity']} {tx['ticker']} @ Rs{tx['price']} (ID: {tx['id']})"
             for tx in reversed(tradelog)
@@ -1783,7 +1755,7 @@ with tab_tradelog:
                     with col_edit_pr:
                         edit_price = st.number_input("Price (INR)", min_value=0.01, step=0.01, value=float(target_tx["price"]))
                         
-                    submit_edit = st.form_submit_button("💾 Save Changes", use_container_width=True)
+                    submit_edit = st.form_submit_button("Save Changes", use_container_width=True)
                     
                     if submit_edit:
                         idx_to_update = next((i for i, tx in enumerate(tradelog) if tx["id"] == edit_id), None)
@@ -1814,7 +1786,7 @@ with tab_tradelog:
 
         st.divider()
         
-        st.markdown("#### 🗑️ Delete Transactions")
+        st.markdown("#### Delete Transactions")
         tx_options = [
             f"{tx['date']} | {tx['action']} {tx['quantity']} {tx['ticker']} @ Rs{tx['price']} (ID: {tx['id']})"
             for tx in reversed(tradelog)
@@ -1826,7 +1798,7 @@ with tab_tradelog:
         )
         
         if selected_to_delete:
-            if st.button("🗑️ Delete Selected", type="secondary", use_container_width=True):
+            if st.button("Delete Selected", type="secondary", use_container_width=True):
                 ids_to_delete = []
                 for choice in selected_to_delete:
                     parts = choice.split("(ID: ")
@@ -1854,7 +1826,7 @@ with tab_tradelog:
 # ── TAB: CASH LEDGER ──────────────────────────────────────────────────────────
 if SHOW_CASH_LEDGER_TAB:
     with tab_cash:
-        st.markdown("## 💰 Cash Ledger")
+        st.markdown("## Cash Ledger")
         st.caption("Track every deposit, withdrawal, dividend, interest credit and fee moving "
                    "into or out of the portfolio — independent of stock trades.")
 
@@ -1874,7 +1846,7 @@ if SHOW_CASH_LEDGER_TAB:
         st.divider()
 
         # 3. Log New Entry
-        st.markdown("### ➕ Log New Cash Entry")
+        st.markdown("### Log New Cash Entry")
 
         if st.session_state.get("_pending_cash_reset"):
             st.session_state.cash_amount = 0.0
@@ -1894,7 +1866,7 @@ if SHOW_CASH_LEDGER_TAB:
             cash_note = st.text_input("Note (optional)", key="cash_note",
                                        placeholder="e.g. Salary top-up, broker payout, AMC fee")
 
-            submit_cash = st.form_submit_button("💾 Record Cash Entry", use_container_width=True)
+            submit_cash = st.form_submit_button("Record Cash Entry", use_container_width=True)
 
             if submit_cash:
                 if cash_amount <= 0:
@@ -1923,7 +1895,7 @@ if SHOW_CASH_LEDGER_TAB:
         st.divider()
 
         # 4. Transaction History, Edit & Delete
-        st.markdown("### 🕒 Cash Transaction History")
+        st.markdown("### Cash Transaction History")
         if not cash_ledger:
             st.info("No cash transactions logged yet.")
         else:
@@ -1940,8 +1912,8 @@ if SHOW_CASH_LEDGER_TAB:
 
             def style_cash(row):
                 if row["Type"] in CASH_INFLOW_TYPES:
-                    return ["background-color:#E8F5E9;"] * len(row)
-                return ["background-color:#FFEBEE;"] * len(row)
+                    return ["background-color:#E8F5EE;"] * len(row)
+                return ["background-color:#FDEDEB;"] * len(row)
 
             st.dataframe(
                 display_cash_df.style.apply(style_cash, axis=1).format(
@@ -1950,7 +1922,7 @@ if SHOW_CASH_LEDGER_TAB:
                 use_container_width=True, hide_index=True
             )
 
-            st.markdown("#### ✏️ Edit Existing Entry")
+            st.markdown("#### Edit Existing Entry")
             cash_options_edit = [
                 f"{e['date']} | {e['type']} Rs{e['amount']:,.2f} (ID: {e['id']})"
                 for e in reversed(cash_ledger)
@@ -1988,7 +1960,7 @@ if SHOW_CASH_LEDGER_TAB:
 
                         edit_cash_note = st.text_input("Note", value=target_cash.get("note", ""))
 
-                        submit_cash_edit = st.form_submit_button("💾 Save Changes", use_container_width=True)
+                        submit_cash_edit = st.form_submit_button("Save Changes", use_container_width=True)
 
                         if submit_cash_edit:
                             idx_to_update = next((i for i, e in enumerate(cash_ledger) if e["id"] == edit_cash_id), None)
@@ -2005,7 +1977,7 @@ if SHOW_CASH_LEDGER_TAB:
 
             st.divider()
 
-            st.markdown("#### 🗑️ Delete Entries")
+            st.markdown("#### Delete Entries")
             cash_options_delete = [
                 f"{e['date']} | {e['type']} Rs{e['amount']:,.2f} (ID: {e['id']})"
                 for e in reversed(cash_ledger)
@@ -2017,7 +1989,7 @@ if SHOW_CASH_LEDGER_TAB:
             )
 
             if selected_cash_to_delete:
-                if st.button("🗑️ Delete Selected Cash Entries", type="secondary", use_container_width=True):
+                if st.button("Delete Selected Cash Entries", type="secondary", use_container_width=True):
                     cash_ids_to_delete = []
                     for choice in selected_cash_to_delete:
                         parts = choice.split("(ID: ")
@@ -2031,7 +2003,7 @@ if SHOW_CASH_LEDGER_TAB:
 
 # ── TAB 4: FULL RANKINGS ──────────────────────────────────────────────────────
 with tab_calcs:
-    st.markdown("## 📋 Full Universe Rankings")
+    st.markdown("## Full Universe Rankings")
 
     fc1, fc2, fc3 = st.columns(3)
     with fc1:
@@ -2078,14 +2050,14 @@ with tab_calcs:
 
     def style_calcs(row):
         if row.get("Blocked"):
-            return ["background-color:#EEEEEE; color:#9E9E9E;"] * len(row)
+            return ["background-color:#F4F5F8; color:#98A1AE;"] * len(row)
         if pd.notna(row.get("PCT_FROM_52H")) and row["PCT_FROM_52H"] < -25:
-            return ["background-color:#FFF8F8; color:#B0B0B0;"] * len(row)
+            return ["background-color:#FFFFFF; color:#98A1AE;"] * len(row)
         if pd.notna(row.get("REL_52H_DD")) and row["REL_52H_DD"] < rel_dd_breach_threshold:
-            return ["background-color:#FCE8E6;"] * len(row)
+            return ["background-color:#FDEDEB;"] * len(row)
         try:
             if pd.notna(row.get("RANK")) and int(row["RANK"]) <= dynamic_n:
-                return ["background-color:#E8F5E9;"] * len(row)
+                return ["background-color:#E8F5EE;"] * len(row)
         except (ValueError, TypeError): pass
         return [""] * len(row)
 
@@ -2113,13 +2085,13 @@ with tab_calcs:
 
 # ── TAB 6: CONFIGURATION ─────────────────────────────────────────────────────
 with tab_config:
-    st.markdown("## ⚙️ Configuration")
+    st.markdown("## Configuration")
 
-    st.markdown("#### 📁 Data Source")
+    st.markdown("#### Data Source")
     st.selectbox("Input File", _cfg_files, key="cfg_file")
 
     st.divider()
-    st.markdown("#### 💰 Capital & Sizing")
+    st.markdown("#### Capital & Sizing")
     st.number_input("Portfolio Capital (INR)", min_value=100_000,
                     step=100_000, format="%d", key="cfg_capital")
 
@@ -2138,7 +2110,7 @@ with tab_config:
                "dashboard's position sizing and Sharpe.py.")
 
     st.divider()
-    st.markdown("#### 📊 MDTV Liquidity Filter")
+    st.markdown("#### MDTV Liquidity Filter")
     st.number_input("Min Median Daily Turnover (₹ Cr)",
                     min_value=0.0, max_value=10.0, step=0.25, format="%.2f",
                     key="cfg_min_turnover",
@@ -2157,7 +2129,7 @@ with tab_config:
                    "Run `update_stock_price.py` with latest version to add volume data.")
 
     st.divider()
-    st.markdown("#### 💵 Min CMP Filter")
+    st.markdown("#### Min CMP Filter")
     st.number_input("Min Current Market Price (₹)",
                     min_value=0, max_value=1000, step=1, format="%d",
                     key="cfg_min_cmp",
@@ -2169,7 +2141,7 @@ with tab_config:
         st.caption(f"ℹ️ {_n_cmp_pass}/{len(result)} stocks currently pass (price >= ₹{min_cmp:.0f})")
 
     st.divider()
-    st.markdown("#### 🏢 Min Market Cap Filter")
+    st.markdown("#### Min Market Cap Filter")
     st.number_input("Min Market Cap (₹ Cr)",
                     min_value=0, max_value=2_000_000, step=50, format="%d",
                     key="cfg_min_market_cap",
@@ -2183,7 +2155,7 @@ with tab_config:
                    f"(market cap >= ₹{min_market_cap:.0f} Cr)")
 
     st.divider()
-    st.markdown("#### 🚦 Universe Eligibility Filters")
+    st.markdown("#### Universe Eligibility Filters")
 
     st.toggle("Restrict to Series EQ only",
               key="cfg_eq_series_filter",
@@ -2216,7 +2188,7 @@ with tab_config:
                 pass
 
     st.divider()
-    st.markdown("#### 📉 Relative 52H Drawdown Exit")
+    st.markdown("#### Relative 52H Drawdown Exit")
     st.caption("Additive Spread Approach: Rel_52H_DD = Stock's % distance from its 52W high "
                "minus the benchmark's % distance from its 52W high. A held stock whose "
                "Rel_52H_DD falls below the threshold below is flagged REL_DD_BREACH in the "
@@ -2229,7 +2201,7 @@ with tab_config:
              "distance minus benchmark's) falls below this value. Default: -20.")
 
     st.divider()
-    st.markdown("#### 🚪 Rank-Drop Exit")
+    st.markdown("#### Rank-Drop Exit")
     st.number_input(
         "Rank Buffer (exit rank threshold)",
         min_value=1, max_value=5000, step=5, format="%d",
@@ -2239,19 +2211,19 @@ with tab_config:
              "with Max Positions. Shared with Sharpe.py once saved. Default: 50.")
 
     st.divider()
-    st.markdown("#### 📋 Strategy Parameters (Read-only)")
+    st.markdown("#### Strategy Parameters (Read-only)")
 
     for k, v in params.items():
         st.markdown(f"**{k}:** `{v}`")
 
     st.divider()
-    st.markdown("#### 💾 Persist Configuration")
+    st.markdown("#### Persist Configuration")
     st.caption("Save current settings to `dashboard_config.json` so they persist across "
                "browser refreshes and server restarts. Sharpe.py will also use these settings.")
 
     _save_cols = st.columns([1, 3])
     with _save_cols[0]:
-        if st.button("💾 Save Configuration", type="primary", use_container_width=True):
+        if st.button("Save Configuration", type="primary", use_container_width=True):
             _current_cfg = {
                 "file":                   st.session_state.cfg_file,
                 "capital":                st.session_state.cfg_capital,
@@ -2287,7 +2259,7 @@ with tab_config:
 
 # ── TAB 7: PERFORMANCE TRACKER ────────────────────────────────────────────────
 with tab_perf:
-    st.markdown("## 📈 Performance Tracker")
+    st.markdown("## Performance Tracker")
     _eq_file = SCRIPT_DIR / f"{universe}_equity_history.json"
     if _eq_file.exists():
         with open(_eq_file, "r") as _f:
@@ -2324,34 +2296,34 @@ with tab_perf:
         # Metric cards
         pm1, pm2, pm3, pm4 = st.columns([1.0, 1.0, 0.7, 1.9])
         with pm1:
-            _port_color = "#2E7D32" if _port_ret_total >= 0 else "#C62828"
+            _port_color = "#067647" if _port_ret_total >= 0 else "#B42318"
             st.markdown(
-                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
-                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Portfolio NAV</p>"
+                f"<div style='background-color:#F4F5F8; border-radius:8px; padding:7px 14px;'>"
+                f"<p style='font-size:14px; color:#5E6878; margin:0 0 1px 0; line-height:1.3;'>Portfolio NAV</p>"
                 f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap; color:{_port_color};'>"
                 f"{_port_nav:.2f} <span style='font-size:13px;'>({_port_ret_total:+.2f}%)</span></p>"
                 f"</div>", unsafe_allow_html=True)
         with pm2:
-            _bench_color = "#2E7D32" if _bench_ret_total >= 0 else "#C62828"
+            _bench_color = "#067647" if _bench_ret_total >= 0 else "#B42318"
             st.markdown(
-                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
-                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Benchmark NAV</p>"
+                f"<div style='background-color:#F4F5F8; border-radius:8px; padding:7px 14px;'>"
+                f"<p style='font-size:14px; color:#5E6878; margin:0 0 1px 0; line-height:1.3;'>Benchmark NAV</p>"
                 f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap; color:{_bench_color};'>"
                 f"{_bench_nav:.2f} <span style='font-size:13px;'>({_bench_ret_total:+.2f}%)</span></p>"
                 f"</div>", unsafe_allow_html=True)
         with pm3:
-            _alpha_color = "#2E7D32" if _alpha >= 0 else "#C62828"
+            _alpha_color = "#067647" if _alpha >= 0 else "#B42318"
             st.markdown(
-                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
-                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Alpha</p>"
+                f"<div style='background-color:#F4F5F8; border-radius:8px; padding:7px 14px;'>"
+                f"<p style='font-size:14px; color:#5E6878; margin:0 0 1px 0; line-height:1.3;'>Alpha</p>"
                 f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap; color:{_alpha_color};'>"
                 f"{_alpha:+.2f}%</p>"
                 f"</div>", unsafe_allow_html=True)
         with pm4:
             st.markdown(
-                f"<div style='background-color:#F0F2F6; border-radius:8px; padding:7px 14px;'>"
-                f"<p style='font-size:14px; color:#6B7A8D; margin:0 0 1px 0; line-height:1.3;'>Max Drawdown</p>"
-                f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap; color:#C62828;'>"
+                f"<div style='background-color:#F4F5F8; border-radius:8px; padding:7px 14px;'>"
+                f"<p style='font-size:14px; color:#5E6878; margin:0 0 1px 0; line-height:1.3;'>Max Drawdown</p>"
+                f"<p style='font-size:19px; font-weight:700; margin:0; white-space:nowrap; color:#B42318;'>"
                 f"Port: {_max_dd:.2f}% | Bench: {_bench_max_dd:.2f}%</p>"
                 f"</div>", unsafe_allow_html=True)
 
@@ -2370,7 +2342,7 @@ with tab_perf:
             f"Portfolio includes cash drag (uninvested portion earns 6% p.a.)")
 
         # Daily Details Table (collapsible)
-        with st.expander("📋 Daily NAV Details", expanded=False):
+        with st.expander("Daily NAV Details", expanded=False):
             _detail_df = _eq_df[["date", "portfolio_nav", "benchmark_nav",
                                  "portfolio_ret", "benchmark_ret",
                                  "n_held", "invested_frac"]].copy()
@@ -2396,10 +2368,10 @@ with tab_perf:
 
 # ── ACTIONS ───────────────────────────────────────────────────────────────────
 st.divider()
-st.markdown("## ⚡ Actions")
+st.markdown("## Actions")
 ac1, ac2 = st.columns(2)
 with ac1:
-    if st.button("🔁 Refresh Rankings", use_container_width=True):
+    if st.button("Refresh Rankings", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 with ac2:
@@ -2412,7 +2384,7 @@ with ac2:
     if out_path:
         with open(out_path, "rb") as f:
             st.download_button(
-                f"📥 Download Rankings Excel ({out_path.name})", f.read(),
+                f"Download Rankings Excel ({out_path.name})", f.read(),
                 file_name=out_path.name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True)

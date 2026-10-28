@@ -1,5 +1,5 @@
 {# Rendered standalone (HTMX swap target) and also included by rankings.html on first load. #}
-<h2>📊 Top {{ max_n }} Rankings — Regime Score: {{ "%.2f"|format(regime.score) }} | Dynamic N (Strategy): {{ regime.dynamic_n }}</h2>
+<h2>Top {{ max_n }} Rankings <span class="h2-meta">— Regime Score: {{ "%.2f"|format(regime.score) }} | Dynamic N (Strategy): {{ regime.dynamic_n }}</span></h2>
 
 <table class="data-table">
   <thead>
@@ -23,7 +23,7 @@
     {% endfor %}
   </tbody>
 </table>
-<p class="caption">🟡 Yellow rows = currently held positions | White rows = not yet in portfolio</p>
+<p class="caption">Tinted rows = currently held positions | White rows = not yet in portfolio</p>
 {% if hidden %}
 <p class="caption">⛔ {{ hidden|length }} ranked name(s) hidden — blocked from purchase by the current Configuration:
   {% for h in hidden[:10] %}{{ h.ticker }}{% if h.held %} [held]{% endif %} ({{ h.reason }}){{ "; " if not loop.last }}{% endfor %}{% if hidden|length > 10 %} … and {{ hidden|length - 10 }} more{% endif %}</p>

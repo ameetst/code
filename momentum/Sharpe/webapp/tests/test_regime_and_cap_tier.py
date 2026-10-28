@@ -85,10 +85,10 @@ def test_get_live_vix_returns_a_value_or_gracefully_none():
 # ── core.cap_tier ───────────────────────────────────────────────────────────────
 
 def test_tier_color_boundaries():
-    assert cap_tier.tier_color(60)[0] == "#2E7D32"   # green at the threshold
-    assert cap_tier.tier_color(59.9)[0] == "#F57F17"  # amber just below
-    assert cap_tier.tier_color(30)[0] == "#F57F17"
-    assert cap_tier.tier_color(29.9)[0] == "#C62828"  # red just below
+    assert cap_tier.tier_color(60)[0] == "#067647"   # green at the threshold
+    assert cap_tier.tier_color(59.9)[0] == "#B54708"  # amber just below
+    assert cap_tier.tier_color(30)[0] == "#B54708"
+    assert cap_tier.tier_color(29.9)[0] == "#B42318"  # red just below
 
 
 def test_load_stockdb_missing_file_returns_empty(tmp_path, monkeypatch):
@@ -146,7 +146,7 @@ def test_base_template_loads_sortable_tables_script(client):
 def test_cap_tier_yahoo_route_renders_canned_result(client, monkeypatch):
     from webapp.core import cap_tier as cap_tier_module
     canned = [{"tier": "Large Cap (1-100)", "total": 100, "positive": 60, "pct": 60.0,
-               "colors": ("#2E7D32", "#E8F5E9", "#2E7D32")}]
+               "colors": ("#067647", "#E8F5EE", "#067647")}]
     monkeypatch.setattr(cap_tier_module, "compute_cap_tier_momentum", lambda *a, **k: canned)
 
     html = client.get("/rankings/cap-tier/yahoo").data.decode()

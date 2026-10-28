@@ -1,30 +1,31 @@
 {% extends "base.html" %}
 {% set active_tab = "rankings" %}
 {% block content %}
-<div class="metric-row">
-  <div class="metric center">
-    <span class="badge {{ regime.badge }}">{{ regime.emoji }} Score: {{ "%.2f"|format(regime.score) }}</span>
+<div class="status-strip">
+  <div class="status-item">
+    <p class="status-label">Regime</p>
+    <span class="badge {{ regime.badge }}">Score: {{ "%.2f"|format(regime.score) }}</span>
   </div>
-  <div class="metric">
-    <p class="metric-label">Dynamic N</p>
-    <p class="metric-value">{{ regime.dynamic_n }} stocks</p>
+  <div class="status-item">
+    <p class="status-label">Dynamic N</p>
+    <p class="status-value">{{ regime.dynamic_n }} stocks</p>
   </div>
-  <div class="metric">
-    <p class="metric-label">Entry Gate</p>
-    <p class="metric-value">{{ regime.entry_label }}</p>
+  <div class="status-item">
+    <p class="status-label">Entry Gate</p>
+    <p class="status-value">{{ regime.entry_label }}</p>
   </div>
-  <div class="metric">
-    <p class="metric-label">Eligible (52H)</p>
-    <p class="metric-value">{{ regime.eligible_52h }}</p>
+  <div class="status-item">
+    <p class="status-label">Eligible (52H)</p>
+    <p class="status-value">{{ regime.eligible_52h }}</p>
   </div>
-  <div class="metric">
-    <p class="metric-label">Data Range</p>
-    <p class="metric-value">{{ regime.data_start }} to {{ regime.data_end }}</p>
+  <div class="status-item">
+    <p class="status-label">Data Range</p>
+    <p class="status-value">{{ regime.data_start }} to {{ regime.data_end }}</p>
   </div>
 </div>
 
 <details class="expander">
-  <summary>📡 Regime Score Breakdown</summary>
+  <summary>Regime Score Breakdown</summary>
   <div class="expander-body">
     <div class="metric-row metric-row-6">
       {% for s in regime.signals %}
@@ -54,7 +55,7 @@
     </div>
 
     <hr class="expander-divider">
-    <p class="expander-subhead">📈 Regime Score Trend</p>
+    <p class="expander-subhead">Regime Score Trend</p>
     {% if trend.records_json %}
       <script id="regime-trend-data" type="application/json">{{ trend.records_json|safe }}</script>
       <div id="regime-trend-root"></div>
@@ -63,10 +64,10 @@
         initLineChart('regime-trend-root',
           JSON.parse(document.getElementById('regime-trend-data').textContent),
           [
-            {key: 'Composite', label: 'Composite', color: '#1F4E79'},
-            {key: 'Breadth', label: 'Breadth', color: '#2E7D32'},
-            {key: 'Momentum', label: 'Momentum', color: '#F57F17'},
-            {key: 'Entry Threshold', label: 'Entry Threshold', color: '#C62828', dashed: true},
+            {key: 'Composite', label: 'Composite', color: '#4F46E5'},
+            {key: 'Breadth', label: 'Breadth', color: '#067647'},
+            {key: 'Momentum', label: 'Momentum', color: '#B54708'},
+            {key: 'Entry Threshold', label: 'Entry Threshold', color: '#B42318', dashed: true},
           ]);
       </script>
       <p class="caption">📊 {{ trend.n_days }} day(s) recorded | Latest: {{ trend.latest_date }} |
@@ -78,14 +79,14 @@
 </details>
 
 <details class="expander">
-  <summary>📊 Market Cap Momentum Breakdown</summary>
+  <summary>Market Cap Momentum Breakdown</summary>
   <div class="expander-body">
     {% if cap_tier.available %}
       <p class="caption">Comparing <strong>63-day raw return &gt; 0%</strong> vs
          <strong>3M Sharpe score &gt; 0</strong> across cap tiers. Classification sourced from STOCKDB.csv.</p>
       <div class="tier-dual-header">
-        <div>📈 63-Day Raw Return &gt; 0%</div>
-        <div>⚡ 3M Sharpe Score &gt; 0 <span class="caption">(risk-adjusted)</span></div>
+        <div>63-Day Raw Return &gt; 0%</div>
+        <div>3M Sharpe Score &gt; 0 <span class="caption">(risk-adjusted)</span></div>
       </div>
       {% for row in cap_tier.rows %}
       <div class="tier-dual-row">
@@ -123,7 +124,7 @@
 
     <hr class="expander-divider">
     <details class="expander expander-nested">
-      <summary>📡 Yahoo Finance Market Cap View (slow, ~15s)</summary>
+      <summary>Yahoo Finance Market Cap View (slow, ~15s)</summary>
       <div class="expander-body">
         <p class="caption">Fetches live market cap from Yahoo Finance for classification. Cached for 24h.</p>
         <div id="cap-tier-yahoo-root">

@@ -28,7 +28,7 @@
 </div>
 
 <div class="section-header">
-  <h3>💼 Active Holdings</h3>
+  <h3>Active Holdings</h3>
   <div>
     <button type="button" class="btn-primary" id="refresh-prices-btn"
             hx-post="{{ url_for('tradelog.refresh_prices') }}" hx-target="#tradelog-content" hx-swap="innerHTML"
@@ -73,9 +73,9 @@
 </div>
 
 <div class="section-header">
-  <h3>🕒 Transaction History &amp; Management</h3>
+  <h3>Transaction History &amp; Management</h3>
   {% if history_rows %}
-    <a href="{{ url_for('tradelog.export') }}" class="btn-secondary">📥 Download Excel</a>
+    <a href="{{ url_for('tradelog.export') }}" class="btn-secondary">Download Excel</a>
   {% endif %}
 </div>
 {% if not history_rows %}
@@ -104,7 +104,7 @@
         {% endfor %}
       </tbody>
     </table>
-    <button type="submit" class="btn-secondary">🗑️ Delete Selected</button>
+    <button type="submit" class="btn-secondary">Delete Selected</button>
   </form>
 {% endif %}
 

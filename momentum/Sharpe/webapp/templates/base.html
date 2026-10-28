@@ -11,28 +11,31 @@
 </head>
 <body>
   <div class="app">
-    <h1 class="app-title">📊 Sharpe Momentum Strategy</h1>
+    <div class="topbar">
+      <h1 class="app-title">Sharpe Momentum Strategy</h1>
+      {% if price_date %}<span class="status-pill">Prices · close of {{ price_date }}</span>{% endif %}
+    </div>
     <p class="app-subtitle">Rank &rarr; Filter &rarr; Size &rarr; Allocate &nbsp;|&nbsp; Dynamic Regime Engine</p>
     {% if read_only %}
     <div class="banner">Read-only preview — trade entry and config changes stay in the Streamlit dashboard for now.</div>
     {% else %}
-    <div class="banner info">✏️ Write mode — trades, cash entries and config saves are written to the live data files. Don't enter trades in the Streamlit dashboard at the same time.</div>
+    <div class="banner info">Write mode — trades, cash entries and config saves are written to the live data files. Don't enter trades in the Streamlit dashboard at the same time.</div>
     {% endif %}
     <nav class="nav-tabs">
-      <a href="{{ url_for('rankings.index') }}" class="{{ 'active' if active_tab == 'rankings' }}">📊 {{ ('Top ' ~ nav_max_n ~ ' Rankings') if nav_max_n else 'Top Rankings' }}</a>
+      <a href="{{ url_for('rankings.index') }}" class="{{ 'active' if active_tab == 'rankings' }}">{{ ('Top ' ~ nav_max_n ~ ' Rankings') if nav_max_n else 'Top Rankings' }}</a>
       <a href="{{ url_for('actions.index') }}" class="{{ 'active' if active_tab == 'actions' }}"{% if actions_dot_error %} title="Exit status unavailable: {{ actions_dot_error }}"{% endif %}>{{ actions_dot }} Actions Monitor</a>
-      <a href="{{ url_for('tradelog.index') }}" class="{{ 'active' if active_tab == 'tradelog' }}">📝 Tradelog &amp; MTM</a>
-      <a href="{{ url_for('cash_ledger.index') }}" class="{{ 'active' if active_tab == 'cash' }}">💰 Cash Ledger</a>
-      <a href="{{ url_for('rankings.full_page') }}" class="{{ 'active' if active_tab == 'full' }}">📋 Full Rankings</a>
-      <a href="{{ url_for('configuration.index') }}" class="{{ 'active' if active_tab == 'config' }}">⚙️ Configuration</a>
-      <a href="{{ url_for('performance.index') }}" class="{{ 'active' if active_tab == 'performance' }}">📈 Performance Tracker</a>
+      <a href="{{ url_for('tradelog.index') }}" class="{{ 'active' if active_tab == 'tradelog' }}">Tradelog &amp; MTM</a>
+      <a href="{{ url_for('cash_ledger.index') }}" class="{{ 'active' if active_tab == 'cash' }}">Cash Ledger</a>
+      <a href="{{ url_for('rankings.full_page') }}" class="{{ 'active' if active_tab == 'full' }}">Full Rankings</a>
+      <a href="{{ url_for('configuration.index') }}" class="{{ 'active' if active_tab == 'config' }}">Configuration</a>
+      <a href="{{ url_for('performance.index') }}" class="{{ 'active' if active_tab == 'performance' }}">Performance Tracker</a>
     </nav>
     {% block content %}{% endblock %}
 
     <hr>
-    <h3>⚡ Actions</h3>
+    <h3>Actions</h3>
     {% if rankings_xlsx %}
-      <a href="{{ url_for('rankings.download') }}" class="btn-secondary" style="margin-left:0;">📥 Download Rankings Excel ({{ rankings_xlsx }})</a>
+      <a href="{{ url_for('rankings.download') }}" class="btn-secondary" style="margin-left:0;">Download Rankings Excel ({{ rankings_xlsx }})</a>
     {% else %}
       <div class="banner">Run <code>Sharpe.py</code> to generate the Excel output first.</div>
     {% endif %}

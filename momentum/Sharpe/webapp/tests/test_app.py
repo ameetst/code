@@ -133,7 +133,7 @@ def test_actions_page_renders_and_matches_ledger(client):
     # Every ledger ticker appears exactly once in the All Positions table. Count only inside
     # that table: a position flagged for exit is also (deliberately) listed in the separate
     # "Exits Required" table above it, so a whole-page count is 2 whenever an exit is flagged.
-    all_positions_html = html.split("<h3>📋 All Positions</h3>")[1]
+    all_positions_html = html.split("<h3>All Positions</h3>")[1]
     for ticker in ledger:
         assert all_positions_html.count(f"<td>{ticker}</td>") == 1
 
@@ -222,7 +222,7 @@ def test_nav_labels_match_streamlit_tab_labels(client):
     max_n = int(config_store.load_config()["max_n"])
     html = client.get("/").data.decode()
     assert f"Top {max_n} Rankings" in html      # Streamlit: f"📊 Top {MAX_N} Rankings"
-    assert "📈 Performance Tracker" in html     # Streamlit: "📈 Performance Tracker"
+    assert "Performance Tracker" in html        # Streamlit: "📈 Performance Tracker" (emoji dropped in the restyle)
 
 
 def test_download_rankings_excel_serves_the_workbook_and_is_linked_in_the_footer(client):

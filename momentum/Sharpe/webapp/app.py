@@ -84,18 +84,23 @@ def create_app() -> Flask:
     def inject_globals():
         # Nav label and footer download mirror the Streamlit dashboards' tab label
         # ("Top {MAX_N} Rankings") and bottom "Actions" section.
-        max_n, rankings_xlsx = None, None
+        max_n, rankings_xlsx, price_date = None, None, None
         try:
             cfg = config_store.load_config()
             max_n = int(cfg["max_n"])
             universe = config_store.universe_name(config_store.resolve_file(cfg))
             path = config_store.rankings_xlsx_path(universe)
             rankings_xlsx = path.name if path else None
+            last = rankings.get_bundle(cfg).dates[-1]
+            if isinstance(last, str):
+                last = datetime.date.fromisoformat(last)
+            price_date = f"{last.day} {rankings.MONTHS[last.month - 1]}"  # top-bar status pill
         except Exception:
             pass
         dot, dot_error = _actions_status()
         return {"read_only": settings.READ_ONLY, "actions_dot": dot, "actions_dot_error": dot_error,
-                "nav_max_n": max_n, "rankings_xlsx": rankings_xlsx}
+                "nav_max_n": max_n, "rankings_xlsx": rankings_xlsx,
+                "price_date": price_date}
 
     threading.Thread(target=_warm_cache, daemon=True).start()
     return app

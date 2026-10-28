@@ -27,7 +27,7 @@
 </div>
 <p class="caption">Fees/Charges paid to date: Rs {{ "{:,.2f}".format(summary.by_type['Fees/Charges']) }}</p>
 
-<h3>➕ Log New Cash Entry</h3>
+<h3>Log New Cash Entry</h3>
 <form class="trade-form" hx-post="{{ url_for('cash_ledger.add') }}" hx-target="#cash-content" hx-swap="innerHTML">
   <div class="form-row form-row-nowrap">
     <label>Type
@@ -44,11 +44,11 @@
     </label>
   </div>
   <div>
-    <button type="submit" class="btn-primary">💾 Record Cash Entry</button>
+    <button type="submit" class="btn-primary">Record Cash Entry</button>
   </div>
 </form>
 
-<h3>🕒 Cash Transaction History</h3>
+<h3>Cash Transaction History</h3>
 {% if not history_rows %}
   <div class="banner">No cash transactions logged yet.</div>
 {% else %}
@@ -73,7 +73,7 @@
         {% endfor %}
       </tbody>
     </table>
-    <button type="submit" class="btn-secondary">🗑️ Delete Selected</button>
+    <button type="submit" class="btn-secondary">Delete Selected</button>
   </form>
 {% endif %}
 

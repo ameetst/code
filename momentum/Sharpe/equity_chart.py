@@ -16,15 +16,15 @@ import streamlit.components.v1 as components
 
 # Matches the dashboard's existing inline CSS (see st.markdown block near
 # the top of sharpe_dashboard.py / sharpe_dashboard_dhan.py).
-_ACCENT       = "#1F4E79"   # portfolio line — navy, same as headers/buttons
-_BENCH        = "#6B7A8D"   # benchmark line — muted slate, same as metric labels
-_GOOD         = "#2E7D32"
-_BAD          = "#C62828"
-_TEXT_PRIMARY = "#1A1A2E"
-_TEXT_MUTED   = "#6B7A8D"
-_CARD_BG      = "#F5F7FA"
-_BORDER       = "#E8ECF1"
-_GRID         = "#EDF0F4"
+_ACCENT       = "#4F46E5"   # portfolio line — indigo, same as the theme accent
+_BENCH        = "#98A1AE"   # benchmark line — faint grey
+_GOOD         = "#067647"
+_BAD          = "#B42318"
+_TEXT_PRIMARY = "#0E1726"
+_TEXT_MUTED   = "#5E6878"
+_CARD_BG      = "#F4F5F8"
+_BORDER       = "#E3E6EB"
+_GRID         = "#E3E6EB"
 
 
 def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
@@ -59,7 +59,7 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
     # Only advertise the fallback/legacy dot when at least one such day exists.
     has_flagged_days = any(r["method"] != "weighted" for r in records)
     flagged_legend = (
-        f'<span class="legend-item"><span class="legend-dot" style="background:#B8860B"></span>'
+        f'<span class="legend-item"><span class="legend-dot" style="background:#B54708"></span>'
         f'Equal-weight fallback / legacy day</span>' if has_flagged_days else "")
 
     html = f"""
@@ -91,7 +91,7 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
     #eqroot .t-key.dashed {{ border-top-style:dashed; }}
     #eqroot .t-row .v {{ font-weight:650; color:{_TEXT_PRIMARY}; font-variant-numeric:tabular-nums; }}
     #eqroot .t-note {{ margin-top:6px; padding-top:6px; border-top:1px solid {_GRID}; color:{_TEXT_MUTED}; font-size:10.5px; line-height:1.4; }}
-    #eqroot .t-note.warn {{ color:#B8860B; }}
+    #eqroot .t-note.warn {{ color:#B54708; }}
   </style>
 
   <div class="legend">
@@ -184,7 +184,7 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
     // flag non-weighted days with a small dot on the portfolio line
     data.forEach((d, i) => {{
       if (d.method !== 'weighted') {{
-        svg.appendChild(el('circle', {{ cx: xPos(i), cy: yPos(d.port), r: 2.75, fill: '#B8860B', class: 'fallback-dot' }}));
+        svg.appendChild(el('circle', {{ cx: xPos(i), cy: yPos(d.port), r: 2.75, fill: '#B54708', class: 'fallback-dot' }}));
       }}
     }});
 
