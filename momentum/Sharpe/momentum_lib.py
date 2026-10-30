@@ -1528,3 +1528,36 @@ def compute_purchase_blocks(
                 reasons[t].append(f"Circuit hits {int(h)} >= {int(circuit_threshold)}")
 
     return pd.Series({t: "; ".join(r) for t, r in reasons.items()}, index=idx, dtype=object)
+
+
+# ── PORTFOLIO NAV MOVING AVERAGE ──────────────────────────────────────────────
+
+NAV_SMA_WINDOW = 50
+NAV_SMA_KEY = "portfolio_nav_sma50"
+
+
+def nav_sma(entries, window: int = NAV_SMA_WINDOW) -> list:
+    """50-trading-day simple moving average of the portfolio NAV, one value per equity-history
+    entry (aligned to `entries`' order; None until `window` trading days exist).
+
+    Trading days, not log entries: weekend / holiday re-runs append an entry that repeats the
+    previous `price_date` (the NAV only moves by cash yield), and counting those would stretch
+    the window past 50 sessions. So each distinct `price_date` contributes one NAV -- the last
+    one logged for it -- and the SMA at an entry is the mean over the latest `window` such days
+    up to and including that entry. Entries without a `price_date` fall back to their `date`."""
+    out = [None] * len(entries)
+    nav_by_day = {}
+    for i in sorted(range(len(entries)), key=lambda k: entries[k].get("date", "")):
+        e = entries[i]
+        nav_by_day[e.get("price_date") or e["date"]] = float(e["portfolio_nav"])
+        if len(nav_by_day) >= window:
+            latest = sorted(nav_by_day)[-window:]
+            out[i] = round(sum(nav_by_day[d] for d in latest) / window, 4)
+    return out
+
+
+def nav_sma_resolved(entries, window: int = NAV_SMA_WINDOW) -> list:
+    """The SMA saved on each entry (NAV_SMA_KEY; null = not enough history yet), computed with
+    nav_sma() for any entry that predates the field. What the charts and tables plot."""
+    computed = nav_sma(entries, window)
+    return [e[NAV_SMA_KEY] if NAV_SMA_KEY in e else computed[i] for i, e in enumerate(entries)]

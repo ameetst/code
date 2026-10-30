@@ -8,6 +8,7 @@ import json
 
 import pandas as pd
 
+import momentum_lib as ml
 from webapp.settings import DATA_DIR
 
 
@@ -25,9 +26,13 @@ def build_view(equity_data: list[dict]) -> dict | None:
     if len(equity_data) < 2:
         return None
 
+    equity_data = sorted(equity_data, key=lambda r: r["date"])
     df = pd.DataFrame(equity_data)
     df["date"] = pd.to_datetime(df["date"]).dt.normalize()
     df = df.sort_values("date").reset_index(drop=True)
+    # 50-trading-day SMA of the NAV: the value Sharpe.py saved on each entry (computed here for any
+    # entry that predates the field). None before 50 trading days exist.
+    df["nav_sma50"] = ml.nav_sma_resolved(equity_data)
 
     port_nav = float(df["portfolio_nav"].iloc[-1])
     bench_nav = float(df["benchmark_nav"].iloc[-1])
@@ -50,6 +55,7 @@ def build_view(equity_data: list[dict]) -> dict | None:
             "date": row["date"].strftime("%Y-%m-%d"),
             "port": round(float(row["portfolio_nav"]), 4),
             "bench": round(float(row["benchmark_nav"]), 4),
+            "sma": round(float(row["nav_sma50"]), 4) if pd.notna(row["nav_sma50"]) else None,
             "n_held": int(row["n_held"]) if pd.notna(row.get("n_held")) else None,
             "invested": float(row["invested_frac"]) if pd.notna(row.get("invested_frac")) else None,
             "method": method,
@@ -64,6 +70,7 @@ def build_view(equity_data: list[dict]) -> dict | None:
             "date": row["date"].strftime("%d-%b-%Y"),
             "port_nav": round(float(row["portfolio_nav"]), 2),
             "bench_nav": round(float(row["benchmark_nav"]), 2),
+            "sma": round(float(row["nav_sma50"]), 2) if pd.notna(row["nav_sma50"]) else None,
             "port_ret": round(float(row["portfolio_ret"]) * 100, 3) if pd.notna(row.get("portfolio_ret")) else None,
             "bench_ret": round(float(row["benchmark_ret"]) * 100, 3) if pd.notna(row.get("benchmark_ret")) else None,
             "n_held": int(row["n_held"]) if pd.notna(row.get("n_held")) else None,

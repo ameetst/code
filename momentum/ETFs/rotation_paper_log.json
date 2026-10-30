@@ -1,0 +1,140 @@
+{
+  "state": {
+    "start_capital": 1000000.0,
+    "cash": 666666.6666666667,
+    "positions": {
+      "GOLDBEES": {
+        "shares": 2876.5828196023494,
+        "entry_price": 115.87128,
+        "entry_date": "2026-10-27"
+      }
+    },
+    "equity_history": [
+      {
+        "date": "2026-10-27",
+        "equity": 999314.7039254825
+      }
+    ],
+    "trades": [
+      {
+        "date": "2026-10-27",
+        "type": "BUY",
+        "ticker": "GOLDBEES",
+        "price": 115.87128,
+        "shares": 2876.5828196023494,
+        "value": 333313.3333333333,
+        "pnl_pct": null,
+        "reason": "initial allocation (2026-09-30 signal)"
+      }
+    ],
+    "inception": "2026-10-27",
+    "last_signal": "2026-09-30",
+    "last_mtm": "2026-10-27"
+  },
+  "config": {
+    "UNIVERSE": [
+      "NIFTYBEES",
+      "JUNIORBEES",
+      "BANKBEES",
+      "MOM100",
+      "CPSEETF",
+      "HNGSNGBEES",
+      "GOLDBEES"
+    ],
+    "LOOKBACK_DAYS": 252,
+    "TOP_N": 3,
+    "CASH_PA": 0.055,
+    "SLIPPAGE_BPS": 20.0,
+    "FEE_PER_LEG": 20.0,
+    "START_CAPITAL": 1000000.0,
+    "MAX_DATA_AGE_DAYS": 7,
+    "LATE_WARN_DAYS": 7,
+    "MIN_TRADE_FRAC": 0.005,
+    "BAD_PRINT_LOGRET": 1.2,
+    "AUTO_UPDATE": true
+  },
+  "rebalances": [
+    {
+      "signal_date": "2026-09-30",
+      "exec_date": "2026-10-27",
+      "lag_days": 27,
+      "late": true,
+      "targets": {
+        "GOLDBEES": 0.3333333333333333
+      },
+      "cash_weight": 0.6666666666666667,
+      "ranking": [
+        {
+          "ticker": "GOLDBEES",
+          "status": "OK",
+          "ret": 0.18451047247929853,
+          "rank": 1,
+          "abs_ok": true,
+          "selected": true
+        },
+        {
+          "ticker": "JUNIORBEES",
+          "status": "OK",
+          "ret": 0.027636996073209463,
+          "rank": 2,
+          "abs_ok": false,
+          "selected": true
+        },
+        {
+          "ticker": "MOM100",
+          "status": "OK",
+          "ret": 0.019343586491200382,
+          "rank": 3,
+          "abs_ok": false,
+          "selected": true
+        },
+        {
+          "ticker": "CPSEETF",
+          "status": "OK",
+          "ret": -0.026658067290121545,
+          "rank": 4,
+          "abs_ok": false,
+          "selected": false
+        },
+        {
+          "ticker": "BANKBEES",
+          "status": "OK",
+          "ret": -0.029354408293133627,
+          "rank": 5,
+          "abs_ok": false,
+          "selected": false
+        },
+        {
+          "ticker": "NIFTYBEES",
+          "status": "OK",
+          "ret": -0.09183530073074753,
+          "rank": 6,
+          "abs_ok": false,
+          "selected": false
+        },
+        {
+          "ticker": "HNGSNGBEES",
+          "status": "OK",
+          "ret": -0.13582182594404668,
+          "rank": 7,
+          "abs_ok": false,
+          "selected": false
+        }
+      ],
+      "trades": [
+        {
+          "date": "2026-10-27",
+          "type": "BUY",
+          "ticker": "GOLDBEES",
+          "price": 115.87128,
+          "shares": 2876.5828196023494,
+          "value": 333313.3333333333,
+          "pnl_pct": null,
+          "reason": "initial allocation (2026-09-30 signal)"
+        }
+      ],
+      "equity": 999314.7039254825
+    }
+  ],
+  "updated": "2026-10-28 12:08"
+}

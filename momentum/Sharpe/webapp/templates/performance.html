@@ -44,7 +44,7 @@
     <div class="expander-body">
       <table class="data-table">
         <thead>
-          <tr><th>Date</th><th>Port NAV</th><th>Bench NAV</th><th>Port Ret %</th>
+          <tr><th>Date</th><th>Port NAV</th><th>Bench NAV</th><th>NAV 50D SMA</th><th>Port Ret %</th>
               <th>Bench Ret %</th><th># Held</th><th>Invested %</th></tr>
         </thead>
         <tbody>
@@ -53,6 +53,7 @@
             <td>{{ r.date }}</td>
             <td>{{ r.port_nav }}</td>
             <td>{{ r.bench_nav }}</td>
+            <td>{{ r.sma if r.sma is not none else "—" }}</td>
             <td>{{ r.port_ret if r.port_ret is not none else "—" }}</td>
             <td>{{ r.bench_ret if r.bench_ret is not none else "—" }}</td>
             <td>{{ r.n_held if r.n_held is not none else "—" }}</td>

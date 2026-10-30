@@ -1,0 +1,19 @@
+{
+  "file": "NSEAll_updated.xlsx",
+  "capital": 3000000,
+  "min_n": 5,
+  "max_n": 30,
+  "min_turnover": 1.0,
+  "min_cmp": 10.0,
+  "min_market_cap": 1000.0,
+  "eq_series_filter": false,
+  "circuit_filter_enabled": false,
+  "circuit_threshold": 20,
+  "rel_dd_breach_threshold": -20,
+  "hold_rank_buffer": 76,
+  "_snapshot": {
+    "taken": "2026-10-29T12:45:54",
+    "git_head": "d3cb851",
+    "live_files_uncommitted": true
+  }
+}

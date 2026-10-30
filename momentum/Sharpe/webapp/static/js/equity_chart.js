@@ -7,6 +7,7 @@
 (function () {
   const ACCENT = "#4F46E5";   // portfolio line — indigo, same as the theme accent
   const BENCH = "#98A1AE";    // benchmark line — faint grey
+  const SMA = "#F2780C";      // portfolio 50-trading-day SMA — orange, thin solid
   const TEXT_MUTED = "#5E6878";
 
   const NS = "http://www.w3.org/2000/svg";
@@ -32,6 +33,9 @@
     const portDelta = last.port - 100.0;
     const benchDelta = last.bench - 100.0;
 
+    // The SMA is null until 50 trading days exist; only advertise the line once there is a value.
+    let lastSma = null;
+    for (let i = n - 1; i >= 0; i--) if (data[i].sma != null) { lastSma = data[i].sma; break; }
     // Only advertise the fallback/legacy dot when at least one such day exists.
     const hasFlaggedDays = data.some((d) => d.method !== "weighted");
 
@@ -39,6 +43,7 @@
       <div class="eq-legend">
         <span class="eq-legend-item"><span class="eq-legend-line" style="border-color:${ACCENT}"></span>Portfolio (${last.port.toFixed(2)}, ${fmtDelta(portDelta)}%)</span>
         <span class="eq-legend-item"><span class="eq-legend-line dashed" style="border-color:${BENCH}"></span>Benchmark — NIFTY 500 (${last.bench.toFixed(2)}, ${fmtDelta(benchDelta)}%)</span>
+        ${lastSma != null ? `<span class="eq-legend-item"><span class="eq-legend-line dashed" style="border-color:${SMA}; border-top-width:1.75px"></span>Portfolio 50-day SMA (${lastSma.toFixed(2)})</span>` : ""}
         ${hasFlaggedDays ? '<span class="eq-legend-item"><span class="eq-legend-dot"></span>Equal-weight fallback / legacy day</span>' : ""}
       </div>
       <div class="eq-wrap">
@@ -50,7 +55,7 @@
     const tooltip = document.getElementById(`${containerId}-tooltip`);
     const wrap = tooltip.parentElement;
 
-    const allVals = data.flatMap((d) => [d.port, d.bench]);
+    const allVals = data.flatMap((d) => [d.port, d.bench, ...(d.sma != null ? [d.sma] : [])]);
     const yMin = Math.floor(Math.min(...allVals, 100) / 2) * 2 - 1;
     const yMax = Math.ceil(Math.max(...allVals) / 2) * 2 + 1;
 
@@ -74,6 +79,17 @@
     function pathFor(key) {
       let d = "";
       for (let i = 0; i < n; i++) d += (i === 0 ? "M" : "L") + xPos(i).toFixed(2) + "," + yPos(data[i][key]).toFixed(2) + " ";
+      return d.trim();
+    }
+
+    // Like pathFor, but skips days without a value (the SMA is null before 50 trading days).
+    function sparsePathFor(key) {
+      let d = "", pen = false;
+      for (let i = 0; i < n; i++) {
+        if (data[i][key] == null) { pen = false; continue; }
+        d += (pen ? "L" : "M") + xPos(i).toFixed(2) + "," + yPos(data[i][key]).toFixed(2) + " ";
+        pen = true;
+      }
       return d.trim();
     }
 
@@ -102,6 +118,9 @@
 
       svg.appendChild(el("path", { d: pathFor("bench"), class: "eq-series-path", stroke: BENCH, "stroke-dasharray": "6 4" }));
       svg.appendChild(el("path", { d: pathFor("port"), class: "eq-series-path", stroke: ACCENT }));
+      if (lastSma != null) {
+        svg.appendChild(el("path", { d: sparsePathFor("sma"), class: "eq-series-path", stroke: SMA, "stroke-width": 1.75, "stroke-dasharray": "6 4" }));
+      }
 
       // flag non-weighted days with a small dot on the portfolio line
       data.forEach((d, i) => {
@@ -126,8 +145,10 @@
       svg.appendChild(crosshair);
       const dotPort = el("circle", { r: 4, fill: ACCENT, stroke: "#ffffff", class: "eq-hover-dot", visibility: "hidden" });
       const dotBench = el("circle", { r: 4, fill: BENCH, stroke: "#ffffff", class: "eq-hover-dot", visibility: "hidden" });
+      const dotSma = el("circle", { r: 3.5, fill: SMA, stroke: "#ffffff", class: "eq-hover-dot", visibility: "hidden" });
       svg.appendChild(dotPort);
       svg.appendChild(dotBench);
+      svg.appendChild(dotSma);
 
       function onMove(evt) {
         const pt = svg.createSVGPoint();
@@ -147,10 +168,20 @@
         dotBench.setAttribute("cx", x);
         dotBench.setAttribute("cy", yPos(row.bench));
         dotBench.setAttribute("visibility", "visible");
+        if (row.sma != null) {
+          dotSma.setAttribute("cx", x);
+          dotSma.setAttribute("cy", yPos(row.sma));
+          dotSma.setAttribute("visibility", "visible");
+        } else {
+          dotSma.setAttribute("visibility", "hidden");
+        }
 
         let html = `<div class="eq-t-date">${fmtDate(row.date)}</div>`;
         html += `<div class="eq-t-row"><span class="eq-t-k"><span class="eq-t-key" style="border-color:${ACCENT}"></span>Portfolio</span><span class="eq-t-v">${row.port.toFixed(2)}</span></div>`;
         html += `<div class="eq-t-row"><span class="eq-t-k"><span class="eq-t-key dashed" style="border-color:${BENCH}"></span>Benchmark</span><span class="eq-t-v">${row.bench.toFixed(2)}</span></div>`;
+        if (row.sma != null) {
+          html += `<div class="eq-t-row"><span class="eq-t-k"><span class="eq-t-key dashed" style="border-color:${SMA}"></span>50-day SMA</span><span class="eq-t-v">${row.sma.toFixed(2)}</span></div>`;
+        }
         const metaParts = [];
         if (row.n_held != null) metaParts.push(row.n_held + " held");
         if (row.invested != null) metaParts.push((row.invested * 100).toFixed(0) + "% invested");
@@ -175,6 +206,7 @@
         crosshair.setAttribute("visibility", "hidden");
         dotPort.setAttribute("visibility", "hidden");
         dotBench.setAttribute("visibility", "hidden");
+        dotSma.setAttribute("visibility", "hidden");
         tooltip.style.display = "none";
       }
       hit.addEventListener("pointermove", onMove);

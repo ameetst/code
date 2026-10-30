@@ -234,6 +234,12 @@ Done:
   Configuration. Normally unnecessary (the cache key tracks the data files and every setting);
   it writes no file, so it works in read-only mode too. Live prices are deliberately not cleared,
   as in Streamlit.
+  **Portfolio NAV 50-day SMA** (Performance Tracker): `Sharpe.py` saves `portfolio_nav_sma50` on every
+  new NAV-log entry (`momentum_lib.nav_sma`: mean of the last 50 *trading days*' NAV -- repeated
+  `price_date`s from weekend/holiday re-runs count once -- null until 50 exist). The chart plots it
+  as a thin dashed orange line (same dash as the benchmark) and the Daily NAV Details table has a "NAV 50D SMA" column, in the webapp and
+  both Streamlit dashboards. After hand-editing past entries run `python backfill_nav_sma.py <UNIVERSE>`
+  (backs up the file, rewrites every entry, verifies against pandas).
   **Damaged price file guard**: `momentum_lib.load_prices` raises `PriceDataError` when the
   NIFTY500 benchmark row is empty or has no close on the latest populated date (a failed
   price refresh). The webapp then shows a 503 "Price data problem" page, and the Streamlit

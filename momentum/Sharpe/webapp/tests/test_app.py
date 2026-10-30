@@ -212,7 +212,7 @@ def test_performance_page_renders_chart_data(client):
     assert m
     records = json.loads(m.group(1))
     assert len(records) >= 2
-    assert set(records[0]) == {"date", "port", "bench", "n_held", "invested", "method"}
+    assert set(records[0]) == {"date", "port", "bench", "sma", "n_held", "invested", "method"}
 
 
 # ── Parity with the Streamlit dashboards: nav labels + Download Rankings Excel ──

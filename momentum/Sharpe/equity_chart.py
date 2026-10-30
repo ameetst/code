@@ -18,6 +18,7 @@ import streamlit.components.v1 as components
 # the top of sharpe_dashboard.py / sharpe_dashboard_dhan.py).
 _ACCENT       = "#4F46E5"   # portfolio line — indigo, same as the theme accent
 _BENCH        = "#98A1AE"   # benchmark line — faint grey
+_SMA          = "#F2780C"   # portfolio 50-trading-day SMA — orange, thin solid
 _GOOD         = "#067647"
 _BAD          = "#B42318"
 _TEXT_PRIMARY = "#0E1726"
@@ -30,7 +31,9 @@ _GRID         = "#E3E6EB"
 def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
     """
     eq_df must have columns: date (datetime-like), portfolio_nav,
-    benchmark_nav, n_held, invested_frac. `qty_weighted` (bool) is optional —
+    benchmark_nav, n_held, invested_frac. `nav_sma50` (50-trading-day SMA of
+    the portfolio NAV, NaN/None before 50 trading days exist) is optional —
+    plotted as a third line when any value is present. `qty_weighted` (bool) is optional —
     rows recorded before the qty-weighting fix won't have it and are
     labelled "legacy" in the tooltip.
     """
@@ -47,6 +50,7 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
             "date":       pd.Timestamp(row["date"]).strftime("%Y-%m-%d"),
             "port":       round(float(row["portfolio_nav"]), 4),
             "bench":      round(float(row["benchmark_nav"]), 4),
+            "sma":        round(float(row["nav_sma50"]), 4) if pd.notna(row.get("nav_sma50")) else None,
             "n_held":     int(row["n_held"]) if pd.notna(row.get("n_held")) else None,
             "invested":   float(row["invested_frac"]) if pd.notna(row.get("invested_frac")) else None,
             "method":     method,
@@ -56,6 +60,10 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
     last = records[-1]
     port_delta = last["port"] - 100.0
     bench_delta = last["bench"] - 100.0
+    last_sma = next((r["sma"] for r in reversed(records) if r["sma"] is not None), None)
+    sma_legend = (
+        f'<span class="legend-item"><span class="legend-line dashed" style="border-color:{_SMA}; border-top-width:1.75px"></span>'
+        f'Portfolio 50-day SMA ({last_sma:.2f})</span>' if last_sma is not None else "")
     # Only advertise the fallback/legacy dot when at least one such day exists.
     has_flagged_days = any(r["method"] != "weighted" for r in records)
     flagged_legend = (
@@ -97,6 +105,7 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
   <div class="legend">
     <span class="legend-item"><span class="legend-line" style="border-color:{_ACCENT}"></span>Portfolio ({last["port"]:.2f}, {port_delta:+.2f}%)</span>
     <span class="legend-item"><span class="legend-line dashed" style="border-color:{_BENCH}"></span>Benchmark — NIFTY 500 ({last["bench"]:.2f}, {bench_delta:+.2f}%)</span>
+    {sma_legend}
     {flagged_legend}
   </div>
   <div style="position:relative;">
@@ -113,7 +122,7 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
   const tooltip = document.getElementById('eqtooltip');
   const wrap = tooltip.parentElement;
 
-  const allVals = data.flatMap(d => [d.port, d.bench]);
+  const allVals = data.flatMap(d => [d.port, d.bench, ...(d.sma != null ? [d.sma] : [])]);
   const yMin = Math.floor(Math.min(...allVals, 100) / 2) * 2 - 1;
   const yMax = Math.ceil(Math.max(...allVals) / 2) * 2 + 1;
 
@@ -154,6 +163,17 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
     return d.trim();
   }}
 
+  // Like pathFor, but skips days without a value (the SMA is null until 50 trading days exist).
+  function sparsePathFor(key) {{
+    let d = '', pen = false;
+    for (let i = 0; i < n; i++) {{
+      if (data[i][key] == null) {{ pen = false; continue; }}
+      d += (pen ? 'L' : 'M') + xPos(i).toFixed(2) + ',' + yPos(data[i][key]).toFixed(2) + ' ';
+      pen = true;
+    }}
+    return d.trim();
+  }}
+
   function render() {{
     layout();
     svg.setAttribute('viewBox', `0 0 ${{W}} ${{H}}`);
@@ -180,6 +200,9 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
 
     svg.appendChild(el('path', {{ d: pathFor('bench'), class: 'series-path', stroke: '{_BENCH}', 'stroke-dasharray': '6 4' }}));
     svg.appendChild(el('path', {{ d: pathFor('port'), class: 'series-path', stroke: '{_ACCENT}' }}));
+    if (data.some(d => d.sma != null)) {{
+      svg.appendChild(el('path', {{ d: sparsePathFor('sma'), class: 'series-path', stroke: '{_SMA}', 'stroke-width': 1.75, 'stroke-dasharray': '6 4' }}));
+    }}
 
     // flag non-weighted days with a small dot on the portfolio line
     data.forEach((d, i) => {{
@@ -204,7 +227,8 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
     svg.appendChild(crosshair);
     const dotPort = el('circle', {{ r: 4, fill: '{_ACCENT}', stroke: '#ffffff', class: 'hover-dot', visibility: 'hidden' }});
     const dotBench = el('circle', {{ r: 4, fill: '{_BENCH}', stroke: '#ffffff', class: 'hover-dot', visibility: 'hidden' }});
-    svg.appendChild(dotPort); svg.appendChild(dotBench);
+    const dotSma = el('circle', {{ r: 3.5, fill: '{_SMA}', stroke: '#ffffff', class: 'hover-dot', visibility: 'hidden' }});
+    svg.appendChild(dotPort); svg.appendChild(dotBench); svg.appendChild(dotSma);
 
     hit.addEventListener('pointermove', onMove);
     hit.addEventListener('pointerleave', onLeave);
@@ -220,16 +244,28 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
     crosshair.setAttribute('x1', x); crosshair.setAttribute('x2', x); crosshair.setAttribute('visibility', 'visible');
     dotPort.setAttribute('cx', x); dotPort.setAttribute('cy', yPos(row.port)); dotPort.setAttribute('visibility', 'visible');
     dotBench.setAttribute('cx', x); dotBench.setAttribute('cy', yPos(row.bench)); dotBench.setAttribute('visibility', 'visible');
+    if (row.sma != null) {{
+      dotSma.setAttribute('cx', x); dotSma.setAttribute('cy', yPos(row.sma)); dotSma.setAttribute('visibility', 'visible');
+    }} else {{
+      dotSma.setAttribute('visibility', 'hidden');
+    }}
 
     let rowsHtml = `<div class="t-date"></div>`;
     rowsHtml += `<div class="t-row"><span class="k"><span class="t-key" style="border-color:{_ACCENT}"></span><span class="l1"></span></span><span class="v v1"></span></div>`;
     rowsHtml += `<div class="t-row"><span class="k"><span class="t-key dashed" style="border-color:{_BENCH}"></span><span class="l2"></span></span><span class="v v2"></span></div>`;
+    if (row.sma != null) {{
+      rowsHtml += `<div class="t-row"><span class="k"><span class="t-key dashed" style="border-color:{_SMA}"></span><span class="l3"></span></span><span class="v v3"></span></div>`;
+    }}
     tooltip.innerHTML = rowsHtml;
     tooltip.querySelector('.t-date').textContent = fmtDate(row.date);
     tooltip.querySelector('.l1').textContent = 'Portfolio';
     tooltip.querySelector('.v1').textContent = row.port.toFixed(2);
     tooltip.querySelector('.l2').textContent = 'Benchmark';
     tooltip.querySelector('.v2').textContent = row.bench.toFixed(2);
+    if (row.sma != null) {{
+      tooltip.querySelector('.l3').textContent = '50-day SMA';
+      tooltip.querySelector('.v3').textContent = row.sma.toFixed(2);
+    }}
 
     const meta = document.createElement('div');
     meta.style.cssText = 'margin-top:4px; font-size:11px; color:{_TEXT_MUTED};';
@@ -262,6 +298,7 @@ def render_equity_curve(eq_df: pd.DataFrame, height: int = 460):
       crosshair.setAttribute('visibility', 'hidden');
       dotPort.setAttribute('visibility', 'hidden');
       dotBench.setAttribute('visibility', 'hidden');
+      dotSma.setAttribute('visibility', 'hidden');
       tooltip.style.display = 'none';
     }}
   }}

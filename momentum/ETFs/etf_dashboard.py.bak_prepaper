@@ -1,0 +1,1550 @@
+"""
+ETF Momentum Strategy — Streamlit Dashboard
+=============================================
+A clean white-themed web interface for the ETF momentum ranking engine.
+Run:  streamlit run etf_dashboard.py
+
+Layout:
+  - Regime banner (always visible at top)
+  - Tab 1: Current Recommendation  (allocation + rebalance diff + actions)
+  - Tab 2: Full Rankings        (filterable ranking table)
+  - Tab 3: Configuration        (editable strategy params + data source)
+  - Tab 4: Tradelog & MTM       (active holdings with exit-rule alerts, transaction log)
+  - Tab 5: Paper Trade (v2)     (simulated portfolio on the 200-day-trend variant; no real orders)
+"""
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import altair as alt
+import json
+import sys
+import os
+import shutil
+import uuid
+import datetime
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+import yfinance as yf
+
+# ── Ensure the script directory is importable ──────────────
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+import etf_momentum_ranking as emr
+
+# =========================================================
+# PAGE CONFIG
+# =========================================================
+st.set_page_config(
+    page_title="ETF Momentum Strategy",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+# ── Custom CSS for white theme polish ──────────────────────
+st.markdown("""
+<style>
+    /* Clean white background */
+    .stApp { background-color: #FFFFFF; }
+    
+    /* Hide sidebar toggle */
+    [data-testid="collapsedControl"] { display: none; }
+    
+    /* Metric cards */
+    div[data-testid="stMetric"] {
+        background: #F5F7FA;
+        border: 1px solid #E8ECF1;
+        border-radius: 10px;
+        padding: 14px 18px;
+    }
+    div[data-testid="stMetric"] label { color: #6B7A8D !important; font-size: 13px !important; }
+    div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
+        color: #1A1A2E !important;
+        font-size: clamp(14px, 2.2vw, 28px) !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    /* Table styling */
+    .stDataFrame { border-radius: 8px; overflow: hidden; }
+    thead tr th { background-color: #1F4E79 !important; color: #FFFFFF !important; }
+    
+    /* Buttons */
+    .stButton > button {
+        background: #1F4E79; color: white; border: none;
+        border-radius: 8px; font-weight: 600; padding: 8px 24px;
+    }
+    .stButton > button:hover { background: #163D5E; }
+    
+    /* Section headers */
+    h2 { color: #1F4E79 !important; border-bottom: 2px solid #E8ECF1; padding-bottom: 8px; }
+    
+    /* Regime banner — single-row, uniform, compact cards */
+    .regime-row {
+        display: flex;
+        gap: 8px;
+        width: 100%;
+        margin-bottom: 4px;
+        flex-wrap: nowrap;
+    }
+    .regime-card {
+        flex: 1 1 0;
+        min-width: 0;
+        background: #F5F7FA;
+        border: 1px solid #E8ECF1;
+        border-radius: 10px;
+        padding: 10px 12px;
+        overflow: hidden;
+    }
+    .regime-card-label {
+        color: #6B7A8D;
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .regime-card-value {
+        color: #1A1A2E;
+        font-size: clamp(11px, 1.15vw, 20px);
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 3px;
+    }
+    .regime-pill {
+        display: inline-block;
+        padding: 1px 10px;
+        border-radius: 20px;
+        font-weight: 700;
+        font-size: inherit;
+    }
+    .regime-pill.bull    { background: #E8F5E9; color: #2E7D32; }
+    .regime-pill.partial { background: #FFF8E1; color: #F57F17; }
+    .regime-pill.bear    { background: #FFEBEE; color: #C62828; }
+    
+    /* Action badges */
+    .badge-buy { background: #E8F5E9; color: #2E7D32; padding: 3px 10px; border-radius: 12px; font-weight: 600; font-size: 12px; }
+    .badge-sell { background: #FFEBEE; color: #C62828; padding: 3px 10px; border-radius: 12px; font-weight: 600; font-size: 12px; }
+    .badge-hold { background: #E3F2FD; color: #1565C0; padding: 3px 10px; border-radius: 12px; font-weight: 600; font-size: 12px; }
+    
+    /* Remove Streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* Card container */
+    .card {
+        background: #FFFFFF; border: 1px solid #E8ECF1; border-radius: 12px;
+        padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    .stTabs [data-baseweb="tab"] {
+        padding: 10px 24px; font-weight: 600; border-radius: 8px 8px 0 0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+# =========================================================
+# HELPER: Load data with caching
+# =========================================================
+@st.cache_data(show_spinner="Loading ETF data...")
+def load_data(filepath):
+    meta, prices = emr.load_etf_data(filepath)
+    return meta, prices
+
+
+@st.cache_data(show_spinner="Computing rankings...")
+def compute_regime_and_ranking(_meta, _prices):
+    """Regime + ranking are pure functions of meta/prices -- safe to cache.
+    Allocation is NOT cached here since it depends on real tradelog holdings
+    (session-mutable state), not just meta/prices -- see build_live_allocation()."""
+    regime = emr.regime_status(_prices, variant=emr.get_variant())
+    ranking = emr.build_ranking(_meta, _prices)
+    return regime, ranking
+
+
+def build_live_allocation(ranking, regime, active_holdings, prices):
+    """
+    Build the actual weekly hold-and-replace allocation using your REAL
+    tradelog holdings as the starting point, instead of a stateless
+    from-scratch top-N pick. Without this, the Current Recommendation tab
+    would show an all-CASH table during risk-off even while you're fully
+    invested in positions that pass every exit rule -- misleadingly
+    suggesting a liquidation that the live rules don't actually call for.
+    """
+    rank_by_ticker = {row["TICKER"]: row for _, row in ranking.iterrows()}
+    prev_alloc = []
+    for ticker, h in active_holdings.items():
+        if h.get("qty", 0) <= 0:
+            continue
+        row = rank_by_ticker.get(ticker)
+        etf_name = row["ETF_NAME"] if row is not None else ticker
+        sector = row["SECTOR"] if row is not None else "OTHER"
+        current_price = get_etf_latest_price(ticker, prices)
+        peak = emr.compute_holding_peak(ticker, h.get("first_buy_date"), prices, current_price)
+        prev_alloc.append({"ticker": ticker, "etf_name": etf_name, "sector": sector, "peak": peak})
+    return emr.build_allocation(ranking, regime, prev_allocation=prev_alloc, prices=prices,
+                                variant=emr.get_variant())
+
+
+# =========================================================
+# TRADELOG HELPERS
+# =========================================================
+ETF_TRADELOG_FILE    = SCRIPT_DIR / "ETF_tradelog.json"
+ETF_POSITIONS_LEDGER = SCRIPT_DIR / "ETF_positions_ledger.json"
+
+
+def safe_write_json(path, data):
+    """Atomic JSON write: write to .tmp, backup existing to .bak, rename .tmp -> target."""
+    path = Path(path)
+    tmp_path = path.with_suffix(".tmp")
+    bak_path = path.with_suffix(".bak")
+    try:
+        with open(tmp_path, "w") as f:
+            json.dump(data, f, indent=2)
+        if path.exists():
+            shutil.copy2(path, bak_path)
+        shutil.move(str(tmp_path), str(path))
+    except Exception as e:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise e
+
+
+def load_tradelog() -> list:
+    """Load ETF_tradelog.json; auto-creates empty file if missing."""
+    if not ETF_TRADELOG_FILE.exists():
+        try:
+            safe_write_json(ETF_TRADELOG_FILE, [])
+        except Exception as e:
+            st.error(f"Error initialising tradelog: {e}")
+        return []
+    try:
+        with open(ETF_TRADELOG_FILE) as f:
+            return json.load(f)
+    except Exception as e:
+        st.error(f"Error loading tradelog: {e}")
+        bak = ETF_TRADELOG_FILE.with_suffix(".bak")
+        if bak.exists():
+            st.warning("Attempting recovery from backup...")
+            try:
+                with open(bak) as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return []
+
+
+def save_tradelog(tradelog: list):
+    """Persist the tradelog to ETF_tradelog.json."""
+    try:
+        safe_write_json(ETF_TRADELOG_FILE, tradelog)
+    except Exception as e:
+        st.error(f"Error saving tradelog: {e}")
+
+
+def validate_tradelog_integrity(transactions: list):
+    """Replay all transactions chronologically; check no ticker ever goes negative.
+    Returns (is_valid: bool, error_message: str)."""
+    try:
+        sorted_txs = sorted(transactions,
+                            key=lambda x: (x.get("date", ""), x.get("timestamp", "")))
+    except Exception:
+        sorted_txs = transactions
+    holdings = {}
+    for tx in sorted_txs:
+        ticker  = tx["ticker"]
+        action  = tx["action"].upper()
+        qty     = float(tx["quantity"])
+        current = holdings.get(ticker, 0.0)
+        if action == "BUY":
+            holdings[ticker] = current + qty
+        elif action == "SELL":
+            if qty > current + 1e-9:
+                return False, (f"{ticker}: SELL {qty:.0f} exceeds holding "
+                               f"{current:.0f} on {tx.get('date', '?')}")
+            holdings[ticker] = current - qty
+    return True, ""
+
+
+def calculate_holdings_and_pnl(transactions: list, latest_prices: dict | None = None) -> dict:
+    """FIFO avg-cost P&L engine — exact port from sharpe_dashboard.py."""
+    try:
+        sorted_txs = sorted(transactions,
+                            key=lambda x: (x.get("date", ""), x.get("timestamp", "")))
+    except Exception:
+        sorted_txs = transactions
+
+    holdings: dict = {}
+    realized_pnl = 0.0
+    realized_pnl_by_ticker: dict = {}
+
+    for tx in sorted_txs:
+        ticker   = tx["ticker"]
+        action   = tx["action"].upper()
+        qty      = float(tx["quantity"])
+        price    = float(tx["price"])
+        tx_date  = tx.get("date", "")
+        if isinstance(tx_date, str):
+            try:
+                tx_date = datetime.date.fromisoformat(tx_date)
+            except Exception:
+                tx_date = datetime.date.today()
+
+        if ticker not in holdings:
+            holdings[ticker] = {"qty": 0.0, "avg_price": 0.0,
+                                "first_buy_date": None, "total_cost": 0.0}
+        h      = holdings[ticker]
+        t_pnl  = realized_pnl_by_ticker.get(ticker, 0.0)
+
+        if action == "BUY":
+            if h["qty"] == 0:
+                h["first_buy_date"] = tx_date
+            h["total_cost"] += qty * price
+            h["qty"]        += qty
+            h["avg_price"]   = h["total_cost"] / h["qty"]
+        elif action == "SELL":
+            if h["qty"] > 0:
+                sell_qty = min(qty, h["qty"])
+                pnl      = sell_qty * (price - h["avg_price"])
+                realized_pnl += pnl
+                t_pnl        += pnl
+                h["qty"]     -= sell_qty
+                h["total_cost"] = h["qty"] * h["avg_price"]
+                if h["qty"] == 0:
+                    h["avg_price"]    = 0.0
+                    h["first_buy_date"] = None
+        realized_pnl_by_ticker[ticker] = t_pnl
+
+    active_holdings = {t: h for t, h in holdings.items() if h["qty"] > 0}
+    unrealized_pnl  = 0.0
+    holdings_metrics = []
+
+    for ticker, h in active_holdings.items():
+        curr_price = h["avg_price"]
+        if latest_prices and ticker in latest_prices:
+            curr_price = latest_prices[ticker]
+        market_val  = h["qty"] * curr_price
+        u_pnl       = market_val - h["total_cost"]
+        unrealized_pnl += u_pnl
+        u_pnl_pct   = (u_pnl / h["total_cost"] * 100) if h["total_cost"] > 0 else 0.0
+        holdings_metrics.append({
+            "Ticker":            ticker,
+            "Qty":               h["qty"],
+            "Avg Price":         h["avg_price"],
+            "Current Price":     curr_price,
+            "Cost Value":        h["total_cost"],
+            "Market Value":      market_val,
+            "Unrealized PnL":    u_pnl,
+            "Unrealized PnL %":  u_pnl_pct,
+            "First Buy Date":    h["first_buy_date"],
+        })
+
+    return {
+        "active_holdings":       active_holdings,
+        "holdings_metrics":      holdings_metrics,
+        "realized_pnl":          realized_pnl,
+        "realized_pnl_by_ticker": realized_pnl_by_ticker,
+        "unrealized_pnl":        unrealized_pnl,
+    }
+
+
+def sync_to_positions_ledger(active_holdings: dict):
+    """Write active ETF holdings to ETF_positions_ledger.json."""
+    serialisable = {}
+    for ticker, h in active_holdings.items():
+        if h["qty"] > 0:
+            entry_date_str = h["first_buy_date"]
+            if isinstance(entry_date_str, (datetime.date, datetime.datetime)):
+                entry_date_str = entry_date_str.isoformat()
+            serialisable[ticker] = {
+                "entry_date":  entry_date_str,
+                "entry_price": float(h["avg_price"]),
+            }
+    try:
+        safe_write_json(ETF_POSITIONS_LEDGER, serialisable)
+    except Exception as e:
+        st.error(f"Error syncing positions ledger: {e}")
+
+
+def get_etf_latest_price(ticker: str, prices_df: pd.DataFrame) -> float:
+    """Return last non-NaN price for ticker from loaded price data."""
+    if ticker in prices_df.columns:
+        series = prices_df[ticker].dropna()
+        if not series.empty:
+            return float(series.iloc[-1])
+    return 0.0
+
+
+def apply_ticker_selection_to_tradelog(event, source_df: pd.DataFrame,
+                                        session_key: str, ticker_col: str = "Ticker"):
+    """
+    Generic row-selection handler for any on_select='rerun' st.dataframe.
+    When a new row is selected (in Top 5 Ranking, Full Rankings, or the
+    Tradelog Active Holdings table), auto-populates the Log New Transaction
+    form's Select ETF field (and refreshes its price) with that ticker —
+    regardless of which tab the selection happened in, since session_state
+    is shared across tabs within the same script run.
+    """
+    if session_key not in st.session_state:
+        st.session_state[session_key] = None
+
+    rows = []
+    if event and hasattr(event, "selection"):
+        sel = event.selection
+        rows = sel.rows if hasattr(sel, "rows") else sel.get("rows", [])
+
+    if rows:
+        idx = rows[0]
+        if st.session_state[session_key] != idx:
+            sel_ticker = source_df.iloc[idx][ticker_col]
+            if sel_ticker and sel_ticker != "CASH":
+                st.session_state.tl_ticker = sel_ticker
+                st.session_state.tl_price = float(get_etf_latest_price(sel_ticker, prices))
+            st.session_state[session_key] = idx
+    else:
+        st.session_state[session_key] = None
+
+
+# =========================================================
+# DATA LOADING — resolve input path from config
+# =========================================================
+input_path = str(SCRIPT_DIR / emr.CONFIG.INPUT_FILE)
+
+# Check for uploaded file in session state (set from Configuration tab)
+if "uploaded_input_path" in st.session_state and st.session_state.uploaded_input_path:
+    input_path = st.session_state.uploaded_input_path
+
+
+# =========================================================
+# TITLE + REGIME BANNER (always visible)
+# =========================================================
+st.markdown(
+    "<h1 style='color:#1F4E79; margin-bottom:0;'>📈 ETF Momentum Strategy</h1>"
+    "<p style='color:#6B7A8D; margin-top:4px;'>Screen → Score → Regime → Allocate</p>",
+    unsafe_allow_html=True,
+)
+
+# Load data + compute rankings
+if not Path(input_path).exists():
+    st.error(f"❌ Data file not found: `{input_path}`\n\nPlease ensure `{emr.CONFIG.INPUT_FILE}` is in the script directory or upload a custom file in the Configuration tab.")
+    st.stop()
+
+try:
+    meta, prices = load_data(input_path)
+except Exception as e:
+    st.error(f"Error loading data: {e}")
+    st.stop()
+
+try:
+    regime, ranking = compute_regime_and_ranking(meta, prices)
+except Exception as e:
+    st.error(f"Error computing rankings: {e}")
+    st.stop()
+
+# ── Build ETF ticker list + latest prices from loaded data ──
+etf_tickers = sorted(meta["TICKER"].tolist()) if meta is not None and "TICKER" in meta.columns else []
+latest_etf_prices = {t: get_etf_latest_price(t, prices) for t in etf_tickers}
+
+# Override with yfinance-fetched live prices if already in session state
+if "etf_live_prices" in st.session_state:
+    for tk, px in st.session_state.etf_live_prices.items():
+        if tk in latest_etf_prices:
+            latest_etf_prices[tk] = px
+
+# ── Load tradelog + compute holdings on every page load ──
+tradelog = load_tradelog()
+tl_result = calculate_holdings_and_pnl(tradelog, latest_etf_prices)
+active_holdings   = tl_result["active_holdings"]
+holdings_metrics  = emr.evaluate_holdings_exit_rules(tl_result["holdings_metrics"], ranking, prices,
+                                                      variant=emr.get_variant())
+realized_pnl      = tl_result["realized_pnl"]
+unrealized_pnl    = tl_result["unrealized_pnl"]
+
+# Sync to positions ledger on every page load
+sync_to_positions_ledger(active_holdings)
+
+# ── Allocation: real hold-and-replace, seeded from ACTUAL holdings ──
+allocation = build_live_allocation(ranking, regime, active_holdings, prices)
+
+# ── Regime Banner ──────────────────────────────────────────
+# Binary risk-on/risk-off regime: BULL = price > 50-EMA, BEAR = otherwise.
+regime_label = regime["label"]
+if regime_label == "BULL":
+    pill_class = "bull"
+    regime_emoji = "🟢"
+else:
+    pill_class = "bear"
+    regime_emoji = "🔴"
+
+data_range = f"{prices.index[0].strftime('%Y-%m-%d')} → {prices.index[-1].strftime('%Y-%m-%d')}"
+
+banner_cards = [
+    ("Regime",         f"<span class='regime-pill {pill_class}'>{regime_emoji} {regime_label}</span>"),
+    ("Price",          f"{regime['nifty_price']:.2f}"),
+    (regime.get("regime_ma_label", "50 EMA (trend)"),
+     f"{regime.get('regime_ma', regime['nifty_ema_50']):.2f}"),
+    ("New-Buy Slots",  f"{regime['active_slots']} / {emr.CONFIG.TOP_N}"),
+    ("Current Holdings", f"{(allocation['TICKER'] != 'CASH').sum()} / {emr.CONFIG.TOP_N}"),
+    ("Trend Ticker",   regime.get("trend_ticker", "N/A")),
+    ("Data Range",     data_range),
+]
+
+cards_html = "".join(
+    f"<div class='regime-card'>"
+    f"<div class='regime-card-label'>{label}</div>"
+    f"<div class='regime-card-value'>{value}</div>"
+    f"</div>"
+    for label, value in banner_cards
+)
+st.markdown(f"<div class='regime-row'>{cards_html}</div>", unsafe_allow_html=True)
+
+st.divider()
+
+
+# =========================================================
+# TABS
+# =========================================================
+# key= keeps the selected tab across reruns (otherwise every widget click snaps back to tab 1)
+tab_alloc, tab_rankings, tab_config, tab_tradelog, tab_paper = st.tabs([
+    "📊 Current Recommendation", "📋 Full Rankings", "⚙️ Configuration", "📝 Tradelog & MTM",
+    "🧪 Paper Trade (v2)"
+], key="main_tabs")
+
+
+# =========================================================
+# TAB 1: CURRENT RECOMMENDATION
+# =========================================================
+with tab_alloc:
+    # ── Current Recommendation Table ───────────────────────
+    st.markdown("## 📊 Top 5 Ranking")
+
+    alloc_display = allocation[["SLOT", "TICKER", "ETF_NAME", "SECTOR", "WEIGHT", "INV_RANK"]].copy()
+    alloc_display["WEIGHT"] = alloc_display["WEIGHT"].apply(lambda x: f"{x:.0%}")
+    alloc_display["INV_RANK"] = alloc_display["INV_RANK"].astype(str)
+    alloc_display.columns = ["Slot", "Ticker", "ETF Name", "Sector", "Weight", "Inv Rank"]
+
+    def style_allocation(row):
+        if row["Ticker"] == "CASH":
+            return ["background-color: #F9FAFB; color: #9AA5B4;"] * len(row)
+        return ["background-color: #FFFFFF;"] * len(row)
+
+    alloc_event = st.dataframe(
+        alloc_display.style.apply(style_allocation, axis=1),
+        use_container_width=True,
+        hide_index=True,
+        height=220,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="alloc_table_select",
+    )
+    apply_ticker_selection_to_tradelog(alloc_event, alloc_display, "alloc_last_selected_row")
+    st.caption("💡 Select a row above to auto-fill it in **Log New Transaction** (Tradelog & MTM tab).")
+
+    st.divider()
+
+    # ── Actions ────────────────────────────────────────────
+    st.markdown("## ⚡ Actions")
+
+    col_act1, col_act2 = st.columns(2)
+
+    with col_act1:
+        if st.button("🔁 Run Weekly Rebalance", use_container_width=True, key="rebal_btn"):
+            with st.spinner("Running full pipeline..."):
+                try:
+                    emr.run_pipeline(input_path)
+                    st.success("✅ Weekly rebalance complete! Refresh the page to see updated results.")
+                    st.cache_data.clear()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+    with col_act2:
+        output_path = SCRIPT_DIR / emr.CONFIG.OUTPUT_FILE
+        if output_path.exists():
+            with open(output_path, "rb") as f:
+                st.download_button(
+                    label="📥 Download Rankings Excel",
+                    data=f.read(),
+                    file_name=emr.CONFIG.OUTPUT_FILE,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+        else:
+            st.info("Run the weekly rebalance first to generate the Excel output.")
+
+
+# =========================================================
+# TAB 2: FULL RANKINGS
+# =========================================================
+with tab_rankings:
+    st.markdown("## 📋 Full Rankings")
+
+    # Prepare display columns
+    display_cols = ["RANK_INVESTABLE", "TICKER", "ETF_NAME", "SECTOR",
+                    "WTD_SHARPE", "SHARPE_6M", "SHARPE_3M", "SCREEN_PASS"]
+    available_cols = [c for c in display_cols if c in ranking.columns]
+    rank_display = ranking[available_cols].copy()
+
+    # Rename for readability
+    col_rename = {
+        "RANK_INVESTABLE": "Inv Rank",
+        "TICKER": "Ticker",
+        "ETF_NAME": "ETF Name",
+        "SECTOR": "Sector",
+        "WTD_SHARPE": "Wtd Sharpe",
+        "SHARPE_6M": "Sharpe 6M",
+        "SHARPE_3M": "Sharpe 3M",
+        "SCREEN_PASS": "Screen",
+    }
+    rank_display = rank_display.rename(columns=col_rename)
+
+    # Filters
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        show_screen = st.selectbox("Screen Filter", ["All", "PASS only", "FAIL only"], index=0, key="screen_filter")
+    with col_f2:
+        sectors = ["All"] + sorted(rank_display["Sector"].unique().tolist())
+        selected_sector = st.selectbox("Sector", sectors, index=0, key="sector_filter")
+    with col_f3:
+        top_n_filter = st.slider("Show top N", min_value=5, max_value=len(rank_display),
+                                  value=min(50, len(rank_display)), step=5, key="topn_slider")
+
+    # Apply filters
+    filtered = rank_display.copy()
+    if show_screen == "PASS only":
+        filtered = filtered[filtered["Screen"] == True]
+    elif show_screen == "FAIL only":
+        filtered = filtered[filtered["Screen"] == False]
+    if selected_sector != "All":
+        filtered = filtered[filtered["Sector"] == selected_sector]
+    filtered = filtered.head(top_n_filter)
+
+    # Format numeric columns
+    for col in ["Wtd Sharpe", "Sharpe 6M", "Sharpe 3M"]:
+        if col in filtered.columns:
+            filtered[col] = filtered[col].apply(lambda x: f"{x:.3f}" if pd.notna(x) else "—")
+
+    # Inv Rank: blank (not 0, not NaN) for ETFs that don't pass the 52wk-high screen
+    if "Inv Rank" in filtered.columns:
+        filtered["Inv Rank"] = filtered["Inv Rank"].apply(lambda x: str(int(x)) if pd.notna(x) else "")
+
+    held_tickers_set = set(allocation.loc[allocation["TICKER"] != "CASH", "TICKER"])
+
+    def style_rankings(row):
+        if row.get("Screen") == False:
+            return ["background-color: #FFF8F8; color: #B0B0B0;"] * len(row)
+        if row.get("Ticker") in held_tickers_set:
+            return ["background-color: #E8F5E9;"] * len(row)
+        return [""] * len(row)
+
+    rankings_event = st.dataframe(
+        filtered.style.apply(style_rankings, axis=1),
+        use_container_width=True,
+        hide_index=True,
+        height=500,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="rankings_table_select",
+    )
+    apply_ticker_selection_to_tradelog(rankings_event, filtered, "rankings_last_selected_row")
+    st.caption("💡 Select a row above to auto-fill it in **Log New Transaction** (Tradelog & MTM tab).")
+
+    st.caption(f"Universe: {len(meta)} ETFs  |  Investable: {ranking['SCREEN_PASS'].sum()}  |  "
+               f"Screened out: {(~ranking['SCREEN_PASS']).sum()}")
+
+
+# =========================================================
+# TAB 3: CONFIGURATION
+# =========================================================
+with tab_config:
+    st.markdown("## ⚙️ Strategy Configuration")
+    st.markdown("Edit parameters below and click **Save** to persist to `strategy_config.json`. "
+                "Changes take effect after clicking **Run Rebalance**.")
+
+    # Load current config
+    current_cfg = emr.get_config_as_dict()
+
+    st.divider()
+
+    # ── Data Source ─────────────────────────────────────────
+    st.markdown("### 📁 Data Source")
+    data_source = st.radio(
+        "NAV Input File",
+        [f"Default ({current_cfg.get('INPUT_FILE', 'ETF_updated.xlsx')})", "Upload custom file"],
+        index=0,
+        label_visibility="collapsed",
+        key="cfg_data_source",
+    )
+
+    if data_source == "Upload custom file":
+        uploaded_file = st.file_uploader("Upload ETF data (.xlsx)", type=["xlsx"], key="cfg_uploader")
+        if uploaded_file:
+            tmp_dir = SCRIPT_DIR / ".streamlit_tmp"
+            tmp_dir.mkdir(exist_ok=True)
+            tmp_path = tmp_dir / "uploaded_etf.xlsx"
+            with open(tmp_path, "wb") as f:
+                f.write(uploaded_file.getvalue())
+            st.session_state.uploaded_input_path = str(tmp_path)
+            st.success("✅ Uploaded file saved. Click **Run Rebalance** to apply.")
+    else:
+        default_path = SCRIPT_DIR / current_cfg.get("INPUT_FILE", "ETF_updated.xlsx")
+        if default_path.exists():
+            st.info(f"📄 {current_cfg.get('INPUT_FILE', 'ETF_updated.xlsx')}")
+        else:
+            st.error(f"❌ {current_cfg.get('INPUT_FILE', 'ETF_updated.xlsx')} not found!")
+        # Clear any uploaded path
+        st.session_state.uploaded_input_path = None
+
+    st.divider()
+
+    # ── Portfolio Parameters ───────────────────────────────
+    st.markdown("### 📊 Portfolio Allocation")
+    cfg_col1, cfg_col3 = st.columns(2)
+    with cfg_col1:
+        cfg_top_n = st.number_input("Top N (risk-on)", min_value=1, max_value=20,
+                                     value=current_cfg["TOP_N"], step=1, key="cfg_top_n",
+                                     help="Number of ETF slots held while the regime is risk-on "
+                                          "(price above its 50-EMA). No separate partial tier anymore.")
+    with cfg_col3:
+        cfg_sector_cap = st.number_input("Sector Cap", min_value=1, max_value=10,
+                                          value=current_cfg["SECTOR_CAP"], step=1, key="cfg_sector_cap")
+
+    st.divider()
+
+    # ── Momentum Parameters ────────────────────────────────
+    st.markdown("### 📈 Momentum Scoring")
+    cfg_col4, cfg_col5 = st.columns(2)
+    with cfg_col4:
+        cfg_window_6m = st.number_input("6M Window (days)", min_value=20, max_value=252,
+                                         value=current_cfg["WINDOW_6M"], step=1, key="cfg_window_6m")
+        cfg_sharpe_w6m = st.number_input("Sharpe 6M Weight", min_value=0.0, max_value=1.0,
+                                          value=float(current_cfg["SHARPE_W6M"]), step=0.1,
+                                          format="%.1f", key="cfg_sharpe_w6m")
+    with cfg_col5:
+        cfg_window_3m = st.number_input("3M Window (days)", min_value=10, max_value=126,
+                                         value=current_cfg["WINDOW_3M"], step=1, key="cfg_window_3m")
+        cfg_sharpe_w3m = st.number_input("Sharpe 3M Weight", min_value=0.0, max_value=1.0,
+                                          value=float(current_cfg["SHARPE_W3M"]), step=0.1,
+                                          format="%.1f", key="cfg_sharpe_w3m")
+
+    st.divider()
+
+    # ── Screening ──────────────────────────────────────────
+    st.markdown("### 🔍 Screening")
+    cfg_max_dd = st.number_input("Max Drawdown from 52W High", min_value=0.05, max_value=0.50,
+                                  value=float(current_cfg["MAX_DRAWDOWN_FROM_HIGH"]), step=0.05,
+                                  format="%.2f", key="cfg_max_dd",
+                                  help="ETFs must be within this % of their 52-week high (0.25 = must be ≥ 75%)")
+
+    st.divider()
+
+    # ── Regime Parameters ──────────────────────────────────
+    st.markdown("### 🎯 Regime Filter")
+    st.caption("Binary risk-on/risk-off: **risk-on** while price is above its Fast EMA, "
+               "**risk-off** otherwise. Risk-off blocks new buys only — existing holdings "
+               "are left alone and close solely via their own exit rule (52wk-high DD, "
+               "rank cutoff, or TSL), not because of a regime flip.")
+    cfg_index_ticker = st.text_input(
+        "Index Ticker (Yahoo Finance)",
+        value=current_cfg.get("REGIME_INDEX_TICKER", "^CRSLDX"),
+        key="cfg_index_ticker",
+        help="Live Nifty 500 index symbol fetched via yfinance (primary regime "
+             "source). Falls back to the ETF.xlsx-based Regime Ticker below if "
+             "this fetch fails or yfinance is unavailable.",
+    )
+    cfg_col6, cfg_col7, cfg_col8 = st.columns(3)
+    with cfg_col6:
+        cfg_regime_ticker = st.text_input("Regime Ticker (fallback)", value=current_cfg["REGIME_TICKER"], key="cfg_regime_ticker")
+    with cfg_col7:
+        cfg_fast_ema = st.number_input("Fast EMA Window", min_value=10, max_value=200,
+                                        value=current_cfg["TREND_FAST_EMA_WINDOW"], step=5, key="cfg_fast_ema",
+                                        help="This is the ONLY EMA that drives the risk-on/off decision "
+                                             "(price vs this EMA).")
+    with cfg_col8:
+        cfg_slow_ema = st.number_input("Slow EMA Window (display only)", min_value=20, max_value=400,
+                                        value=current_cfg["TREND_EMA_WINDOW"], step=10, key="cfg_slow_ema",
+                                        help="No longer used in the regime decision — kept only for "
+                                             "reference/reporting.")
+
+    cfg_fallbacks = st.text_input("Regime Fallbacks (comma-separated)",
+                                   value=", ".join(current_cfg["REGIME_FALLBACKS"]),
+                                   key="cfg_fallbacks",
+                                   help="Fallback tickers if regime ticker is missing from data")
+
+    st.divider()
+
+    # ── Risk Parameters ────────────────────────────────────
+    st.markdown("### ⚠️ Risk Management")
+    cfg_col9, cfg_col10 = st.columns(2)
+    with cfg_col9:
+        cfg_rf_annual = st.number_input("Risk-Free Rate (annual)", min_value=0.0, max_value=0.20,
+                                         value=float(current_cfg["DAILY_RF_ANNUAL"]), step=0.01,
+                                         format="%.2f", key="cfg_rf_annual",
+                                         help="Annual risk-free rate used for Sharpe calculation")
+    with cfg_col10:
+        cfg_tsl = st.number_input("TSL Threshold", min_value=0.01, max_value=0.30,
+                                   value=float(current_cfg["TSL_THRESHOLD"]), step=0.01,
+                                   format="%.2f", key="cfg_tsl",
+                                   help="Trailing stop loss drawdown trigger (0.05 = 5%)")
+
+    st.divider()
+
+    # ── Weekly Exit Triggers ───────────────────────────────
+    st.markdown("### 🚪 Weekly Exit Triggers")
+    cfg_col11, cfg_col12 = st.columns(2)
+    with cfg_col11:
+        cfg_exit_dd = st.number_input("Exit: Max DD from 52W High", min_value=0.05, max_value=0.50,
+                                       value=float(current_cfg.get("EXIT_MAX_DD_FROM_HIGH", 0.25)), step=0.05,
+                                       format="%.2f", key="cfg_exit_dd",
+                                       help="Exit position if >X% away from 52-week high (0.25 = 25%)")
+    with cfg_col12:
+        cfg_exit_rank = st.number_input("Exit: Max Investable Rank", min_value=5, max_value=100,
+                                         value=int(current_cfg.get("EXIT_MAX_RANK", 20)), step=1,
+                                         key="cfg_exit_rank",
+                                         help="Exit position if investable rank exceeds this value")
+
+    st.divider()
+
+    # ── Save / Run Buttons ─────────────────────────────────
+    col_save, col_run = st.columns(2)
+
+    with col_save:
+        if st.button("💾 Save Configuration", use_container_width=True, key="cfg_save_btn"):
+            new_cfg = {
+                "INPUT_FILE": current_cfg["INPUT_FILE"],
+                "OUTPUT_FILE": current_cfg["OUTPUT_FILE"],
+                "WINDOW_6M": cfg_window_6m,
+                "WINDOW_3M": cfg_window_3m,
+                "ANNUALIZE": current_cfg["ANNUALIZE"],
+                "TOP_N": cfg_top_n,
+                "MAX_DRAWDOWN_FROM_HIGH": cfg_max_dd,
+                "SHARPE_W6M": cfg_sharpe_w6m,
+                "SHARPE_W3M": cfg_sharpe_w3m,
+                "REGIME_TICKER": cfg_regime_ticker.strip(),
+                "REGIME_FALLBACKS": [t.strip() for t in cfg_fallbacks.split(",") if t.strip()],
+                "REGIME_INDEX_TICKER": cfg_index_ticker.strip(),
+                "TREND_FAST_EMA_WINDOW": cfg_fast_ema,
+                "TREND_EMA_WINDOW": cfg_slow_ema,
+                "SECTOR_CAP": cfg_sector_cap,
+                "DAILY_RF_ANNUAL": cfg_rf_annual,
+                "TSL_THRESHOLD": cfg_tsl,
+                "EXIT_MAX_DD_FROM_HIGH": cfg_exit_dd,
+                "EXIT_MAX_RANK": cfg_exit_rank,
+            }
+            try:
+                emr.save_config_to_json(new_cfg, SCRIPT_DIR)
+                # Apply to running CONFIG
+                emr._apply_json_config(emr.CONFIG, new_cfg)
+                st.success("✅ Configuration saved to `strategy_config.json`")
+            except Exception as e:
+                st.error(f"Error saving config: {e}")
+
+    with col_run:
+        if st.button("🔁 Run Rebalance with New Config", use_container_width=True, key="cfg_run_btn"):
+            with st.spinner("Saving config and running full pipeline..."):
+                try:
+                    # Save current form values first
+                    new_cfg = {
+                        "INPUT_FILE": current_cfg["INPUT_FILE"],
+                        "OUTPUT_FILE": current_cfg["OUTPUT_FILE"],
+                        "WINDOW_6M": cfg_window_6m,
+                        "WINDOW_3M": cfg_window_3m,
+                        "ANNUALIZE": current_cfg["ANNUALIZE"],
+                        "TOP_N": cfg_top_n,
+                        "MAX_DRAWDOWN_FROM_HIGH": cfg_max_dd,
+                        "SHARPE_W6M": cfg_sharpe_w6m,
+                        "SHARPE_W3M": cfg_sharpe_w3m,
+                        "REGIME_TICKER": cfg_regime_ticker.strip(),
+                        "REGIME_FALLBACKS": [t.strip() for t in cfg_fallbacks.split(",") if t.strip()],
+                        "REGIME_INDEX_TICKER": cfg_index_ticker.strip(),
+                        "TREND_FAST_EMA_WINDOW": cfg_fast_ema,
+                        "TREND_EMA_WINDOW": cfg_slow_ema,
+                        "SECTOR_CAP": cfg_sector_cap,
+                        "DAILY_RF_ANNUAL": cfg_rf_annual,
+                        "TSL_THRESHOLD": cfg_tsl,
+                    }
+                    emr.save_config_to_json(new_cfg, SCRIPT_DIR)
+                    emr._apply_json_config(emr.CONFIG, new_cfg)
+
+                    # Run pipeline
+                    run_path = st.session_state.get("uploaded_input_path") or str(SCRIPT_DIR / emr.CONFIG.INPUT_FILE)
+                    emr.run_pipeline(run_path)
+                    st.success("✅ Rebalance complete! Refresh the page to see updated results.")
+                    st.cache_data.clear()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+    st.divider()
+
+    # ── Current config summary ─────────────────────────────
+    st.markdown("### 📄 Current Config File")
+    cfg_path = SCRIPT_DIR / "strategy_config.json"
+    if cfg_path.exists():
+        with open(cfg_path) as f:
+            st.code(f.read(), language="json")
+    else:
+        st.info("No `strategy_config.json` found — using hardcoded defaults.")
+
+
+# =========================================================
+# TAB 4: TRADELOG & MTM
+# =========================================================
+with tab_tradelog:
+    st.markdown("## 📝 Tradelog & Real-time MTM")
+
+    # ── 1. Metric Cards ───────────────────────────────────
+    total_invested_val      = sum(h["Cost Value"]   for h in holdings_metrics)
+    total_market_val        = sum(h["Market Value"] for h in holdings_metrics)
+    total_unrealized_pnl    = total_market_val - total_invested_val
+    total_unrealized_pnl_pct = (
+        (total_unrealized_pnl / total_invested_val * 100) if total_invested_val > 0 else 0.0
+    )
+
+    tc1, tc2, tc3, tc4 = st.columns(4)
+    with tc1:
+        st.metric("Total Invested", f"Rs {total_invested_val:,.2f}")
+    with tc2:
+        st.metric("Current Market Value", f"Rs {total_market_val:,.2f}")
+    with tc3:
+        st.metric("Unrealized PnL (MTM)",
+                  f"Rs {total_unrealized_pnl:,.2f}",
+                  delta=f"{total_unrealized_pnl_pct:+.2f}%")
+    with tc4:
+        st.metric("Realized PnL", f"Rs {realized_pnl:,.2f}")
+
+    st.divider()
+
+    # ── 2. Active Holdings Table ───────────────────────────
+    hc1, hc2 = st.columns([0.7, 0.3])
+    with hc1:
+        st.markdown("### 💼 Active Holdings")
+    with hc2:
+        if st.button("🔄 Refresh Live Market Prices", use_container_width=True, key="tl_refresh_btn"):
+            if holdings_metrics:
+                with st.spinner("Fetching latest NAVs from Yahoo Finance (.NS)..."):
+                    def _fetch_etf_price(tkr):
+                        try:
+                            return tkr, yf.Ticker(f"{tkr}.NS").fast_info.last_price
+                        except Exception:
+                            return tkr, None
+                    live = {}
+                    with ThreadPoolExecutor(max_workers=20) as exe:
+                        for tkr, px in exe.map(_fetch_etf_price,
+                                               [h["Ticker"] for h in holdings_metrics]):
+                            if px:
+                                live[tkr] = px
+                if live:
+                    st.session_state.etf_live_prices = live
+                    st.rerun()
+                else:
+                    st.warning("Could not fetch any live prices. Check NSE tickers.")
+            else:
+                st.info("No active holdings to refresh.")
+
+    # Row-selection state tracking
+    if "tl_last_selected_row" not in st.session_state:
+        st.session_state.tl_last_selected_row = None
+
+    if not holdings_metrics:
+        st.info("No active holdings. Log a BUY trade below to open a position.")
+    else:
+        breached = [h for h in holdings_metrics if h["Exit Reason"] != "OK"]
+        if breached:
+            st.error(f"🚨 **{len(breached)} holding(s) breaching exit criteria!**")
+            for h in breached:
+                st.markdown(
+                    f"<div style='background:#FFEBEE; border-left:4px solid #C62828; "
+                    f"padding:12px; border-radius:6px; margin:8px 0;'>"
+                    f"<b>⚠️ {h['Ticker']}</b> — {h['Exit Reason']}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.success("✅ All active holdings within exit thresholds (52wk-high DD, rank, TSL).")
+
+        holdings_df = pd.DataFrame(holdings_metrics)
+        cols_order  = ["Ticker", "Qty", "Avg Price", "Current Price",
+                       "Cost Value", "Market Value",
+                       "Unrealized PnL", "Unrealized PnL %", "First Buy Date",
+                       "Exit Reason"]
+        holdings_df = holdings_df[cols_order].sort_values("Unrealized PnL", ascending=False)
+
+        def _style_holdings(row):
+            if row["Exit Reason"] != "OK":
+                return ["background-color:#FFCDD2; color:#7F0000; font-weight:600;"] * len(row)
+            pnl = row["Unrealized PnL"]
+            if pnl > 0:  return ["background-color:#E8F5E9;"] * len(row)
+            if pnl < 0:  return ["background-color:#FFEBEE;"] * len(row)
+            return [""] * len(row)
+
+        event = st.dataframe(
+            holdings_df.style.apply(_style_holdings, axis=1).format(
+                {"Qty":             "{:,.0f}",
+                 "Avg Price":       "Rs {:,.2f}",
+                 "Current Price":   "Rs {:,.2f}",
+                 "Cost Value":      "Rs {:,.2f}",
+                 "Market Value":    "Rs {:,.2f}",
+                 "Unrealized PnL":  "Rs {:,.2f}",
+                 "Unrealized PnL %": "{:+.2f}%",
+                 "First Buy Date":  lambda x: x.isoformat() if hasattr(x, "isoformat") else str(x)},
+                na_rep="—"
+            ),
+            use_container_width=True, hide_index=True,
+            on_select="rerun", selection_mode="single-row",
+        )
+
+        # Pre-fill trade form from selected row
+        rows = []
+        if event and hasattr(event, "selection"):
+            sel = event.selection
+            rows = sel.rows if hasattr(sel, "rows") else sel.get("rows", [])
+
+        if rows:
+            idx = rows[0]
+            if st.session_state.tl_last_selected_row != idx:
+                sel_row = holdings_df.iloc[idx]
+                st.session_state.tl_ticker  = sel_row["Ticker"]
+                st.session_state.tl_qty     = int(sel_row["Qty"])
+                st.session_state.tl_price   = float(sel_row["Current Price"])
+                st.session_state.tl_last_selected_row = idx
+        else:
+            st.session_state.tl_last_selected_row = None
+
+    st.divider()
+
+    # ── 3. Log New Transaction ─────────────────────────────
+    st.markdown("### ➕ Log New Transaction")
+
+    # Deferred reset: apply pending resets BEFORE widgets are instantiated
+    if st.session_state.get("_tl_pending_reset"):
+        st.session_state.tl_qty   = 10
+        st.session_state.tl_price = float(
+            get_etf_latest_price(
+                st.session_state.get("tl_ticker", etf_tickers[0] if etf_tickers else ""),
+                prices
+            )
+        )
+        st.session_state.tl_last_selected_row = None
+        del st.session_state["_tl_pending_reset"]
+
+    # Initialise session-state defaults for form widgets
+    if "tl_ticker" not in st.session_state:
+        st.session_state.tl_ticker = etf_tickers[0] if etf_tickers else ""
+    if "tl_qty" not in st.session_state:
+        st.session_state.tl_qty = 10
+    if "tl_price" not in st.session_state:
+        st.session_state.tl_price = float(
+            get_etf_latest_price(st.session_state.tl_ticker, prices)
+        )
+
+    if not etf_tickers:
+        st.warning("No ETF tickers available. Ensure ETF.xlsx loaded correctly.")
+    else:
+        with st.form(key="tl_add_trade_form", clear_on_submit=True):
+            col_tk, col_act, col_dt = st.columns([2, 1, 1])
+            with col_tk:
+                selected_ticker = st.selectbox(
+                    "Select ETF", options=etf_tickers,
+                    index=etf_tickers.index(st.session_state.tl_ticker)
+                          if st.session_state.tl_ticker in etf_tickers else 0,
+                    help="Select ETF from loaded universe"
+                )
+            with col_act:
+                trade_action = st.radio("Action", ["BUY", "SELL"], horizontal=True)
+            with col_dt:
+                trade_date = st.date_input("Transaction Date", datetime.date.today())
+
+            col_q, col_p, col_sp = st.columns([1, 1, 2])
+            with col_q:
+                trade_qty = st.number_input(
+                    "Quantity (Units)", min_value=1, step=1,
+                    value=int(st.session_state.tl_qty)
+                )
+            with col_p:
+                trade_price = st.number_input(
+                    "Price per Unit (INR)", min_value=0.01, step=0.01,
+                    value=float(st.session_state.tl_price)
+                )
+
+            submit_trade = st.form_submit_button("💾 Record Transaction",
+                                                  use_container_width=True)
+
+            if submit_trade:
+                st.session_state.tl_ticker = selected_ticker
+
+                # Block SELL exceeding current holdings
+                curr_qty = active_holdings.get(selected_ticker, {}).get("qty", 0.0)
+                if trade_action == "SELL" and trade_qty > curr_qty:
+                    st.error(
+                        f"Cannot SELL {trade_qty} units of {selected_ticker} — "
+                        f"you only hold {curr_qty:.0f} units. Trade not recorded."
+                    )
+                else:
+                    new_trade = {
+                        "id":        str(uuid.uuid4()),
+                        "date":      trade_date.isoformat(),
+                        "timestamp": datetime.datetime.now().isoformat(),
+                        "ticker":    selected_ticker,
+                        "action":    trade_action,
+                        "quantity":  int(trade_qty),
+                        "price":     float(trade_price),
+                    }
+                    updated_tradelog = tradelog + [new_trade]
+                    is_valid, err_msg = validate_tradelog_integrity(updated_tradelog)
+
+                    if not is_valid:
+                        st.error(f"Trade rejected — inconsistent state: {err_msg}")
+                    else:
+                        save_tradelog(updated_tradelog)
+                        new_calc = calculate_holdings_and_pnl(updated_tradelog, latest_etf_prices)
+                        sync_to_positions_ledger(new_calc["active_holdings"])
+                        st.session_state._tl_pending_reset = True
+                        st.success(
+                            f"Recorded {trade_action} {trade_qty} units of "
+                            f"{selected_ticker} @ Rs {trade_price:.2f}"
+                        )
+                        st.rerun()
+
+    st.divider()
+
+    # ── 4. Transaction History & Management ───────────────
+    st.markdown("### 🕒 Transaction History & Management")
+
+    if not tradelog:
+        st.info("No transactions logged yet.")
+    else:
+        display_tx = []
+        for tx in reversed(tradelog):
+            display_tx.append({
+                "Date":        tx["date"],
+                "Ticker":      tx["ticker"],
+                "Action":      tx["action"],
+                "Quantity":    tx["quantity"],
+                "Price":       tx["price"],
+                "Total Value": tx["quantity"] * tx["price"],
+            })
+        display_df = pd.DataFrame(display_tx)
+
+        def _style_txs(row):
+            if row["Action"] == "BUY":  return ["background-color:#E8F5E9;"] * len(row)
+            if row["Action"] == "SELL": return ["background-color:#FFEBEE;"] * len(row)
+            return [""] * len(row)
+
+        st.dataframe(
+            display_df.style.apply(_style_txs, axis=1).format(
+                {"Quantity": "{:,.0f}", "Price": "Rs {:,.2f}", "Total Value": "Rs {:,.2f}"}
+            ),
+            use_container_width=True, hide_index=True,
+        )
+
+        # ── Edit ───────────────────────────────────────────
+        st.markdown("#### ✏️ Edit Existing Transaction")
+        tx_opts_edit = [
+            f"{tx['date']} | {tx['action']} {tx['quantity']} {tx['ticker']} "
+            f"@ Rs{tx['price']} (ID: {tx['id']})"
+            for tx in reversed(tradelog)
+        ]
+        selected_edit = st.selectbox(
+            "Select transaction to edit",
+            options=["-- Select Transaction --"] + tx_opts_edit,
+            key="tl_edit_selectbox",
+        )
+
+        if selected_edit != "-- Select Transaction --":
+            parts   = selected_edit.split("(ID: ")
+            edit_id = parts[1].rstrip(")") if len(parts) > 1 else None
+            target_tx = next((tx for tx in tradelog if tx["id"] == edit_id), None)
+
+            if target_tx:
+                st.info(f"Editing transaction ID: {target_tx['id']}")
+                with st.form(key="tl_edit_form", clear_on_submit=False):
+                    c1, c2, c3, c4, c5 = st.columns(5)
+                    with c1:
+                        try:   t_idx = etf_tickers.index(target_tx["ticker"])
+                        except ValueError: t_idx = 0
+                        edit_ticker = st.selectbox("Ticker", etf_tickers, index=t_idx)
+                    with c2:
+                        edit_action = st.radio(
+                            "Action", ["BUY", "SELL"], horizontal=True,
+                            index=0 if target_tx["action"].upper() == "BUY" else 1
+                        )
+                    with c3:
+                        try:   dt_val = datetime.date.fromisoformat(target_tx["date"])
+                        except ValueError: dt_val = datetime.date.today()
+                        edit_date = st.date_input("Date", dt_val)
+                    with c4:
+                        edit_qty = st.number_input(
+                            "Quantity", min_value=1, step=1,
+                            value=int(target_tx["quantity"])
+                        )
+                    with c5:
+                        edit_price = st.number_input(
+                            "Price (INR)", min_value=0.01, step=0.01,
+                            value=float(target_tx["price"])
+                        )
+                    submit_edit = st.form_submit_button("💾 Save Changes",
+                                                        use_container_width=True)
+                    if submit_edit:
+                        idx_to_update = next(
+                            (i for i, tx in enumerate(tradelog) if tx["id"] == edit_id), None
+                        )
+                        if idx_to_update is not None:
+                            candidate = [tx.copy() for tx in tradelog]
+                            candidate[idx_to_update].update({
+                                "ticker":   edit_ticker,
+                                "action":   edit_action,
+                                "date":     edit_date.isoformat(),
+                                "quantity": int(edit_qty),
+                                "price":    float(edit_price),
+                            })
+                            is_valid, err_msg = validate_tradelog_integrity(candidate)
+                            if not is_valid:
+                                st.error(
+                                    f"Edit rejected — inconsistent holdings: {err_msg}. "
+                                    f"Original transaction NOT modified."
+                                )
+                            else:
+                                save_tradelog(candidate)
+                                new_calc = calculate_holdings_and_pnl(candidate, latest_etf_prices)
+                                sync_to_positions_ledger(new_calc["active_holdings"])
+                                st.success("Transaction updated and positions ledger synced.")
+                                st.rerun()
+
+        st.divider()
+
+        # ── Delete ─────────────────────────────────────────
+        st.markdown("#### 🗑️ Delete Transactions")
+        tx_opts_del = [
+            f"{tx['date']} | {tx['action']} {tx['quantity']} {tx['ticker']} "
+            f"@ Rs{tx['price']} (ID: {tx['id']})"
+            for tx in reversed(tradelog)
+        ]
+        selected_to_delete = st.multiselect(
+            "Select transactions to delete",
+            options=tx_opts_del,
+            help="Select one or more transactions to permanently delete",
+        )
+        if selected_to_delete:
+            if st.button("🗑️ Delete Selected", type="secondary",
+                         use_container_width=True, key="tl_delete_btn"):
+                ids_to_delete = [
+                    choice.split("(ID: ")[1].rstrip(")")
+                    for choice in selected_to_delete
+                    if "(ID: " in choice
+                ]
+                candidate = [tx for tx in tradelog if tx["id"] not in ids_to_delete]
+                is_valid, err_msg = validate_tradelog_integrity(candidate)
+                if not is_valid:
+                    st.error(
+                        f"Deletion rejected — would cause inconsistent holdings: {err_msg}. "
+                        f"No transactions were deleted."
+                    )
+                else:
+                    save_tradelog(candidate)
+                    new_calc = calculate_holdings_and_pnl(candidate, latest_etf_prices)
+                    sync_to_positions_ledger(new_calc["active_holdings"])
+                    st.success(
+                        f"Deleted {len(ids_to_delete)} transaction(s) and synced positions ledger."
+                    )
+                    st.rerun()
+
+
+# =========================================================
+# TAB 5: PAPER TRADE (v2) -- simulated portfolio, no real orders
+# =========================================================
+def _fmt_num(x, nd=2, pct=False, signed=False):
+    if x is None or (isinstance(x, float) and np.isnan(x)):
+        return "—"
+    f = f"{x:+,.{nd}f}" if signed else f"{x:,.{nd}f}"
+    return f + ("%" if pct else "")
+
+
+def _pill(label):
+    cls = "bull" if label == "BULL" else "bear"
+    emoji = "🟢" if label == "BULL" else "🔴"
+    return f"<span class='regime-pill {cls}'>{emoji} {label}</span>"
+
+
+def _cards(items):
+    html = "".join(
+        f"<div class='regime-card'><div class='regime-card-label'>{k}</div>"
+        f"<div class='regime-card-value'>{v}</div></div>" for k, v in items)
+    st.markdown(f"<div class='regime-row'>{html}</div>", unsafe_allow_html=True)
+
+
+def render_paper_tab():
+    cfg = emr.CONFIG
+    variant = emr.get_variant(cfg.PAPER_VARIANT)
+    live_variant = emr.get_variant()
+    n_ma = variant.get("regime_window") or 200
+
+    st.markdown("## 🧪 Paper Trade — v2 (200-day trend)")
+    st.warning(
+        "**PAPER TRADE ONLY — simulated, no real orders.** This portfolio runs the *v2* rules in parallel "
+        "to your live strategy. It has its own state file (`paper_trade_log.json`) and never reads or writes "
+        "your tradelog, positions ledger or `holdings_log.json`. Fills are modelled at the latest close with "
+        f"{cfg.PAPER_SLIPPAGE_BPS} bps slippage per side, starting capital ₹{cfg.PAPER_START_CAPITAL:,.0f}."
+    )
+
+    if st.session_state.get("paper_msg"):
+        kind, msg = st.session_state.pop("paper_msg")
+        (st.success if kind == "ok" else st.warning)(msg)
+
+    plog = emr.load_paper_log(SCRIPT_DIR)
+    last_key = sorted(plog)[-1] if plog else None
+    last = plog[last_key] if last_key else None
+
+    # ── Data freshness ────────────────────────────────────────
+    asof = prices.index[-1]
+    age = int((pd.Timestamp.today().normalize() - asof.normalize()).days)
+    stale = age > cfg.PAPER_MAX_DATA_AGE_DAYS
+    _cards([
+        ("Mode", "📄 PAPER"),
+        ("Paper variant", variant["name"]),
+        ("Live variant", live_variant["name"]),
+        ("Price data as of", f"{asof.date()} ({age}d old)"),
+        ("Last paper update", f"{last['week']} · data {last['data_asof']}" if last else "never"),
+        ("Auto-update", "ON" if cfg.PAPER_TRADE_ENABLED else "OFF"),
+    ])
+    if stale:
+        st.error(f"⚠️ Price data is **{age} days old** (limit {cfg.PAPER_MAX_DATA_AGE_DAYS}). The paper portfolio will not "
+                 "update until ETF data is refreshed — the regime/holdings shown below are still computed on the latest data.")
+
+    # ── Compute the paper plan on CURRENT data (read-only) ────
+    try:
+        pv = emr.paper_preview(SCRIPT_DIR, ranking, prices)
+    except Exception as e:
+        st.error(f"Could not compute the paper plan: {e}")
+        return
+    preg, palloc, pexits, pstate = pv["regime"], pv["allocation"], pv["exits"], pv["state"]
+
+    # ── Regime ────────────────────────────────────────────────
+    st.markdown("### 🚦 Regime filter")
+    c_paper, c_live = st.columns(2)
+    with c_paper:
+        st.markdown(f"**Paper (v2): Nifty 500 vs {n_ma}-day SMA** &nbsp; {_pill(preg['label'])}", unsafe_allow_html=True)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Nifty 500", _fmt_num(preg["nifty_price"], 1))
+        m2.metric(f"{n_ma}-day SMA", _fmt_num(preg.get("regime_ma"), 1))
+        m3.metric("Distance", _fmt_num(preg.get("dist_pct"), 2, pct=True, signed=True))
+        since = preg.get("state_since")
+        since_txt = pd.Timestamp(since).strftime("%d %b %Y") if since is not None else "n/a"
+        st.caption(f"{'Risk-ON: new buys allowed.' if preg['risk_on'] else 'Risk-OFF: all positions liquidated, no new buys.'} "
+                   f"In this state since **{since_txt}** ({preg.get('state_days', 0)} trading days). "
+                   f"Trend source: {preg.get('trend_ticker', 'N/A')}."
+                   + (" ⚠️ Fewer than 200 observations: defaulting to risk-on." if preg.get("insufficient_history") else ""))
+    with c_live:
+        st.markdown(f"**Live: Nifty 500 vs {regime.get('regime_ma_label', '50-day EMA')}** &nbsp; {_pill(regime['label'])}",
+                    unsafe_allow_html=True)
+        l1, l2, l3 = st.columns(3)
+        live_ma = regime.get("regime_ma", regime["nifty_ema_50"])
+        l1.metric("Nifty 500", _fmt_num(regime["nifty_price"], 1))
+        l2.metric(regime.get("regime_ma_label", "50-day EMA"), _fmt_num(live_ma, 1))
+        l3.metric("Distance", _fmt_num((regime["nifty_price"] / live_ma - 1) * 100, 2, pct=True, signed=True))
+        st.caption("In risk-off the live rules keep existing holdings (they only close on their own exit rules); "
+                   "v2 sells everything.")
+    if preg["label"] != regime["label"]:
+        st.info(f"The two regimes **disagree** right now: paper = {preg['label']}, live = {regime['label']}.")
+
+    tf = emr.trend_frame(prices, SCRIPT_DIR, variant, tail=300)
+    if len(tf):
+        chart = tf[["price", "ma", "ema50"]].rename(columns={
+            "price": "Nifty 500", "ma": f"{n_ma}-day SMA (paper signal)", "ema50": "50-day EMA (live signal)"})
+        long = chart.rename_axis("Date").reset_index().melt("Date", var_name="Series", value_name="Index level").dropna()
+        st.altair_chart(
+            alt.Chart(long).mark_line().encode(
+                x="Date:T", y=alt.Y("Index level:Q", scale=alt.Scale(zero=False)),
+                color=alt.Color("Series:N", legend=alt.Legend(orient="bottom", title=None)),
+            ).properties(height=260),
+            use_container_width=True)
+
+    # ── Recommended paper holdings ────────────────────────────
+    st.markdown("### 📌 Recommended paper holdings (current data)")
+    rows = []
+    for _, r in palloc.iterrows():
+        t = r["TICKER"]
+        if t == "CASH":
+            continue
+        pos = pstate["positions"].get(t)
+        px = emr._last_close(prices, t)
+        if pos:
+            peak = max(pos.get("peak") or 0, px or 0)
+            rows.append({"Slot": int(r["SLOT"]), "Ticker": t, "ETF": r["ETF_NAME"], "Sector": r["SECTOR"],
+                         "Inv Rank": str(r["INV_RANK"]), "Status": "HOLD", "Entry Date": pos["entry_date"],
+                         "Entry Px": pos["entry_price"], "Last Px": px,
+                         "P&L %": (px / pos["entry_price"] - 1) * 100 if px else np.nan,
+                         "From Peak %": (px / peak - 1) * 100 if px and peak else np.nan})
+        else:
+            rows.append({"Slot": int(r["SLOT"]), "Ticker": t, "ETF": r["ETF_NAME"], "Sector": r["SECTOR"],
+                         "Inv Rank": str(r["INV_RANK"]), "Status": "NEW BUY", "Entry Date": "next update",
+                         "Entry Px": px, "Last Px": px, "P&L %": np.nan, "From Peak %": np.nan})
+    n_cash = int((palloc["TICKER"] == "CASH").sum())
+    if rows:
+        hdf = pd.DataFrame(rows)
+        st.dataframe(
+            hdf, use_container_width=True, hide_index=True,
+            column_config={
+                "Entry Px": st.column_config.NumberColumn(format="%.2f"),
+                "Last Px": st.column_config.NumberColumn(format="%.2f"),
+                "P&L %": st.column_config.NumberColumn(format="%+.2f%%"),
+                "From Peak %": st.column_config.NumberColumn(format="%+.2f%%",
+                                                             help=f"Trailing stop closes the position at -{cfg.TSL_THRESHOLD:.0%} from peak"),
+            })
+    else:
+        st.info("No holdings recommended: the paper portfolio is **100% cash**.")
+    reason = palloc[palloc["TICKER"] == "CASH"]["REASON"].iloc[0] if n_cash else ""
+    st.caption(f"{n_cash} of {cfg.TOP_N} slots in cash" + (f" — {reason}" if reason else ""))
+
+    # ── Pending actions ───────────────────────────────────────
+    st.markdown("### ⚡ Actions the paper portfolio would take on the next update")
+    pend = [{"Action": "SELL", "Ticker": e["ticker"],
+             "ETF": pstate["positions"][e["ticker"]]["name"], "Reason": e["reason"]} for e in pexits]
+    pend += [{"Action": "BUY", "Ticker": r["Ticker"], "ETF": r["ETF"], "Reason": f"Rank {r['Inv Rank']} in {r['Sector']}"}
+             for r in rows if r["Status"] == "NEW BUY"]
+    if pend:
+        st.dataframe(pd.DataFrame(pend), use_container_width=True, hide_index=True)
+    elif not preg["risk_on"] and not pstate["positions"]:
+        st.info(f"Nothing to do: v2 is risk-off and holds no positions, so it stays 100% cash until the Nifty 500 "
+                f"closes above its {n_ma}-day SMA.")
+    else:
+        st.success("No changes: every paper position passes all exit rules and there is nothing new to buy.")
+    if not plog:
+        st.caption("No paper history yet — the first update initialises the portfolio with the positions above.")
+
+    # ── Last executed update ──────────────────────────────────
+    if last:
+        st.markdown(f"### 🗓️ Last executed update — {last['week']}")
+        lr = last["regime"]
+        st.caption(f"Run {last['run_date']} · data as of {last['data_asof']} · regime {lr['label']} "
+                   f"(Nifty {_fmt_num(lr.get('nifty_price'), 1)} vs {lr.get('regime_ma_window')}-SMA {_fmt_num(lr.get('regime_ma'), 1)}) "
+                   f"· equity ₹{last['equity']:,.0f}")
+        if last["actions"]:
+            adf = pd.DataFrame(last["actions"])[["action", "ticker", "name", "price", "pnl_pct", "note"]]
+            adf.columns = ["Action", "Ticker", "ETF", "Price", "P&L %", "Note"]
+            st.dataframe(adf, use_container_width=True, hide_index=True,
+                         column_config={"Price": st.column_config.NumberColumn(format="%.2f"),
+                                        "P&L %": st.column_config.NumberColumn(format="%+.2f%%")})
+        else:
+            st.caption("No positions held and no trades that week (100% cash).")
+
+    # ── Performance ───────────────────────────────────────────
+    st.markdown("### 📈 Paper performance")
+    if last:
+        stt = last["state"]
+        eq_now = emr.paper_equity(stt, prices)
+        hist = pd.DataFrame(stt["equity_history"])
+        hist["date"] = pd.to_datetime(hist["date"])
+        hist = hist.drop_duplicates("date", keep="last").set_index("date")["equity"]
+        if hist.index[-1] < asof:
+            hist.loc[asof] = eq_now
+        closed = [t for t in stt["trades"] if t["type"] == "SELL"]
+        wins = [t for t in closed if t["pnl_pct"] > 0]
+        dd = (hist / hist.cummax() - 1).min() * 100
+        p1, p2, p3, p4, p5 = st.columns(5)
+        p1.metric("Equity (MTM)", f"₹{eq_now:,.0f}")
+        p2.metric("Return since start", _fmt_num((eq_now / stt["start_capital"] - 1) * 100, 2, pct=True, signed=True))
+        p3.metric("Max drawdown", _fmt_num(dd, 2, pct=True))
+        p4.metric("Closed trades", f"{len(closed)}" + (f" ({len(wins) / len(closed):.0%} win)" if closed else ""))
+        p5.metric("Cash", f"{stt['cash'] / eq_now:.0%}")
+        eq_df = hist.rename("Paper equity (₹)").rename_axis("Date").reset_index()
+        st.altair_chart(
+            alt.Chart(eq_df).mark_line(point=True).encode(
+                x="Date:T", y=alt.Y("Paper equity (₹):Q", scale=alt.Scale(zero=False))).properties(height=220),
+            use_container_width=True)
+        st.caption(f"Inception {stt['inception']}. History is weekly, so early numbers are noise — "
+                   "judge this over many months and against the live strategy, not week to week.")
+        with st.expander(f"Trade log ({len(stt['trades'])} paper fills)"):
+            tdf = pd.DataFrame(stt["trades"][::-1])
+            cols = [c for c in ["date", "type", "ticker", "name", "price", "shares", "value", "pnl_pct", "reason"] if c in tdf]
+            st.dataframe(tdf[cols], use_container_width=True, hide_index=True,
+                         column_config={"price": st.column_config.NumberColumn(format="%.2f"),
+                                        "shares": st.column_config.NumberColumn(format="%.2f"),
+                                        "value": st.column_config.NumberColumn(format="%,.0f"),
+                                        "pnl_pct": st.column_config.NumberColumn(format="%+.2f%%")})
+    else:
+        st.info("No performance yet — run the first paper update below (or **Run Weekly Rebalance**, which updates it too).")
+
+    # ── Live vs paper ─────────────────────────────────────────
+    st.markdown("### ⚖️ Live vs paper")
+    live_set = set(allocation.loc[allocation["TICKER"] != "CASH", "TICKER"])
+    paper_set = {r["Ticker"] for r in rows}
+    c1, c2, c3 = st.columns(3)
+    c1.markdown("**In both**"); c1.write(", ".join(sorted(live_set & paper_set)) or "—")
+    c2.markdown("**Live only**"); c2.write(", ".join(sorted(live_set - paper_set)) or "—")
+    c3.markdown("**Paper only**"); c3.write(", ".join(sorted(paper_set - live_set)) or "—")
+
+    # ── Top candidates ────────────────────────────────────────
+    with st.expander("Top-15 investable ranking (same score for live and paper)"):
+        top = ranking[ranking["SCREEN_PASS"] & ranking["RANK_INVESTABLE"].notna()].sort_values("RANK_INVESTABLE").head(15)
+        tdf = top[["RANK_INVESTABLE", "TICKER", "ETF_NAME", "SECTOR", "SHARPE_6M", "SHARPE_3M", "CLENOW_90D", "PCT_FROM_HIGH"]].copy()
+        tdf.insert(0, "Paper", tdf["TICKER"].map(lambda t: "★ held" if t in pstate["positions"] else ""))
+        tdf.columns = ["Paper", "Rank", "Ticker", "ETF", "Sector", "Sharpe 6M", "Sharpe 3M", "Clenow 90D", "% from 52w high"]
+        st.dataframe(tdf, use_container_width=True, hide_index=True)
+        st.caption(f"Under v2 a held position is only dropped on rank once it falls below **{variant['exit_max_rank']}** "
+                   f"(live: {cfg.EXIT_MAX_RANK}).")
+
+    # ── What v2 changes + evidence ────────────────────────────
+    with st.expander("What v2 changes, and the backtest evidence (read the caveats)"):
+        st.markdown(f"""
+| Rule | Live | Paper v2 |
+|---|---|---|
+| Regime signal | Nifty 500 vs 50-day EMA | Nifty 500 vs **{n_ma}-day SMA** |
+| In risk-off | keep holdings, no new buys | **sell everything**, no new buys |
+| Rank exit | rank worse than {cfg.EXIT_MAX_RANK} | rank worse than **{variant['exit_max_rank']}** |
+| Everything else | screen, blended Sharpe+Clenow rank, 5 slots, sector cap 1, {cfg.TSL_THRESHOLD:.0%} trailing stop, 25%-off-high exit | *unchanged* |
+
+**Backtest** (2017-09 → 2026-09, `backtest/research/`, from first trade): CAGR 18.6% vs 13.5%, max drawdown −15.1% vs −21.7%,
+Sharpe (CAGR/vol) 1.45 vs 0.96; better in both halves of the period, in 7 of 9 calendar years, and at 40 bp/side trading cost (1.13 vs 0.71).
+
+**Caveats:** the paired-bootstrap 95% interval on the Sharpe gain is −0.09 to +0.82 (94% probability > 0), so this is
+*suggestive, not proven*. About 130 variants were tried, so expect a smaller live gain. The gain rests on a handful of risk-off
+episodes; the ETF universe was only ~49 funds in 2017; taxes on the extra turnover, ETF liquidity and live execution are not modelled.
+Re-tuning parameters each year did **not** work in walk-forward testing — keep the rules fixed while paper trading.
+""")
+
+    # ── Switches & controls ───────────────────────────────────
+    st.markdown("### 🎛️ Switches & controls")
+    sw1, sw2 = st.columns(2)
+    with sw1:
+        enabled = st.toggle("Auto-update paper portfolio on every *Run Weekly Rebalance*",
+                            value=bool(cfg.PAPER_TRADE_ENABLED), key="paper_enabled_toggle")
+        if enabled != bool(cfg.PAPER_TRADE_ENABLED):
+            emr.save_config_to_json({"PAPER_TRADE_ENABLED": bool(enabled)}, SCRIPT_DIR)
+            cfg.PAPER_TRADE_ENABLED = bool(enabled)
+            st.toast(f"Paper auto-update {'enabled' if enabled else 'disabled'} (saved to strategy_config.json)")
+        st.caption("Other switches live in `strategy_config.json`: `STRATEGY_VARIANT` (rule-set used by the **live** "
+                   "pipeline; default `live`), `PAPER_VARIANT`, `PAPER_START_CAPITAL`, `PAPER_SLIPPAGE_BPS`, "
+                   "`PAPER_MAX_DATA_AGE_DAYS`. Changing `STRATEGY_VARIANT` changes your real recommendations — leave it on `live` while paper trading.")
+    with sw2:
+        force = st.checkbox("Allow stale price data (testing only)", value=False, key="paper_force")
+        if st.button("🔁 Update paper portfolio now", use_container_width=True, key="paper_update_btn"):
+            with st.spinner("Updating paper portfolio..."):
+                try:
+                    res = emr.run_paper_only(input_path, force=force)
+                    if res["status"] == "ok":
+                        st.session_state["paper_msg"] = ("ok", f"Paper portfolio updated (week {res['entry']['week']}, "
+                                                                f"data as of {res['entry']['data_asof']}).")
+                    else:
+                        st.session_state["paper_msg"] = ("warn", res["reason"])
+                    st.cache_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Paper update failed: {e}")
+        confirm = st.checkbox("I understand this archives the paper history and restarts from cash", key="paper_reset_ok")
+        if st.button("🗑️ Reset paper portfolio", use_container_width=True, key="paper_reset_btn", disabled=not confirm):
+            bak = emr.reset_paper_log(SCRIPT_DIR)
+            st.session_state["paper_msg"] = ("ok", f"Paper history archived to {bak.name if bak else '(nothing to archive)'}.")
+            st.rerun()
+
+
+with tab_paper:
+    render_paper_tab()

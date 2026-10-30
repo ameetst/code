@@ -173,7 +173,7 @@ dialog::backdrop { background: rgba(14, 23, 38, .35); }
 #toast.err { background: var(--red-bg);   color: var(--red);   border-color: var(--red-line); }
 #toast.busy { background: var(--blue-bg); color: var(--blue);  border-color: var(--blue-line); }
 
-/* Paper trade tab */
+/* Shared by the regime filter, charts and the Rotation Sleeve tab */
 .paper-banner { border-left: 4px solid var(--amber); }
 .regime-title { margin: 6px 0 8px; }
 .metrics.three { grid-template-columns: repeat(3, 1fr); }

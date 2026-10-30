@@ -68,7 +68,7 @@ def load_config_from_json(script_dir: Path | None = None) -> dict:
 
 def save_config_to_json(config_dict: dict, script_dir: Path | None = None):
     """Write config values to strategy_config.json. Merges into the existing file so
-    keys the caller doesn't know about (e.g. STRATEGY_VARIANT, PAPER_*) are preserved."""
+    keys the caller doesn't know about (e.g. STRATEGY_VARIANT) are preserved."""
     p = _config_path(script_dir)
     merged = load_config_from_json(script_dir)
     merged.update(config_dict)
@@ -92,8 +92,7 @@ def _apply_json_config(cls, cfg: dict):
         "TSL_THRESHOLD",
         "EXIT_MAX_DD_FROM_HIGH", "EXIT_MAX_RANK",
         "HISTORY_PERIODS",
-        "STRATEGY_VARIANT", "PAPER_TRADE_ENABLED", "PAPER_VARIANT",
-        "PAPER_START_CAPITAL", "PAPER_SLIPPAGE_BPS", "PAPER_MAX_DATA_AGE_DAYS",
+        "STRATEGY_VARIANT",
     ]
     for key in _KEYS:
         if key in cfg:
@@ -135,11 +134,6 @@ def get_config_as_dict() -> dict:
         "EXIT_MAX_RANK": CONFIG.EXIT_MAX_RANK,
         "HISTORY_PERIODS": CONFIG.HISTORY_PERIODS,
         "STRATEGY_VARIANT": CONFIG.STRATEGY_VARIANT,
-        "PAPER_TRADE_ENABLED": CONFIG.PAPER_TRADE_ENABLED,
-        "PAPER_VARIANT": CONFIG.PAPER_VARIANT,
-        "PAPER_START_CAPITAL": CONFIG.PAPER_START_CAPITAL,
-        "PAPER_SLIPPAGE_BPS": CONFIG.PAPER_SLIPPAGE_BPS,
-        "PAPER_MAX_DATA_AGE_DAYS": CONFIG.PAPER_MAX_DATA_AGE_DAYS,
     }
 
 
@@ -212,24 +206,17 @@ class CONFIG:
     EXIT_MAX_RANK         = 40     # exit if investable rank > 40
     HISTORY_PERIODS       = 52     # weeks of log history to retain in Excel
 
-    # ── Strategy variants / paper trading ────────────────────────────────
+    # ── Strategy variants ────────────────────────────────────────────────
     # STRATEGY_VARIANT picks the rule-set the LIVE pipeline uses (see VARIANTS
     # below). "live" = the rules documented above; nothing changes unless this
-    # is switched. PAPER_* runs PAPER_VARIANT as a separate simulated portfolio
-    # (paper_trade_log.json) on every run_pipeline(): no real orders, never
-    # touches holdings_log.json / the tradelog / the positions ledger.
+    # is switched.
     STRATEGY_VARIANT        = "live"
-    PAPER_TRADE_ENABLED     = True
-    PAPER_VARIANT           = "v2_trend200"
-    PAPER_START_CAPITAL     = 1_000_000
-    PAPER_SLIPPAGE_BPS      = 20      # one-way spread/impact applied to paper fills
-    PAPER_MAX_DATA_AGE_DAYS = 7       # skip the paper update if price data is older
 
 
 # ── Apply JSON overrides on module load ──────────────────────
 _apply_json_config(CONFIG, load_config_from_json())
 
-# Rule-sets selectable by CONFIG.STRATEGY_VARIANT / CONFIG.PAPER_VARIANT.
+# Rule-sets selectable by CONFIG.STRATEGY_VARIANT.
 # Only the parts that differ are listed; everything else (screen, scoring, sector
 # cap, trailing stop, 52wk-DD exit, slot count) is shared. Research evidence for
 # v2_trend200: backtest/research/ (s7_final.py) and backtest/comparison_proposed_vs_baseline.png.
@@ -2098,239 +2085,6 @@ def save_excel(df, regime, allocation, out_path, prev_entry=None, changes=None, 
 # =========================================================
 # 8. MAIN
 # =========================================================
-# =========================================================
-# 7d. PAPER TRADING (simulated portfolio running CONFIG.PAPER_VARIANT)
-#     Own state file; never touches holdings_log.json, the tradelog or
-#     the positions ledger. No real orders are implied.
-# =========================================================
-import copy as _copy
-
-PAPER_LOG_FILE = "paper_trade_log.json"
-
-
-def _paper_path(script_dir: Path) -> Path:
-    return script_dir / PAPER_LOG_FILE
-
-
-def _json_safe(o):
-    """Recursively make values JSON-safe (NaN -> None, numpy/pandas scalars -> python)."""
-    if isinstance(o, dict):
-        return {str(k): _json_safe(v) for k, v in o.items()}
-    if isinstance(o, (list, tuple)):
-        return [_json_safe(v) for v in o]
-    if isinstance(o, (pd.Timestamp, datetime)):
-        return o.strftime("%Y-%m-%d")
-    if isinstance(o, (np.floating, float)):
-        return None if (o != o or o in (float("inf"), float("-inf"))) else float(o)
-    if isinstance(o, (np.integer,)):
-        return int(o)
-    if isinstance(o, (np.bool_,)):
-        return bool(o)
-    return o
-
-
-def load_paper_log(script_dir: Path) -> dict:
-    p = _paper_path(script_dir)
-    if p.exists():
-        try:
-            with open(p) as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-
-def save_paper_log(script_dir: Path, log: dict):
-    p = _paper_path(script_dir)
-    tmp = p.with_suffix(".json.tmp")
-    with open(tmp, "w") as f:
-        json.dump(_json_safe(log), f, indent=2)
-    tmp.replace(p)
-
-
-def reset_paper_log(script_dir: Path) -> Path | None:
-    """Archive the paper log (paper_trade_log.json -> .bak) so the portfolio restarts from scratch."""
-    p = _paper_path(script_dir)
-    if not p.exists():
-        return None
-    bak = p.with_suffix(".json.bak")
-    p.replace(bak)
-    return bak
-
-
-def _last_close(prices: pd.DataFrame, ticker: str):
-    if ticker in prices.columns:
-        s = prices[ticker].dropna()
-        if len(s):
-            return float(s.iloc[-1])
-    return None
-
-
-def paper_new_state(start_capital: float | None = None) -> dict:
-    cap = float(CONFIG.PAPER_START_CAPITAL if start_capital is None else start_capital)
-    return {"inception": None, "start_capital": cap, "cash": cap,
-            "positions": {}, "trades": [], "equity_history": []}
-
-
-def paper_equity(state: dict, prices: pd.DataFrame) -> float:
-    """Mark-to-market equity: cash + positions at the latest close."""
-    total = float(state["cash"])
-    for t, p in state["positions"].items():
-        px = _last_close(prices, t)
-        total += p["shares"] * (px if px is not None else p["entry_price"])
-    return total
-
-
-def _paper_plan(state: dict, ranking: pd.DataFrame, prices: pd.DataFrame,
-                regime: dict, variant: dict):
-    """Allocation + exits the variant calls for, given a paper `state` (not otherwise mutated:
-    each position's `peak` is advanced to the latest close, as the live log does weekly)."""
-    for t, p in state["positions"].items():
-        px = _last_close(prices, t)
-        if px:
-            p["peak"] = max(p.get("peak") or 0.0, px)
-    prev_alloc = [{"ticker": t, "etf_name": p["name"], "sector": p["sector"], "peak": p["peak"]}
-                  for t, p in state["positions"].items()]
-    exits: list = []
-    allocation = build_allocation(ranking, regime, prev_allocation=prev_alloc, prices=prices,
-                                  variant=variant, exits_out=exits)
-    return allocation, exits
-
-
-def paper_preview(script_dir: Path, ranking: pd.DataFrame, prices: pd.DataFrame,
-                  variant_name: str | None = None) -> dict:
-    """What the paper variant would do on the CURRENT data, from the latest saved paper state
-    (or a fresh portfolio). Pure: nothing is written."""
-    variant = get_variant(variant_name or CONFIG.PAPER_VARIANT)
-    log = load_paper_log(script_dir)
-    state = _copy.deepcopy(log[sorted(log)[-1]]["state"]) if log else paper_new_state()
-    regime = regime_status(prices, script_dir, variant=variant)
-    allocation, exits = _paper_plan(state, ranking, prices, regime, variant)
-    return {"variant": variant, "regime": regime, "allocation": allocation, "exits": exits, "state": state}
-
-
-def run_paper_trade(script_dir: Path, ranking: pd.DataFrame, prices: pd.DataFrame,
-                    force: bool = False, variant_name: str | None = None, today=None) -> dict:
-    """
-    Weekly paper-trade step. Idempotent within an ISO week: the portfolio is always rebuilt
-    from the last entry of an EARLIER week, so re-running overwrites that week (like
-    holdings_log.json). Fills happen at the latest close in `prices`, charged
-    CONFIG.PAPER_SLIPPAGE_BPS one way; each new position gets total_equity / TOP_N.
-
-    Skipped (status="skipped") when the price data is older than
-    CONFIG.PAPER_MAX_DATA_AGE_DAYS, unless force=True -- a paper fill on stale prices
-    would be misleading.
-    """
-    variant = get_variant(variant_name or CONFIG.PAPER_VARIANT)
-    now = pd.Timestamp(today) if today is not None else pd.Timestamp.today()
-    asof = prices.index[-1]
-    age = int((now.normalize() - asof.normalize()).days)
-    if not force and age > CONFIG.PAPER_MAX_DATA_AGE_DAYS:
-        msg = (f"price data is {age} days old (as of {asof.date()}; limit "
-               f"{CONFIG.PAPER_MAX_DATA_AGE_DAYS}) -- paper portfolio not updated")
-        print(f"[paper]  SKIPPED: {msg}")
-        return {"status": "skipped", "reason": msg, "data_age_days": age, "data_asof": str(asof.date())}
-
-    log = load_paper_log(script_dir)
-    wk = _week_key(now.to_pydatetime())
-    prev_keys = [k for k in sorted(log) if k < wk]
-    state = _copy.deepcopy(log[prev_keys[-1]]["state"]) if prev_keys else paper_new_state()
-    first_run = not prev_keys
-    if first_run:
-        state["inception"] = str(asof.date())
-
-    regime = regime_status(prices, script_dir, variant=variant)
-    allocation, exits = _paper_plan(state, ranking, prices, regime, variant)
-
-    slip = CONFIG.PAPER_SLIPPAGE_BPS / 1e4
-    total = paper_equity(state, prices)
-    slot_val = total / CONFIG.TOP_N
-    trades, actions = [], []
-    asof_s = str(asof.date())
-
-    for e in exits:
-        t = e["ticker"]
-        pos = state["positions"].pop(t)
-        px = _last_close(prices, t) or pos["entry_price"]
-        fill = px * (1 - slip)
-        proceeds = pos["shares"] * fill
-        state["cash"] += proceeds
-        tr = {"date": asof_s, "week": wk, "type": "SELL", "ticker": t, "name": pos["name"], "shares": pos["shares"],
-              "price": fill, "value": proceeds, "reason": e["reason"],
-              "entry_date": pos["entry_date"], "entry_price": pos["entry_price"],
-              "pnl_pct": (fill / pos["entry_price"] - 1) * 100}
-        trades.append(tr)
-        actions.append({"action": "SELL", "ticker": t, "name": pos["name"], "note": e["reason"],
-                        "price": fill, "pnl_pct": tr["pnl_pct"]})
-
-    held_after_exits = set(state["positions"])
-    for _, row in allocation.iterrows():
-        t = str(row["TICKER"])
-        if t == "CASH":
-            continue
-        if t in held_after_exits:
-            pos = state["positions"][t]
-            px = _last_close(prices, t) or pos["entry_price"]
-            actions.append({"action": "HOLD", "ticker": t, "name": pos["name"],
-                            "note": f"rank {row['INV_RANK']} - no exit trigger", "price": px,
-                            "pnl_pct": (px / pos["entry_price"] - 1) * 100})
-            continue
-        px = _last_close(prices, t)
-        value = min(slot_val, state["cash"])
-        if px is None or value <= 0:
-            continue
-        fill = px * (1 + slip)
-        state["cash"] -= value
-        state["positions"][t] = {"name": str(row["ETF_NAME"]), "sector": str(row["SECTOR"]),
-                                 "shares": value / fill, "entry_price": fill,
-                                 "entry_date": asof_s, "peak": px}
-        trades.append({"date": asof_s, "week": wk, "type": "BUY", "ticker": t, "name": str(row["ETF_NAME"]),
-                       "shares": value / fill, "price": fill, "value": value, "reason": str(row["REASON"])})
-        actions.append({"action": "BUY", "ticker": t, "name": str(row["ETF_NAME"]),
-                        "note": str(row["REASON"]), "price": fill, "pnl_pct": None})
-
-    state["trades"].extend(trades)
-    equity = paper_equity(state, prices)
-    if first_run and not state["equity_history"]:
-        state["equity_history"].append({"week": wk, "date": asof_s, "equity": state["start_capital"]})
-    state["equity_history"].append({"week": wk, "date": asof_s, "equity": equity})
-
-    inv = ranking[ranking["SCREEN_PASS"] & ranking["RANK_INVESTABLE"].notna()].sort_values("RANK_INVESTABLE").head(15)
-    candidates = [{"ticker": r["TICKER"], "name": r["ETF_NAME"], "sector": r["SECTOR"],
-                   "rank": int(r["RANK_INVESTABLE"]), "sharpe_6m": r.get("SHARPE_6M"),
-                   "sharpe_3m": r.get("SHARPE_3M"), "clenow_90d": r.get("CLENOW_90D"),
-                   "pct_from_high": r.get("PCT_FROM_HIGH")} for _, r in inv.iterrows()]
-    entry = {
-        "week": wk, "run_date": now.strftime("%Y-%m-%d %H:%M"), "data_asof": asof_s,
-        "variant": variant["name"], "variant_label": variant.get("label", variant["name"]),
-        "regime": {k: regime.get(k) for k in (
-            "label", "risk_on", "nifty_price", "nifty_ema_50", "regime_ma", "regime_ma_window",
-            "regime_ma_label", "dist_pct", "state_since", "state_days", "trend_ticker", "asof")},
-        "state": state, "trades": trades, "actions": actions,
-        "allocation": allocation.to_dict("records"), "candidates": candidates,
-        "equity": equity,
-    }
-    log[wk] = entry
-    save_paper_log(script_dir, log)
-
-    ret = (equity / state["start_capital"] - 1) * 100
-    print(f"[paper]  {variant['name']} | regime {regime['label']} | data as of {asof_s} | "
-          f"{len(trades)} trade(s) | {len(state['positions'])} position(s) | "
-          f"equity {equity:,.0f} ({ret:+.2f}% since {state['inception']})")
-    for tr in trades:
-        print(f"           {tr['type']:<4} {tr['ticker']:<14} {tr['reason'][:70]}")
-    return {"status": "ok", "entry": entry, "regime": regime}
-
-
-def run_paper_only(fp=None, force: bool = False) -> dict:
-    """Update the paper portfolio without running (or logging) the live pipeline."""
-    script_dir = Path(__file__).resolve().parent
-    fp = fp or str(script_dir / CONFIG.INPUT_FILE)
-    meta, prices = load_etf_data(fp)
-    ranking = build_ranking(meta, prices)
-    return run_paper_trade(script_dir, ranking, prices, force=force)
-
-
 def run_pipeline(fp=None, out=None):
     SCRIPT_DIR = Path(__file__).resolve().parent
     if fp is None:
@@ -2384,18 +2138,10 @@ def run_pipeline(fp=None, out=None):
     save_excel(ranking, regime, allocation, out,
                prev_entry=prev_entry, changes=changes, log=log)
 
-    if CONFIG.PAPER_TRADE_ENABLED:
-        try:
-            run_paper_trade(SCRIPT_DIR, ranking, prices)
-        except Exception as e:   # the paper portfolio must never break the live run
-            print(f"[paper]  update failed (live run unaffected): {e}")
-
 
 if __name__ == "__main__":
     if "--tsl" in sys.argv:
         run_tsl_check()
-    elif "--paper" in sys.argv:
-        run_paper_only(force="--force" in sys.argv)
     else:
         fp_arg  = sys.argv[1] if len(sys.argv) > 1 else None
         out_arg = sys.argv[2] if len(sys.argv) > 2 else None

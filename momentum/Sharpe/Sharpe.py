@@ -478,7 +478,7 @@ if not any(e["date"] == today_str for e in eq_history):
         port_nav  = 100.0 * (1.0 + portfolio_ret)
         bench_nav = 100.0 * (1.0 + bench_ret)
 
-    eq_history.append({
+    new_entry = {
         "date":          today_str,
         "portfolio_nav": round(port_nav, 4),
         "benchmark_nav": round(bench_nav, 4),
@@ -488,7 +488,11 @@ if not any(e["date"] == today_str for e in eq_history):
         "invested_frac": round(invested_frac, 3),
         "qty_weighted":  used_qty_weighting,
         "price_date":    latest_date.isoformat() if latest_date else None,
-    })
+    }
+    # 50-trading-day SMA of the portfolio NAV, saved with the entry (null until 50 trading days
+    # of history exist). Same helper the dashboards use, so the numbers match everywhere.
+    new_entry[ml.NAV_SMA_KEY] = ml.nav_sma(eq_history + [new_entry])[-1]
+    eq_history.append(new_entry)
     _save_equity_history(eq_history, EQUITY_FILE)
     if not has_new_prices:
         print(f"  Note: no price column newer than {ref_date} — stock/benchmark return "

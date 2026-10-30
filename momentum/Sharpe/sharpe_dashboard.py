@@ -2209,6 +2209,9 @@ with tab_perf:
         _eq_df = pd.DataFrame(_eq_data)
         _eq_df["date"] = pd.to_datetime(_eq_df["date"]).dt.normalize()
         _eq_df = _eq_df.sort_values("date").reset_index(drop=True)
+        # 50-trading-day SMA of the portfolio NAV: the value saved on each entry by Sharpe.py
+        # (computed here for any entry that predates the field). Same helper as Sharpe.py.
+        _eq_df["nav_sma50"] = ml.nav_sma_resolved(sorted(_eq_data, key=lambda r: r["date"]))
 
         # Summary metrics
         _port_nav = _eq_df["portfolio_nav"].iloc[-1]
@@ -2281,14 +2284,15 @@ with tab_perf:
 
         # Daily Details Table (collapsible)
         with st.expander("📋 Daily NAV Details", expanded=False):
-            _detail_df = _eq_df[["date", "portfolio_nav", "benchmark_nav",
+            _detail_df = _eq_df[["date", "portfolio_nav", "benchmark_nav", "nav_sma50",
                                  "portfolio_ret", "benchmark_ret",
                                  "n_held", "invested_frac"]].copy()
             _detail_df["date"] = _detail_df["date"].dt.strftime("%d-%b-%Y")
             _detail_df["portfolio_ret"] = (_detail_df["portfolio_ret"] * 100).round(3)
             _detail_df["benchmark_ret"] = (_detail_df["benchmark_ret"] * 100).round(3)
             _detail_df["invested_frac"] = (_detail_df["invested_frac"] * 100).round(1)
-            _detail_df.columns = ["Date", "Port NAV", "Bench NAV",
+            _detail_df["nav_sma50"] = _detail_df["nav_sma50"].round(2)
+            _detail_df.columns = ["Date", "Port NAV", "Bench NAV", "NAV 50D SMA",
                                   "Port Ret %", "Bench Ret %",
                                   "# Held", "Invested %"]
             st.dataframe(_detail_df, use_container_width=True, hide_index=True)
