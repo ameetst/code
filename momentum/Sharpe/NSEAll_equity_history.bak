@@ -1174,5 +1174,29 @@
     "qty_weighted": true,
     "price_date": "2026-10-28",
     "portfolio_nav_sma50": 107.3673
+  },
+  {
+    "date": "2026-10-30",
+    "portfolio_nav": 108.6418,
+    "benchmark_nav": 94.3241,
+    "portfolio_ret": 0.005028,
+    "benchmark_ret": 0.009852,
+    "n_held": 14,
+    "invested_frac": 0.467,
+    "qty_weighted": true,
+    "price_date": "2026-10-29",
+    "portfolio_nav_sma50": 107.4493
+  },
+  {
+    "date": "2026-11-02",
+    "portfolio_nav": 108.523,
+    "benchmark_nav": 94.1281,
+    "portfolio_ret": -0.001094,
+    "benchmark_ret": -0.002078,
+    "n_held": 14,
+    "invested_frac": 0.467,
+    "qty_weighted": true,
+    "price_date": "2026-10-30",
+    "portfolio_nav_sma50": 107.5327
   }
 ]
