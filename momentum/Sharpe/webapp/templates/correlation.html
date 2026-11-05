@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% set active_tab = "correlation" %}
+{% block content %}
+<h2>Co-relation Matrix</h2>
+{% if message %}
+  <div class="banner info">{{ message }}</div>
+{% else %}
+  <style>{{ corr_css|safe }}</style>
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:18px 20px;">{{ matrix_html|safe }}</div>
+{% endif %}
+{% endblock %}

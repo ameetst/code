@@ -29,6 +29,7 @@
       <a href="{{ url_for('rankings.full_page') }}" class="{{ 'active' if active_tab == 'full' }}">Full Rankings</a>
       <a href="{{ url_for('configuration.index') }}" class="{{ 'active' if active_tab == 'config' }}">Configuration</a>
       <a href="{{ url_for('performance.index') }}" class="{{ 'active' if active_tab == 'performance' }}">Performance Tracker</a>
+      <a href="{{ url_for('correlation.index') }}" class="{{ 'active' if active_tab == 'correlation' }}">Co-relation Matrix</a>
     </nav>
     {% block content %}{% endblock %}
 

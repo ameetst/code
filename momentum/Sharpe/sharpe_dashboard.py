@@ -20,6 +20,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 import momentum_lib as ml
 import equity_chart
+import corr_matrix
 
 # ── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Sharpe Momentum", page_icon="📊",
@@ -1098,13 +1099,13 @@ _actions_dot = "🔴" if n_exits > 0 else "🟢"
 _tab_labels = [f"📊 Top {MAX_N} Rankings", f"{_actions_dot} Actions Monitor", "📝 Tradelog & MTM"]
 if SHOW_CASH_LEDGER_TAB:
     _tab_labels.append("💰 Cash Ledger")
-_tab_labels += ["📋 Full Rankings", "⚙️ Configuration", "📈 Performance Tracker"]
+_tab_labels += ["📋 Full Rankings", "⚙️ Configuration", "📈 Performance Tracker", "🔗 Co-relation Matrix"]
 
 _tabs = iter(st.tabs(_tab_labels))
 tab_top, tab_exits, tab_tradelog = next(_tabs), next(_tabs), next(_tabs)
 if SHOW_CASH_LEDGER_TAB:
     tab_cash = next(_tabs)
-tab_calcs, tab_config, tab_perf = next(_tabs), next(_tabs), next(_tabs)
+tab_calcs, tab_config, tab_perf, tab_corr = next(_tabs), next(_tabs), next(_tabs), next(_tabs)
 
 # ── TAB 1: TOP N RANKINGS ─────────────────────────────────────────────────────
 with tab_top:
@@ -2307,6 +2308,16 @@ with tab_perf:
             "⚠️ No equity history found. Run `Sharpe.py` once to initialise "
             "the performance tracker. The system will start recording daily NAVs "
             "from that point forward.")
+
+# ── TAB 8: CO-RELATION MATRIX ─────────────────────────────────────────────────
+with tab_corr:
+    st.markdown("## 🔗 Co-relation Matrix")
+    _corr_html, _corr_msg = corr_matrix.render(prices_df, list(ledger.keys()))
+    if _corr_msg:
+        st.info(_corr_msg)
+    else:
+        st.markdown(f"<style>{corr_matrix.CSS}</style>", unsafe_allow_html=True)
+        st.markdown(_corr_html, unsafe_allow_html=True)
 
 # ── ACTIONS ───────────────────────────────────────────────────────────────────
 st.divider()

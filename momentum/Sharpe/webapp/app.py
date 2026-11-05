@@ -15,6 +15,7 @@ from webapp.blueprints import actions as actions_bp
 from webapp.blueprints import cash_ledger as cash_ledger_bp
 from webapp.blueprints import config as config_bp
 from webapp.blueprints import configuration as configuration_bp
+from webapp.blueprints import correlation as correlation_bp
 from webapp.blueprints import performance as performance_bp
 from webapp.blueprints import rankings as rankings_bp
 from webapp.blueprints import tradelog as tradelog_bp
@@ -66,6 +67,7 @@ def create_app() -> Flask:
     app.register_blueprint(rankings_bp.bp)
     app.register_blueprint(config_bp.bp)
     app.register_blueprint(performance_bp.bp)
+    app.register_blueprint(correlation_bp.bp)
     app.register_blueprint(actions_bp.bp)
     app.register_blueprint(tradelog_bp.bp)
     app.register_blueprint(cash_ledger_bp.bp)
