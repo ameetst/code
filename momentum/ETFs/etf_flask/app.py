@@ -73,7 +73,9 @@ def get_model() -> dict:
     if not Path(path).exists():
         raise ViewError(f"Data file not found: {path}. Ensure {emr.CONFIG.INPUT_FILE} is in "
                         f"the script directory or upload a custom file in the Configuration tab.")
-    key = (path, os.path.getmtime(path))
+    # The date is part of the key: the regime also depends on the live index cache, which rolls over
+    # daily, so a dashboard left open across days must rebuild instead of serving yesterday's regime.
+    key = (path, os.path.getmtime(path), datetime.date.today())
     model = STATE["model"]
     if model and model["key"] == key:
         return model

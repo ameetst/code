@@ -969,59 +969,59 @@
     ]
   },
   "2026-W45": {
-    "run_date": "2026-11-02 08:42",
-    "regime": "BEAR",
-    "active_slots": 0,
+    "run_date": "2026-11-05 11:13",
+    "regime": "BULL",
+    "active_slots": 5,
     "allocation": [
       {
         "slot": 1,
-        "ticker": "CASH",
-        "etf_name": "Cash / Money Market",
-        "sector": "CASH",
+        "ticker": "PHARMABEES",
+        "etf_name": "Nippon India Nifty Pharma ETF",
+        "sector": "NIFTY PHARMA",
         "weight": 0.2,
-        "inv_rank": "-",
-        "entry_price": null,
-        "peak": null
+        "inv_rank": "1",
+        "entry_price": 28.12,
+        "peak": 28.12
       },
       {
         "slot": 2,
-        "ticker": "CASH",
-        "etf_name": "Cash / Money Market",
-        "sector": "CASH",
+        "ticker": "ITADD",
+        "etf_name": "DSP Nifty IT ETF",
+        "sector": "NIFTY IT TRI",
         "weight": 0.2,
-        "inv_rank": "-",
-        "entry_price": null,
-        "peak": null
+        "inv_rank": "2",
+        "entry_price": 34.31,
+        "peak": 34.31
       },
       {
         "slot": 3,
-        "ticker": "CASH",
-        "etf_name": "Cash / Money Market",
-        "sector": "CASH",
+        "ticker": "TNIDETF",
+        "etf_name": "Tata Nifty India Digital ETF",
+        "sector": "DIGITAL",
         "weight": 0.2,
-        "inv_rank": "-",
-        "entry_price": null,
-        "peak": null
+        "inv_rank": "12",
+        "entry_price": 89.08,
+        "peak": 89.08
       },
       {
         "slot": 4,
-        "ticker": "CASH",
-        "etf_name": "Cash / Money Market",
-        "sector": "CASH",
+        "ticker": "HEALTHCARE",
+        "etf_name": "Mirae Asset Nifty 500 Hthc ETF",
+        "sector": "HEALTHCARE",
         "weight": 0.2,
-        "inv_rank": "-",
-        "entry_price": null,
-        "peak": null
+        "inv_rank": "13",
+        "entry_price": 21.73,
+        "peak": 21.73
       },
       {
         "slot": 5,
-        "ticker": "CASH",
-        "etf_name": "Cash / Money Market",
-        "sector": "CASH",
+        "ticker": "INTERNET",
+        "etf_name": "Mirae Nifty IN Internet ETF",
+        "sector": "INDEX",
         "weight": 0.2,
-        "inv_rank": "-",
-        "entry_price": null,
-        "peak": null
+        "inv_rank": "15",
+        "entry_price": 13.49,
+        "peak": 13.49
       }
     ]
   }

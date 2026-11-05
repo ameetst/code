@@ -532,7 +532,15 @@ def momentum_return(series: pd.Series, window: int) -> float:
 # 3. REGIME FILTER
 # =========================================================
 NIFTY500_CACHE_FILE = "nifty500_cache.csv"
-NIFTY500_CACHE_MAX_AGE_DAYS = 3   # tolerate weekends/holidays before refetching
+
+
+def _last_completed_session(today):
+    """Most recent weekday strictly before `today`: the latest close a fetch can contain
+    (yfinance's end date is exclusive, so today's bar is never included)."""
+    d = today - timedelta(days=1)
+    while d.weekday() >= 5:          # Sat/Sun -> back to Friday
+        d -= timedelta(days=1)
+    return d
 
 
 def fetch_nifty500_index(n_days: int = 600, script_dir: Path | None = None) -> pd.Series | None:
@@ -542,9 +550,11 @@ def fetch_nifty500_index(n_days: int = 600, script_dir: Path | None = None) -> p
     on every run.
 
     Cache behaviour:
-      - If nifty500_cache.csv exists and was last written today (or within
-        NIFTY500_CACHE_MAX_AGE_DAYS calendar days, to tolerate weekends/
-        holidays), load and return it directly — no network call.
+      - If nifty500_cache.csv exists and is current, load and return it directly
+        (no network call). It is current when it was written today, or when its
+        LAST CLOSE is already the most recent completed session. The file's
+        modified date alone is not trusted: a cache written on Monday morning
+        ends on Friday, and must not be reused on Thursday.
       - Otherwise (missing, stale, or unreadable), fetch fresh via yfinance,
         overwrite the cache, and return the new series.
 
@@ -557,15 +567,17 @@ def fetch_nifty500_index(n_days: int = 600, script_dir: Path | None = None) -> p
     # --- Try the cache first ---
     if cache_path.exists():
         try:
+            today = datetime.today().date()
             mtime_date = datetime.fromtimestamp(cache_path.stat().st_mtime).date()
-            age_days = (datetime.today().date() - mtime_date).days
-            if age_days <= NIFTY500_CACHE_MAX_AGE_DAYS:
-                cached = pd.read_csv(cache_path, index_col=0, parse_dates=True)["Close"]
-                cached = cached.dropna()
-                if len(cached) > 0:
+            cached = pd.read_csv(cache_path, index_col=0, parse_dates=True)["Close"].dropna()
+            if len(cached) > 0:
+                last_close = cached.index[-1].date()
+                expected = _last_completed_session(today)
+                if mtime_date == today or last_close >= expected:
                     print(f"  [regime] Using cached Nifty500 index ({cache_path.name}, "
-                          f"{age_days}d old, {len(cached)} rows)")
+                          f"last close {last_close}, {len(cached)} rows)")
                     return cached
+                print(f"  [regime] Nifty500 cache ends {last_close}, expected {expected} or later; refetching")
         except Exception as e:
             print(f"  [warn] Nifty500 cache unreadable ({e}); will refetch")
 
