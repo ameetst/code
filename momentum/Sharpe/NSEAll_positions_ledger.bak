@@ -24,11 +24,6 @@
     "entry_price": 2387.0,
     "qty": 42.0
   },
-  "CPPLUS": {
-    "entry_date": "2026-06-23",
-    "entry_price": 3616.0100000000007,
-    "qty": 20.0
-  },
   "STLTECH": {
     "entry_date": "2026-09-21",
     "entry_price": 807.9,
@@ -53,11 +48,6 @@
     "entry_date": "2026-09-28",
     "entry_price": 1017.05,
     "qty": 98.0
-  },
-  "SONACOMS": {
-    "entry_date": "2026-08-10",
-    "entry_price": 818.25,
-    "qty": 70.0
   },
   "SKYGOLD": {
     "entry_date": "2026-10-08",

@@ -934,5 +934,23 @@
     "action": "SELL",
     "quantity": 30,
     "price": 2372.6
+  },
+  {
+    "id": "8ec1cc69-32f9-48ea-a349-92ac717f3fdd",
+    "date": "2026-11-06",
+    "timestamp": "2026-11-06T18:12:42.888260",
+    "ticker": "CPPLUS",
+    "action": "SELL",
+    "quantity": 20,
+    "price": 4132.23
+  },
+  {
+    "id": "44304c3a-db70-4931-800e-741adb082c5e",
+    "date": "2026-11-06",
+    "timestamp": "2026-11-06T18:13:32.802173",
+    "ticker": "SONACOMS",
+    "action": "SELL",
+    "quantity": 70,
+    "price": 899.8
   }
 ]
