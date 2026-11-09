@@ -13,7 +13,7 @@
     <tr class="{{ 'held-row' if row.held else '' }}">
       <td>{{ row.rank if row.rank is not none else "—" }}</td>
       <td>{{ row.ticker }}</td>
-      <td>{{ row.series if row.series is not none else "—" }}</td>
+      <td>{{ row.series or "—" }}</td>
       <td>{{ "%.3f"|format(row.composite) if row.composite is not none else "—" }}</td>
       <td>{{ "%.3f"|format(row.res_mom) if row.res_mom is not none else "—" }}</td>
       <td>{{ "%.1f%%"|format(row.volatility_pct) if row.volatility_pct is not none else "—" }}</td>
