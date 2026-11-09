@@ -1561,3 +1561,19 @@ def nav_sma_resolved(entries, window: int = NAV_SMA_WINDOW) -> list:
     nav_sma() for any entry that predates the field. What the charts and tables plot."""
     computed = nav_sma(entries, window)
     return [e[NAV_SMA_KEY] if NAV_SMA_KEY in e else computed[i] for i, e in enumerate(entries)]
+
+
+# ── TICKER SEARCH (Full Rankings) ─────────────────────────────────────────────
+
+def ticker_search_terms(search) -> list:
+    """Upper-cased ticker fragments from a free-text search box; commas and whitespace both
+    separate terms. Shared by the Streamlit dashboards and the webapp so they match alike."""
+    import re
+    return [t for t in re.split(r"[,\s]+", (search or "").upper()) if t]
+
+
+def filter_tickers_by_search(df, terms, ticker_col: str = "TICKER"):
+    """Rows whose ticker CONTAINS any of `terms` (case-insensitive). No terms -> df unchanged."""
+    if not terms:
+        return df
+    return df[df[ticker_col].astype(str).str.upper().map(lambda t: any(x in t for x in terms))]

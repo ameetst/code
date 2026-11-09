@@ -967,7 +967,10 @@ with st.expander("Regime Score Breakdown", expanded=False):
                 y=alt.Y("Score:Q", title=None),
                 color=alt.Color("Series:N", title=None, legend=alt.Legend(orient="right"),
                                 scale=alt.Scale(domain=["Composite", "Breadth", "Momentum", "Entry Threshold"],
-                                                range=["#4F46E5", "#067647", "#B54708", "#B42318"])),
+                                                range=["#4F46E5", "#067647", "#B54708", "#000000"])),
+                # Entry Threshold is the dashed reference line, like the webapp chart
+                strokeDash=alt.condition(alt.datum.Series == "Entry Threshold",
+                                         alt.value([6, 4]), alt.value([1, 0])),
                 tooltip=[alt.Tooltip("date:T", title="Date", format="%b %d, %Y"),
                          alt.Tooltip("Series:N"),
                          alt.Tooltip("Score:Q", format=".3f")])
@@ -1205,6 +1208,7 @@ with tab_top:
         rows.append({
             "Rank":          int(row["RANK"]) if pd.notna(row["RANK"]) else None,
             "Ticker":        ticker,
+            "Series":        str(row["SERIES"]) if pd.notna(row.get("SERIES")) else "—",
             "Composite":     comp,
             "Res Mom":       float(row["RES_MOM"]) if pd.notna(row.get("RES_MOM")) else None,
             "Volatility %":  round(mean_vol * 100, 1) if mean_vol is not None else None,
@@ -1214,7 +1218,7 @@ with tab_top:
         })
 
     top25_df = pd.DataFrame(rows, columns=[
-        "Rank", "Ticker", "Composite", "Res Mom", "Volatility %", "Vol-Adj Score",
+        "Rank", "Ticker", "Series", "Composite", "Res Mom", "Volatility %", "Vol-Adj Score",
         "LTP", "Circuit Hits (UC/LC)"])  # explicit columns: stays valid if every name is blocked
 
     def style_top25(row):
@@ -2006,16 +2010,25 @@ if SHOW_CASH_LEDGER_TAB:
 with tab_calcs:
     st.markdown("## Full Universe Rankings")
 
-    fc1, fc2, fc3 = st.columns(3)
+    # Ticker search: while it has terms it looks across the whole universe, so "Show top N" is
+    # ignored (and disabled); Eligibility and Sort by still apply. Read from session state first
+    # so the slider can be disabled before the box itself is drawn.
+    _search_terms = ml.ticker_search_terms(st.session_state.get("full_rank_search", ""))
+
+    fc1, fc2, fc3, fc4 = st.columns(4)
     with fc1:
         filter_elig = st.selectbox("Eligibility",
                                     ["All", "Eligible only", "Disqualified only"])
     with fc2:
         top_n_show = st.slider("Show top N", 10, len(result),
-                                min(100, len(result)), 10)
+                                min(100, len(result)), 10, disabled=bool(_search_terms))
     with fc3:
         sort_col = st.selectbox("Sort by",
                                  ["RANK", "COMPOSITE", "RES_MOM", "PCT_FROM_52H", "REL_52H_DD"])
+    with fc4:
+        st.text_input("Search ticker", key="full_rank_search", placeholder="e.g. SBC, HFCL",
+                      help="Case-insensitive, partial match; separate several with commas or spaces. "
+                           "Press Enter to apply. Searches the whole universe (Show top N is ignored).")
 
     display_cols = ["RANK", "SERIES", "COMPOSITE", "SHARPE_3"]
     for c in ["RES_MOM", "3M%", "12M%", "PCT_FROM_52H", "REL_52H_DD", "BETA"]:
@@ -2030,9 +2043,11 @@ with tab_calcs:
     elif filter_elig == "Disqualified only":
         calcs_df = calcs_df[calcs_df["PCT_FROM_52H"] < -25]
 
+    calcs_df = ml.filter_tickers_by_search(calcs_df, _search_terms)
     calcs_df = calcs_df.sort_values(
-        sort_col, ascending=(sort_col == "RANK"),
-        na_position="last").head(top_n_show)
+        sort_col, ascending=(sort_col == "RANK"), na_position="last")
+    if not _search_terms:
+        calcs_df = calcs_df.head(top_n_show)
 
     # Names blocked from purchase by the current Configuration: greyed out below, with the
     # reason in a "Blocked" column (added only when at least one shown row is blocked).
@@ -2061,6 +2076,15 @@ with tab_calcs:
                 return ["background-color:#E8F5EE;"] * len(row)
         except (ValueError, TypeError): pass
         return [""] * len(row)
+
+    if _search_terms:
+        if calcs_df.empty:
+            st.info(f"No tickers match “{st.session_state.get('full_rank_search', '').strip()}”"
+                    + (f" with Eligibility set to “{filter_elig}” — try “All”." if filter_elig != "All" else "."))
+        else:
+            st.caption(f"🔎 {len(calcs_df)} ticker{'' if len(calcs_df) == 1 else 's'} matching "
+                       f"“{st.session_state.get('full_rank_search', '').strip()}” in the whole universe "
+                       f"(Show top N is ignored while searching).")
 
     st.dataframe(
         calcs_df.style.apply(style_calcs, axis=1).format(fmt, na_rep="—"),

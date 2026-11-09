@@ -168,8 +168,10 @@ def full_table_partial():
     top_n = request.args.get("top_n", type=int) or min(_FULL_DEFAULT_TOP_N, total)
     top_n = max(10, min(top_n, total)) if total else 0
     rel_dd_breach_threshold = float(cfg["rel_dd_breach_threshold"])
+    search = request.args.get("q", "").strip()[:100]
 
-    rows = rankings.full_rankings_rows(bundle, eligibility, sort_col, top_n, rel_dd_breach_threshold)
+    rows = rankings.full_rankings_rows(bundle, eligibility, sort_col, top_n, rel_dd_breach_threshold,
+                                        search=search)
     return render_template(
         "_full_rankings_table.html",
         headers=[rankings.FULL_COLUMN_LABELS.get(c, c) for c in rankings.full_display_columns(bundle)],
@@ -177,4 +179,5 @@ def full_table_partial():
         blocked=rankings.blocked_breakdown(rows),
         summary=rankings.full_rankings_summary(bundle, rel_dd_breach_threshold),
         rel_dd_breach_threshold=rel_dd_breach_threshold,
+        search=search, eligibility=eligibility,
     )

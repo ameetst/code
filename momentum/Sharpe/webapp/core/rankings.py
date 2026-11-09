@@ -264,6 +264,7 @@ def top_rows(bundle: Bundle, limit: int, held: set, prices: dict | None = None) 
         rows.append({
             "rank": int(rank) if rank is not None else None,
             "ticker": ticker,
+            "series": str(row["SERIES"]) if pd.notna(row.get("SERIES")) else None,
             "composite": comp,
             "res_mom": finite(row.get("RES_MOM")),
             "volatility_pct": round(mean_vol * 100, 1) if mean_vol is not None else None,
@@ -312,8 +313,15 @@ def full_display_columns(bundle: Bundle) -> list[str]:
     return [c for c in FULL_DISPLAY_COLUMNS if c in bundle.result.columns]
 
 
+def search_terms(search: str) -> list[str]:
+    """Upper-cased ticker fragments from a free-text box; commas and whitespace both separate."""
+    return ml.ticker_search_terms(search)
+
+
 def full_rankings_rows(bundle: Bundle, eligibility: str, sort_col: str,
-                        top_n: int, rel_dd_breach_threshold: float) -> list[dict]:
+                        top_n: int, rel_dd_breach_threshold: float, search: str = "") -> list[dict]:
+    """With a non-empty `search`, rows are the tickers CONTAINING any search term (case-insensitive),
+    taken from the whole universe: `top_n` is not applied, so a name outside the top N is still found."""
     cols = full_display_columns(bundle)
     df = bundle.result[cols].copy()
     df.index.name = "TICKER"
@@ -326,7 +334,11 @@ def full_rankings_rows(bundle: Bundle, eligibility: str, sort_col: str,
 
     if sort_col not in SORT_OPTIONS or sort_col not in df.columns:
         sort_col = "RANK"
-    df = df.sort_values(sort_col, ascending=(sort_col == "RANK"), na_position="last").head(top_n)
+    terms = search_terms(search)
+    df = ml.filter_tickers_by_search(df, terms)
+    df = df.sort_values(sort_col, ascending=(sort_col == "RANK"), na_position="last")
+    if not terms:
+        df = df.head(top_n)
 
     dynamic_n = int(bundle.regime_detail["dynamic_n"])
     blocks = bundle.purchase_block

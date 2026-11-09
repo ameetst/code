@@ -175,6 +175,8 @@ code { background: var(--surface2); border-radius: 4px; padding: 1px 5px; font-s
 .filter-row { display: flex; gap: 24px; flex-wrap: wrap; margin: 12px 0 20px; align-items: flex-end; }
 .filter-row label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
 .filter-row select { font-size: 14px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--r-ctl); background: var(--surface); color: var(--ink); }
+.filter-row input[type="search"] { font-size: 14px; padding: 6px 8px; width: 190px; border: 1px solid var(--border-strong); border-radius: var(--r-ctl); background: var(--surface); color: var(--ink); }
+.filter-row input[type="search"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .filter-row input[type="range"] { width: 160px; accent-color: var(--accent); }
 .filter-row output { font-size: 13px; color: var(--ink); font-weight: 600; }
 

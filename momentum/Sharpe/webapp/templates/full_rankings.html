@@ -4,7 +4,11 @@
 <h2>Full Universe Rankings</h2>
 
 <form class="filter-row" hx-get="{{ url_for('rankings.full_table_partial') }}"
-      hx-target="#full-table" hx-trigger="change" hx-swap="innerHTML">
+      hx-target="#full-table" hx-trigger="change, input from:#ticker-search delay:250ms, submit" hx-swap="innerHTML">
+  <label>Search ticker
+    <input type="search" id="ticker-search" name="q" placeholder="e.g. SBC, HFCL" autocomplete="off"
+           spellcheck="false" maxlength="100">
+  </label>
   <label>Eligibility
     <select name="eligibility">
       {% for opt in eligibility_options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}

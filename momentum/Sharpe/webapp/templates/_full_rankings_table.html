@@ -1,4 +1,8 @@
 {# Rendered standalone (HTMX swap target) and on first load of full_rankings.html. #}
+{% if search %}
+<p class="caption">🔎 {{ rows|length }} ticker{{ "" if rows|length == 1 else "s" }} matching “{{ search }}” in the whole universe
+  (Show top N is ignored while searching{% if eligibility != "All" %}; Eligibility: {{ eligibility }}{% endif %}).</p>
+{% endif %}
 <table class="data-table">
   <thead>
     <tr><th>Ticker</th>{% for h in headers %}<th>{{ h }}</th>{% endfor %}{% if blocked.n_blocked %}<th>Blocked</th>{% endif %}</tr>
@@ -13,6 +17,9 @@
     {% endfor %}
   </tbody>
 </table>
+{% if search and not rows %}
+<p class="caption">No tickers match “{{ search }}”{% if eligibility != "All" %} with Eligibility set to “{{ eligibility }}” — try “All”{% endif %}.</p>
+{% endif %}
 {% if blocked.n_blocked %}
 <p class="caption">⛔ Greyed-out rows are blocked from purchase by the current Configuration (reason in the Blocked column) —
   {{ blocked.n_blocked }} of {{ blocked.n_shown }} shown rows

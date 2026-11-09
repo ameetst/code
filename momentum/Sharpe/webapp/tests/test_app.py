@@ -56,6 +56,23 @@ def test_rankings_table_partial_shape_and_order(client):
     assert set(range(1, rows[-1] + 1)) - set(rows) <= blocked_ranks
 
 
+def test_rankings_table_has_a_series_column_matching_the_ranking(client):
+    """Top N shows each name's NSE series (EQ / BE / ...) right after the ticker."""
+    import re
+    from pathlib import Path
+    from webapp.core import config_store, rankings
+    html = client.get("/rankings/table").data.decode()
+    heads = re.findall(r"<th>([^<]+)</th>", html)
+    assert heads[:4] == ["Rank", "Ticker", "Series", "Composite"]
+    bundle = rankings.get_bundle(config_store.load_config())
+    got = re.findall(r"<tr class=\"[^\"]*\">\s*<td>\d+</td>\s*<td>([^<]+)</td>\s*<td>([^<]+)</td>", html)
+    assert got and all(series == str(bundle.result.loc[t, "SERIES"]) for t, series in got)
+    root = Path(__file__).resolve().parents[2]
+    for name in ("sharpe_dashboard.py", "sharpe_dashboard_dhan.py"):  # the Streamlit tables carry it too
+        src = (root / name).read_text(encoding="utf-8")
+        assert '"Rank", "Ticker", "Series", "Composite"' in src and '"Series":        str(row["SERIES"])' in src, name
+
+
 def test_rankings_matches_library_output(client):
     """The page must show exactly what momentum_lib ranks — no re-derivation drift."""
     from webapp.core import config_store, rankings

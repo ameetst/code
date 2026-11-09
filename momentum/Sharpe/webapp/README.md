@@ -234,6 +234,9 @@ Done:
   Configuration. Normally unnecessary (the cache key tracks the data files and every setting);
   it writes no file, so it works in read-only mode too. Live prices are deliberately not cleared,
   as in Streamlit.
+  **Full Rankings ticker search**: the "Search ticker" box filters as you type (case-insensitive,
+  partial match; commas or spaces separate several tickers). While searching it looks across the
+  whole universe -- "Show top N" is ignored, "Eligibility" and "Sort by" still apply.
   **Portfolio NAV 50-day SMA** (Performance Tracker): `Sharpe.py` saves `portfolio_nav_sma50` on every
   new NAV-log entry (`momentum_lib.nav_sma`: mean of the last 50 *trading days*' NAV -- repeated
   `price_date`s from weekend/holiday re-runs count once -- null until 50 exist). The chart plots it
