@@ -12,14 +12,12 @@
 <body>
   <div class="app">
     <div class="topbar">
-      <h1 class="app-title">Sharpe Momentum Strategy</h1>
+      <h1 class="app-title">Sharpe Momentum Strategy{% if not read_only %} <span class="write-mode-icon" title="Write mode — trades, cash entries and config saves are written to the live data files. Don't enter trades in the Streamlit dashboard at the same time." aria-label="Write mode">&#9999;&#65039;</span>{% endif %}</h1>
       {% if price_date %}<span class="status-pill">Prices · close of {{ price_date }}</span>{% endif %}
     </div>
     <p class="app-subtitle">Rank &rarr; Filter &rarr; Size &rarr; Allocate &nbsp;|&nbsp; Dynamic Regime Engine</p>
     {% if read_only %}
     <div class="banner">Read-only preview — trade entry and config changes stay in the Streamlit dashboard for now.</div>
-    {% else %}
-    <div class="banner info">Write mode — trades, cash entries and config saves are written to the live data files. Don't enter trades in the Streamlit dashboard at the same time.</div>
     {% endif %}
     <nav class="nav-tabs">
       <a href="{{ url_for('rankings.index') }}" class="{{ 'active' if active_tab == 'rankings' }}">{{ ('Top ' ~ nav_max_n ~ ' Rankings') if nav_max_n else 'Top Rankings' }}</a>

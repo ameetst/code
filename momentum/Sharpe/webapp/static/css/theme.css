@@ -51,6 +51,7 @@ input, select, textarea, button { font-family: inherit; }
   box-shadow: var(--shadow); padding: 12px 18px;
 }
 .app-title { color: var(--ink); margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.3px; }
+.write-mode-icon { font-size: 14px; font-weight: 400; letter-spacing: 0; cursor: help; vertical-align: middle; margin-left: 2px; }
 .app-subtitle { color: var(--muted); font-size: 13px; margin: 8px 2px 18px; }
 .status-pill {
   display: inline-flex; align-items: center; gap: 7px; padding: 4px 12px; border-radius: 999px;

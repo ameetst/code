@@ -86,13 +86,14 @@ def test_top_rankings_records_today_only_when_write_enabled(client, hist_dir, mo
     assert path.stat().st_mtime_ns == mtime
 
 
-def test_write_mode_banner_replaces_the_read_only_banner(client, monkeypatch):
+def test_write_mode_shows_a_pen_icon_instead_of_a_banner(client, monkeypatch):
     monkeypatch.setattr(settings, "READ_ONLY", True)
     html = client.get("/performance").data.decode()
-    assert "Read-only preview" in html and "Write mode" not in html
+    assert "Read-only preview" in html and "write-mode-icon" not in html
     monkeypatch.setattr(settings, "READ_ONLY", False)
     html = client.get("/performance").data.decode()
-    assert "Write mode" in html and "Read-only preview" not in html
+    assert "Read-only preview" not in html and 'class="banner info"' not in html
+    assert "write-mode-icon" in html and "Write mode" in html  # icon + its tooltip
 
 
 # ── Actions dot ───────────────────────────────────────────────────────────────
