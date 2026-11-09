@@ -1,0 +1,177 @@
+[
+  {
+    "date": "2026-06-18",
+    "Composite": 0.4975,
+    "Breadth": 0.663,
+    "Momentum": 0.189,
+    "Dynamic N": 14
+  },
+  {
+    "date": "2026-07-10",
+    "Composite": 0.5252,
+    "Breadth": 0.676,
+    "Momentum": 0.201,
+    "Dynamic N": 15
+  },
+  {
+    "date": "2026-08-02",
+    "Composite": 0.4318,
+    "Breadth": 0.432,
+    "Momentum": 0.244,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-08-19",
+    "Composite": 0.4896,
+    "Breadth": 0.584,
+    "Momentum": 0.208,
+    "Dynamic N": 18
+  },
+  {
+    "date": "2026-08-31",
+    "Composite": 0.4765,
+    "Breadth": 0.579,
+    "Momentum": 0.22,
+    "Dynamic N": 17
+  },
+  {
+    "date": "2026-10-12",
+    "Composite": 0.4092,
+    "Breadth": 0.533,
+    "Momentum": 0.429,
+    "Dynamic N": 15
+  },
+  {
+    "date": "2026-10-13",
+    "Composite": 0.4178,
+    "Breadth": 0.532,
+    "Momentum": 0.427,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-10-14",
+    "Composite": 0.4223,
+    "Breadth": 0.546,
+    "Momentum": 0.418,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-10-15",
+    "Composite": 0.4324,
+    "Breadth": 0.561,
+    "Momentum": 0.4,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-10-16",
+    "Composite": 0.4138,
+    "Breadth": 0.549,
+    "Momentum": 0.397,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-10-19",
+    "Composite": 0.4244,
+    "Breadth": 0.556,
+    "Momentum": 0.399,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-10-20",
+    "Composite": 0.3969,
+    "Breadth": 0.528,
+    "Momentum": 0.409,
+    "Dynamic N": 15
+  },
+  {
+    "date": "2026-10-22",
+    "Composite": 0.3609,
+    "Breadth": 0.477,
+    "Momentum": 0.444,
+    "Dynamic N": 14
+  },
+  {
+    "date": "2026-10-25",
+    "Composite": 0.3153,
+    "Breadth": 0.396,
+    "Momentum": 0.48,
+    "Dynamic N": 13
+  },
+  {
+    "date": "2026-10-27",
+    "Composite": 0.3236,
+    "Breadth": 0.411,
+    "Momentum": 0.476,
+    "Dynamic N": 13
+  },
+  {
+    "date": "2026-10-28",
+    "Composite": 0.3443,
+    "Breadth": 0.443,
+    "Momentum": 0.459,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-10-29",
+    "Composite": 0.3456,
+    "Breadth": 0.443,
+    "Momentum": 0.45,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-10-30",
+    "Composite": 0.3582,
+    "Breadth": 0.454,
+    "Momentum": 0.453,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-11-02",
+    "Composite": 0.3367,
+    "Breadth": 0.421,
+    "Momentum": 0.467,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-11-03",
+    "Composite": 0.3515,
+    "Breadth": 0.448,
+    "Momentum": 0.441,
+    "Dynamic N": 16
+  },
+  {
+    "date": "2026-11-04",
+    "Composite": 0.3634,
+    "Breadth": 0.454,
+    "Momentum": 0.441,
+    "Dynamic N": 17
+  },
+  {
+    "date": "2026-11-05",
+    "Composite": 0.3946,
+    "Breadth": 0.495,
+    "Momentum": 0.426,
+    "Dynamic N": 18
+  },
+  {
+    "date": "2026-11-06",
+    "Composite": 0.4212,
+    "Breadth": 0.51,
+    "Momentum": 0.407,
+    "Dynamic N": 19
+  },
+  {
+    "date": "2026-11-08",
+    "Composite": 0.4024,
+    "Breadth": 0.498,
+    "Momentum": 0.403,
+    "Dynamic N": 18
+  },
+  {
+    "date": "2026-11-09",
+    "Composite": 0.4024,
+    "Breadth": 0.498,
+    "Momentum": 0.403,
+    "Dynamic N": 18
+  }
+]
