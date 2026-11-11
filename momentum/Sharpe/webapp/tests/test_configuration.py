@@ -136,6 +136,13 @@ def test_configuration_page_renders_current_values(client):
     assert f'value="{int(cfg["max_n"])}"' in html
 
 
+def test_rank_buffer_input_accepts_any_whole_rank(client):
+    """A step larger than 1 makes the browser reject values off the step grid from min (e.g. 75 with
+    min=1, step=5 -> 'nearest valid values are 71 and 76')."""
+    html = client.get("/config-page").data.decode()
+    assert 'name="hold_rank_buffer" min="1" max="5000" step="1"' in html
+
+
 def test_save_route_is_blocked_read_only_and_touches_no_file(client):
     assert settings.READ_ONLY is True
     cfg_path = configuration.config_path()
