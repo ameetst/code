@@ -5,4 +5,14 @@
 <div id="tradelog-content">
   {% include "_tradelog_content.html" %}
 </div>
+<script>
+  // After recording a transaction the whole #tradelog-content is re-rendered, which would leave the
+  // viewport wherever the browser clamps it (usually near the bottom). Keep the user on the form.
+  document.body.addEventListener('htmx:afterSettle', function (evt) {
+    var cfg = evt.detail && evt.detail.requestConfig;
+    if (!cfg || !/\/tradelog\/add$/.test(cfg.path || '')) return;
+    var form = document.getElementById('trade-form-wrapper');
+    if (form) form.scrollIntoView({block: 'center'});
+  });
+</script>
 {% endblock %}

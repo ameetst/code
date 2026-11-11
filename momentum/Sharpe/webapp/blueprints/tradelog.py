@@ -64,8 +64,8 @@ def _build_context(universe: str, bundle: rankings.Bundle, *, form_ticker=None,
 
     stock_tickers = list(bundle.prices_df.index)
     default_ticker = form_ticker if form_ticker in stock_tickers else (stock_tickers[0] if stock_tickers else "")
-    default_qty = form_qty if form_qty else 10
-    default_price = form_price if form_price is not None else round(live_prices.get(default_ticker, 0.0), 2)
+    default_qty = form_qty if form_qty else 0
+    default_price = form_price if form_price is not None else 0
 
     editing_tx = next((tx for tx in tl if tx["id"] == editing_id), None) if editing_id else None
 
@@ -169,6 +169,7 @@ def add():
     if settings.READ_ONLY:
         ctx = _build_context(universe, bundle, error="This webapp is read-only right now "
                               "— trade entry stays in the Streamlit dashboard for now.")
+        ctx["notice_in_form"] = True
         return render_template("_tradelog_content.html", **ctx)
 
     ticker = request.form.get("ticker", "")
@@ -211,6 +212,7 @@ def add():
             success = f"Recorded {action} {qty} shares of {ticker} @ Rs {price:.2f}."
 
     ctx = _build_context(universe, bundle, error=error, success=success)
+    ctx["notice_in_form"] = True   # show the result beside the form the user just submitted
     return render_template("_tradelog_content.html", **ctx)
 
 

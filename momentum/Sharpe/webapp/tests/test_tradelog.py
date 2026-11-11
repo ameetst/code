@@ -147,6 +147,22 @@ def test_row_form_prefills_from_query_params(client):
     assert 'value="99.5"' in html
 
 
+def test_log_new_transaction_defaults_quantity_and_price_to_zero(client):
+    html = client.get("/tradelog").data.decode()
+    assert 'name="quantity" min="1" step="1" value="0"' in html
+    assert 'name="price" min="0.01" step="0.01" value="0"' in html
+
+
+def test_add_result_message_renders_inside_the_form_section(client):
+    """The page re-renders after Record Transaction; the message must sit under 'Log New Transaction'
+    (where the viewport is kept), not in the banner at the top of the page."""
+    assert settings.READ_ONLY is True   # tests never write; the read-only rejection uses the same path
+    html = client.post("/tradelog/add", data={"ticker": "NOPE", "action": "BUY", "quantity": "1",
+                                              "price": "1.0"}).data.decode()
+    assert html.count("read-only right now") == 1
+    assert html.index("Log New Transaction") < html.index("read-only right now")
+
+
 @pytest.mark.parametrize("path,method", [
     ("/tradelog/add", "post"),
     ("/tradelog/delete", "post"),
