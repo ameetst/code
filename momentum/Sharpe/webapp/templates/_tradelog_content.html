@@ -47,7 +47,7 @@
   <table class="data-table">
     <thead>
       <tr><th>Ticker</th><th>Qty</th><th>Avg Price</th><th>Current Price</th><th>Cost Value</th>
-          <th>Market Value</th><th>Unrealized PnL</th><th>Unrealized PnL %</th><th>First Buy Date</th></tr>
+          <th>Market Value</th><th>Curr. Wt %</th><th>Unrealized PnL</th><th>Unrealized PnL %</th><th>First Buy Date</th></tr>
     </thead>
     <tbody>
       {% for h in holdings_rows %}
@@ -60,6 +60,7 @@
         <td>Rs {{ "{:,.2f}".format(h['Current Price']) }}</td>
         <td>Rs {{ "{:,.2f}".format(h['Cost Value']) }}</td>
         <td>Rs {{ "{:,.2f}".format(h['Market Value']) }}</td>
+        <td>{{ "{:.2f}".format(h.weight_pct) }}%</td>
         <td>Rs {{ "{:,.2f}".format(h['Unrealized PnL']) }}</td>
         <td>{{ "%+.2f"|format(h['Unrealized PnL %']) }}%</td>
         <td>{{ h['First Buy Date'] if h['First Buy Date'] else "—" }}</td>

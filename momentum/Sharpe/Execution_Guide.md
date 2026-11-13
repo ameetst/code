@@ -29,7 +29,7 @@ FOLDER STRUCTURE
   ├── sharpe_dashboard.py            (Streamlit dashboard)
   ├── <UNIVERSE>_updated.xlsx        (generated — prices + volume filled in)
   ├── <UNIVERSE>_rankings.xlsx       (output — ranked workbook)
-  ├── <UNIVERSE>_positions_ledger.json (auto-created on first run)
+  ├── <UNIVERSE>_positions_ledger.json (written by the dashboards/webapp from the trade log)
   ├── STOCKDB.csv                    (market cap classification)
   └── Sector Metadata.csv            (sector info)
 
@@ -39,7 +39,7 @@ REQUIRED FILES (in momentum/Sharpe Score/)
   momentum_lib.py                  (library — must be present)
   Sharpe.py                        (main script)
   <UNIVERSE>_updated.xlsx          (input price + volume data — see format notes below)
-  <UNIVERSE>_positions_ledger.json (auto-created on first run if missing)
+  <UNIVERSE>_positions_ledger.json (written by the dashboards/webapp; Sharpe.py only reads it)
 
 
 DEPENDENCIES
@@ -351,9 +351,12 @@ Positions are tracked in a JSON file (<UNIVERSE>_positions_ledger.json):
     ...
   }
 
-- The ledger is loaded at the start of each run.
-- Exits are removed; new entries are appended with today's price and date.
-- The updated ledger is saved at the end of every run.
+- The ledger is loaded at the start of each run and is READ-ONLY for Sharpe.py.
+- It is a derived copy of the trade log: the Streamlit dashboards and the Flask webapp
+  rewrite it (average entry price, first-buy date, qty) whenever a trade is added,
+  edited or deleted.
+- Sharpe.py's exits and new-entry recommendations are NOT written to it; a position
+  appears in the ledger only once the trade is logged.
 - Do not edit the ledger manually.
 - If the file does not exist, the script starts with an empty ledger.
 
@@ -366,7 +369,7 @@ Sheet 1: TOP20
   Rows    : Top 20 ranked stocks (eligible only, sorted by SHARPE_ALL)
 
   STATUS values:
-    NEW BUY   — not previously held; added to ledger this run
+    NEW BUY   — not previously held; recommended entry (enters the ledger once you log the trade)
     HOLD      — already in ledger; rank and 52H within acceptable bounds
     EXIT-52H  — held stock breached the -25% 52H gate; sell immediately
     EXIT-RANK — held stock rank > 40 and held >= 28 days; sell
@@ -473,8 +476,8 @@ TROUBLESHOOTING
                                          for the shortest window required
   Duplicate index error                → Remove duplicate tickers from the
                                          input file before running
-  Ledger not found                     → Script will create a new empty ledger
-                                         automatically on first run
+  Ledger not found                     → Script starts with an empty ledger (it does not
+                                         create the file; log a trade to create it)
   "No VOLUME sheet found"              → MDTV filter is skipped (not an error).
                                          Run update_stock_price.py to generate
                                          the VOLUME sheet, or add one to the

@@ -139,7 +139,7 @@ def test_actions_page_renders_and_matches_ledger(client):
 
     cfg = config_store.load_config()
     universe = config_store.universe_name(config_store.resolve_file(cfg))
-    ledger = actions.load_ledger(universe)
+    ledger = actions.current_holdings(universe)
     assert ledger  # sanity: N750_positions_ledger.json has open positions
 
     r = client.get("/actions")
@@ -173,7 +173,7 @@ def test_actions_summary_counts_add_up(client):
     cfg = config_store.load_config()
     bundle = rankings.get_bundle(cfg)
     universe = config_store.universe_name(config_store.resolve_file(cfg))
-    ledger = actions.load_ledger(universe)
+    ledger = actions.current_holdings(universe)
     tl = tradelog.load_tradelog(universe)
     pnl = tradelog.calculate_holdings_and_pnl(tl, bundle.latest_prices)
     evaluation = actions.evaluate_exits(bundle, cfg, ledger, pnl["holdings_metrics"], datetime.date.today())
@@ -205,7 +205,7 @@ def test_nav_actions_dot_reflects_exit_state(client):
     cfg = config_store.load_config()
     bundle = rankings.get_bundle(cfg)
     universe = config_store.universe_name(config_store.resolve_file(cfg))
-    ledger = actions.load_ledger(universe)
+    ledger = actions.current_holdings(universe)
     tl = tradelog.load_tradelog(universe)
     pnl = tradelog.calculate_holdings_and_pnl(tl, bundle.latest_prices)
     n_exits = actions.evaluate_exits(bundle, cfg, ledger, pnl["holdings_metrics"],

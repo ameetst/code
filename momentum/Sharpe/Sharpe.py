@@ -46,20 +46,22 @@ Positions are tracked in a JSON file (LEDGER_FILE) with the structure:
     },
     ...
   }
-`qty` is the real share count (synced from the dashboard's trade log) and is
-optional — a notional entry added by this script's own ranking recommendations
-(not yet confirmed via a real trade) has qty = null. The equity curve uses
-qty-weighted returns when every held ticker has a known qty, and falls back
-to equal-weighting for the day otherwise (see EQUITY CURVE TRACKING below).
+`qty` is the real share count. The ledger is a DERIVED copy of the trade log:
+the dashboards / webapp rewrite it from the trade log whenever a trade is
+added, edited or deleted. This script treats it as READ-ONLY -- it never adds
+its own recommended names and never removes its own exit signals, because a
+recommendation is not a position until a trade is logged. (An older ledger may
+still hold notional entries with qty = null; the equity curve then falls back
+to equal-weighting for the day -- see EQUITY CURVE TRACKING below.)
 
-The ledger is loaded at the start of each run, used to evaluate exit
-conditions, and updated with new entries / removals at the end of the run.
+The ledger is loaded at the start of each run and used to evaluate exit
+conditions and the equity curve.
 
 Usage:  python Sharpe.py <UNIVERSE> [path/to/ledger.json]
           UNIVERSE examples: N500, N750, NSEAll
           Derives: <UNIVERSE>_updated.xlsx  ->  <UNIVERSE>_rankings.xlsx
                    <UNIVERSE>_positions_ledger.json (overridden by 2nd arg)
-          Use --dry-run to generate recommendations without saving ledger changes.
+          --dry-run is accepted for compatibility; this script never writes the ledger.
 """
 
 import sys
@@ -97,7 +99,8 @@ _parser.add_argument("--min-market-cap", type=float, default=None,
                      help="Minimum market cap in Rs Cr for NEW entries (from STOCKDB.csv); "
                           "0 disables (default: saved config)")
 _parser.add_argument("--dry-run", action="store_true",
-                     help="Generate rankings/exits without saving changes to the positions ledger")
+                     help="Accepted for compatibility. The positions ledger is never written by this "
+                          "script (it is derived from the trade log by the dashboards/webapp).")
 _args = _parser.parse_args()
 
 # -- LOAD SHARED CONFIG (from dashboard_config.json, shared with dashboard) ----
@@ -191,36 +194,6 @@ def load_ledger(path: str) -> dict:
             print(f"  Warning: skipping malformed ledger entry for {ticker}: {e}")
     print(f"  Ledger loaded: {len(ledger)} open position(s) from '{path}'")
     return ledger
-
-
-def save_ledger(ledger: dict, path: str):
-    """Persist the updated ledger back to JSON using an atomic replace."""
-    serialisable = {
-        ticker: {
-            "entry_date":  rec["entry_date"].isoformat(),
-            "entry_price": rec["entry_price"],
-            "qty":         rec.get("qty"),
-        }
-        for ticker, rec in ledger.items()
-    }
-    p = Path(path)
-    tmp_path = p.with_suffix(".tmp")
-    bak_path = p.with_suffix(".bak")
-
-    try:
-        with open(tmp_path, "w") as f:
-            json.dump(serialisable, f, indent=2)
-        if p.exists():
-            shutil.copy2(p, bak_path)
-        shutil.move(str(tmp_path), str(p))
-    except Exception as e:
-        if tmp_path.exists():
-            tmp_path.unlink()
-        raise e
-
-    print(f"  Ledger saved: {len(ledger)} position(s) -> '{path}'")
-    if bak_path.exists():
-        print(f"  Previous ledger backup -> '{bak_path}'")
 
 
 def days_held(ticker: str, ledger: dict) -> int:
@@ -337,8 +310,8 @@ def _load_equity_history(path: str) -> list:
         raise
 
 def _save_equity_history(data: list, path: str):
-    """Persist equity history using an atomic replace (same pattern as
-    save_ledger) so a crash mid-write can't leave a truncated JSON file."""
+    """Persist equity history using an atomic replace so a crash mid-write
+    can't leave a truncated JSON file."""
     p = Path(path)
     tmp_path = p.with_suffix(".tmp")
     bak_path = p.with_suffix(".bak")
@@ -821,28 +794,14 @@ else:
     print(f"\n  [NEW ENTRIES BLOCKED]  Regime score {regime_score:.2f} < threshold {NEW_ENTRY_THRESHOLD}")
     print(f"  No new buys this week. Existing positions monitored for exit only.")
 
-# -- UPDATE LEDGER -------------------------------------------------------------
+# -- LEDGER (READ-ONLY) --------------------------------------------------------
 #
-# Remove exits from ledger, add new entries with today's price.
-# The caller is responsible for confirming execution before saving —
-# in a live system you'd only save after trades are confirmed filled.
-#
-if DRY_RUN:
-    print(f"\n  [DRY RUN] Ledger not updated. Recommendations only -> '{LEDGER_FILE}' unchanged.")
-else:
-    for e in all_exits:
-        ledger.pop(e["ticker"], None)
-
-    for ticker in entry_candidates:
-        px = prices_df.loc[ticker].dropna()
-        last_px = float(px.iloc[-1]) if len(px) > 0 else 0.0
-        ledger[ticker] = {
-            "entry_date":  TODAY,
-            "entry_price": last_px,
-            "qty":         None,  # notional entry — no real qty until a trade is logged
-        }
-
-    save_ledger(ledger, LEDGER_FILE)
+# The positions ledger is NOT touched here. Exits and new entries above are
+# recommendations only; the ledger changes when the trades are actually logged
+# (the dashboards / webapp re-sync it from the trade log). Writing the
+# recommendations into it staged names you never bought and dropped exits you
+# had not yet sold, so the next run's holdings count and NAV were wrong.
+print(f"\n  Ledger '{LEDGER_FILE}' left unchanged (read-only here; it follows the trade log).")
 
 # -- CAPITAL ALLOCATION (VOLATILITY WEIGHTING) ---------------------------------
 print("\nCalculating Dynamic Volatility Weights for Top N Portfolio ...")

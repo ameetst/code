@@ -952,5 +952,95 @@
     "action": "SELL",
     "quantity": 70,
     "price": 899.8
+  },
+  {
+    "id": "0a199805-c2aa-4d13-b001-bec386ff8648",
+    "date": "2026-11-09",
+    "timestamp": "2026-11-09T14:16:34.183616",
+    "ticker": "SYRMA",
+    "action": "SELL",
+    "quantity": 58,
+    "price": 1459.0
+  },
+  {
+    "id": "5d5209ca-3eb1-44c4-8a17-f7d694083bec",
+    "date": "2026-11-09",
+    "timestamp": "2026-11-09T14:37:28.073689",
+    "ticker": "CPPLUS",
+    "action": "BUY",
+    "quantity": 23,
+    "price": 4218.0
+  },
+  {
+    "id": "4499f57c-0199-45d4-abaa-2a6ce973b4d5",
+    "date": "2026-11-09",
+    "timestamp": "2026-11-09T14:37:50.082662",
+    "ticker": "KRISHANA",
+    "action": "BUY",
+    "quantity": 410,
+    "price": 246.26
+  },
+  {
+    "id": "8e464322-1b98-466f-8d63-baffd124a9b9",
+    "date": "2026-11-09",
+    "timestamp": "2026-11-09T14:38:22.853058",
+    "ticker": "SPECTRUM",
+    "action": "BUY",
+    "quantity": 20,
+    "price": 4605.16
+  },
+  {
+    "id": "e0f7c886-04e5-4c36-b52e-9e19ca323d1c",
+    "date": "2026-11-09",
+    "timestamp": "2026-11-09T14:39:03.394430",
+    "ticker": "TFCILTD",
+    "action": "BUY",
+    "quantity": 623,
+    "price": 169.98
+  },
+  {
+    "id": "2b1daf7a-6ed8-4896-b610-3e9c87e05972",
+    "date": "2026-11-09",
+    "timestamp": "2026-11-09T14:39:25.508939",
+    "ticker": "GCSL",
+    "action": "BUY",
+    "quantity": 125,
+    "price": 784.6
+  },
+  {
+    "id": "b5e0cff9-bfb2-49ec-ad62-f9e4d64af8bc",
+    "date": "2026-11-09",
+    "timestamp": "2026-11-09T14:39:58.516690",
+    "ticker": "SHREEJISPG",
+    "action": "BUY",
+    "quantity": 110,
+    "price": 885.9
+  },
+  {
+    "id": "dbe0fc92-ca60-4ae5-84cb-6d0257a9fe3a",
+    "date": "2026-11-09",
+    "timestamp": "2026-11-09T15:20:19.241642",
+    "ticker": "HFCL",
+    "action": "SELL",
+    "quantity": 364,
+    "price": 205.67
+  },
+  {
+    "id": "c5b003d6-f7bd-400a-bea1-7973531e7b92",
+    "date": "2026-11-11",
+    "timestamp": "2026-11-11T10:24:09.201385",
+    "ticker": "STLTECH",
+    "action": "SELL",
+    "quantity": 123,
+    "price": 681.35
+  },
+  {
+    "id": "27f30258-9dc1-4244-9153-7f509cecc3d3",
+    "date": "2026-11-13",
+    "timestamp": "2026-11-13T14:43:56.277428",
+    "ticker": "LAURUSLABS",
+    "action": "SELL",
+    "quantity": 52,
+    "price": 2416.0
   }
 ]

@@ -44,7 +44,7 @@ def _actions_status() -> tuple[str, str | None]:
         cfg = config_store.load_config()
         bundle = rankings.get_bundle(cfg)
         universe = config_store.universe_name(config_store.resolve_file(cfg))
-        ledger = actions.load_ledger(universe)
+        ledger = actions.current_holdings(universe)
         if not ledger:
             return "🟢", None
         tl = tradelog.load_tradelog(universe)

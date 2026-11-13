@@ -147,6 +147,17 @@ def test_row_form_prefills_from_query_params(client):
     assert 'value="99.5"' in html
 
 
+def test_active_holdings_shows_current_weight_that_sums_to_100(client):
+    import re
+    html = client.get("/tradelog").data.decode()
+    assert "<th>Curr. Wt %</th>" in html
+    table = html.split("Active Holdings")[1].split("</table>")[0]
+    weights = [float(w) for w in re.findall(r"<td>(\d+\.\d\d)%</td>", table)]
+    # Unrealized PnL % cells also match the pattern only when positive and unsigned -- they carry a
+    # sign ("%+.2f"), so the unsigned 2-decimal cells here are exactly the weight column.
+    assert weights and abs(sum(weights) - 100.0) < 0.1 * len(weights)
+
+
 def test_log_new_transaction_defaults_quantity_and_price_to_zero(client):
     html = client.get("/tradelog").data.decode()
     assert 'name="quantity" min="1" step="1" value="0"' in html

@@ -49,6 +49,8 @@ def _build_context(universe: str, bundle: rankings.Bundle, *, form_ticker=None,
 
     holdings_rows = sorted(holdings_metrics, key=lambda h: h["Unrealized PnL"], reverse=True)
     for h in holdings_rows:
+        # Share of total holdings market value (weights add up to 100%; cash is not included).
+        h["weight_pct"] = (h["Market Value"] / total_market * 100) if total_market > 0 else 0.0
         h["row_class"] = ("row-regime" if h["Unrealized PnL"] > 0
                            else "row-breach" if h["Unrealized PnL"] < 0 else "")
         fbd = h["First Buy Date"]

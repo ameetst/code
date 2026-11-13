@@ -31,7 +31,7 @@ def index():
         abort(404, description=str(e))
 
     universe = config_store.universe_name(config_store.resolve_file(cfg))
-    ledger = actions.load_ledger(universe)
+    ledger = actions.current_holdings(universe)
     view = {"has_ledger": bool(ledger)}
 
     if ledger:

@@ -3,8 +3,9 @@ Actions Monitor. Ported from the tab_exits block of sharpe_dashboard_dhan.py:
 exit-signal evaluation for held positions, and inverse-vol-weighted entry
 candidates for the cash freed up (or already available) after those exits.
 
-Read-only difference from the dashboard: load_ledger reads the positions
-ledger as-is and never re-syncs it from the tradelog first.
+Read-only difference from the dashboard: the dashboard re-syncs the positions ledger from the
+tradelog on every load; here holdings come straight from the tradelog via current_holdings()
+(nothing is written), with the ledger file used only when no tradelog exists.
 """
 import datetime
 import json
@@ -13,7 +14,7 @@ import pandas as pd
 
 import momentum_lib as ml
 
-from webapp.core import config_store, rankings
+from webapp.core import config_store, rankings, tradelog
 
 HOLD_LOCK_DAYS = 28
 finite = rankings.finite  # reuse the NaN/inf -> None helper
@@ -39,6 +40,25 @@ def load_ledger(universe: str) -> dict:
         except (KeyError, ValueError, TypeError):
             pass
     return ledger
+
+
+def current_holdings(universe: str) -> dict:
+    """{ticker: {entry_date: date, entry_price: float}} of what is ACTUALLY held, derived from
+    the tradelog (the source of truth: average-cost entry price, first-buy date of the open lot).
+
+    The positions-ledger file is only a derived copy of this and can lag or carry names that were
+    never bought (older Sharpe.py runs staged its recommendations there), so the Actions page,
+    Correlation matrix and nav dot read this instead. Falls back to the ledger file only when
+    there is no tradelog at all (e.g. a universe that has never logged a trade)."""
+    tl = tradelog.load_tradelog(universe)
+    if not tl:
+        return load_ledger(universe)
+    held = tradelog.calculate_holdings_and_pnl(tl)["active_holdings"]
+    return {
+        t: {"entry_date": h["first_buy_date"] or datetime.date.today(),
+            "entry_price": float(h["avg_price"])}
+        for t, h in held.items()
+    }
 
 
 def evaluate_exits(bundle: rankings.Bundle, cfg: dict, ledger: dict,

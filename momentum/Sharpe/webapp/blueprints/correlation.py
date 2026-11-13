@@ -17,7 +17,7 @@ def index():
     except FileNotFoundError as e:
         abort(404, description=str(e))
     universe = config_store.universe_name(config_store.resolve_file(cfg))
-    ledger = actions.load_ledger(universe)
+    ledger = actions.current_holdings(universe)
     matrix_html, message = corr_matrix.render(bundle.prices_df, list(ledger.keys()))
     return render_template("correlation.html", matrix_html=matrix_html, message=message,
                            corr_css=corr_matrix.CSS)
