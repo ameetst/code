@@ -656,5 +656,40 @@
     "Breadth": 0.531,
     "Momentum": 0.384,
     "Dynamic N": 20
+  },
+  {
+    "date": "2026-11-13",
+    "Composite": 0.4712,
+    "Breadth": 0.545,
+    "Momentum": 0.377,
+    "Dynamic N": 20
+  },
+  {
+    "date": "2026-11-14",
+    "Composite": 0.4596,
+    "Breadth": 0.542,
+    "Momentum": 0.385,
+    "Dynamic N": 20
+  },
+  {
+    "date": "2026-11-16",
+    "Composite": 0.4596,
+    "Breadth": 0.542,
+    "Momentum": 0.385,
+    "Dynamic N": 20
+  },
+  {
+    "date": "2026-11-17",
+    "Composite": 0.4287,
+    "Breadth": 0.517,
+    "Momentum": 0.394,
+    "Dynamic N": 19
+  },
+  {
+    "date": "2026-11-18",
+    "Composite": 0.4281,
+    "Breadth": 0.519,
+    "Momentum": 0.392,
+    "Dynamic N": 19
   }
 ]

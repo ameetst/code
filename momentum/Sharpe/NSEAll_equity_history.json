@@ -1306,5 +1306,65 @@
     "qty_weighted": true,
     "price_date": "2026-11-12",
     "portfolio_nav_sma50": 108.2477
+  },
+  {
+    "date": "2026-11-14",
+    "portfolio_nav": 110.5518,
+    "benchmark_nav": 102.0309,
+    "portfolio_ret": 0.002593,
+    "benchmark_ret": -0.005514,
+    "n_held": 14,
+    "invested_frac": 0.467,
+    "qty_weighted": true,
+    "price_date": "2026-11-13",
+    "portfolio_nav_sma50": 108.3451
+  },
+  {
+    "date": "2026-11-16",
+    "portfolio_nav": 110.5712,
+    "benchmark_nav": 102.0309,
+    "portfolio_ret": 0.000175,
+    "benchmark_ret": 0.0,
+    "n_held": 14,
+    "invested_frac": 0.467,
+    "qty_weighted": true,
+    "price_date": "2026-11-13",
+    "portfolio_nav_sma50": 108.3455
+  },
+  {
+    "date": "2026-11-17",
+    "portfolio_nav": 108.9991,
+    "benchmark_nav": 102.1091,
+    "portfolio_ret": -0.014218,
+    "benchmark_ret": 0.000767,
+    "n_held": 20,
+    "invested_frac": 0.667,
+    "qty_weighted": true,
+    "price_date": "2026-11-16",
+    "portfolio_nav_sma50": 108.3923
+  },
+  {
+    "date": "2026-11-18",
+    "portfolio_nav": 108.6041,
+    "benchmark_nav": 102.4096,
+    "portfolio_ret": -0.003624,
+    "benchmark_ret": 0.002943,
+    "n_held": 20,
+    "invested_frac": 0.667,
+    "qty_weighted": true,
+    "price_date": "2026-11-17",
+    "portfolio_nav_sma50": 108.4212
+  },
+  {
+    "date": "2026-11-19",
+    "portfolio_nav": 108.1117,
+    "benchmark_nav": 101.584,
+    "portfolio_ret": -0.004534,
+    "benchmark_ret": -0.008062,
+    "n_held": 20,
+    "invested_frac": 0.667,
+    "qty_weighted": true,
+    "price_date": "2026-11-18",
+    "portfolio_nav_sma50": 108.4255
   }
 ]

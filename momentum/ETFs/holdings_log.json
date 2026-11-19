@@ -1024,5 +1024,62 @@
         "peak": 29.73
       }
     ]
+  },
+  "2026-W47": {
+    "run_date": "2026-11-18 09:20",
+    "regime": "BULL",
+    "active_slots": 5,
+    "allocation": [
+      {
+        "slot": 1,
+        "ticker": "MAFANG",
+        "etf_name": "MAFANG",
+        "sector": "NYSE FANG+",
+        "weight": 0.2,
+        "inv_rank": "1",
+        "entry_price": 234.67,
+        "peak": 234.67
+      },
+      {
+        "slot": 2,
+        "ticker": "SBIETFPB",
+        "etf_name": "SBI Nifty Private Bank ETF",
+        "sector": "BANK",
+        "weight": 0.2,
+        "inv_rank": "3",
+        "entry_price": 301.29,
+        "peak": 312.46
+      },
+      {
+        "slot": 3,
+        "ticker": "PHARMABEES",
+        "etf_name": "Nippon India Nifty Pharma ETF",
+        "sector": "NIFTY PHARMA",
+        "weight": 0.2,
+        "inv_rank": "4",
+        "entry_price": 28.68,
+        "peak": 28.9
+      },
+      {
+        "slot": 4,
+        "ticker": "PVTBANIETF",
+        "etf_name": "ICICI Pru Nifty PB ETF",
+        "sector": "NIFTY BANK",
+        "weight": 0.2,
+        "inv_rank": "5",
+        "entry_price": 29.73,
+        "peak": 30.84
+      },
+      {
+        "slot": 5,
+        "ticker": "NPBET",
+        "etf_name": "Tata Nifty Private Bank ETF",
+        "sector": "NIFTY PRIVATE BANK INDEX",
+        "weight": 0.2,
+        "inv_rank": "27",
+        "entry_price": 313.35,
+        "peak": 316.45
+      }
+    ]
   }
 }

@@ -1033,5 +1033,59 @@
     "action": "SELL",
     "quantity": 123,
     "price": 681.35
+  },
+  {
+    "id": "27f30258-9dc1-4244-9153-7f509cecc3d3",
+    "date": "2026-11-13",
+    "timestamp": "2026-11-13T14:43:56.277428",
+    "ticker": "LAURUSLABS",
+    "action": "SELL",
+    "quantity": 52,
+    "price": 2416.0
+  },
+  {
+    "id": "c25ea48c-b71e-4150-ba6e-5a93d7b3339a",
+    "date": "2026-11-16",
+    "timestamp": "2026-11-16T10:34:05.427849",
+    "ticker": "LAURUSLABS",
+    "action": "BUY",
+    "quantity": 42,
+    "price": 2355.5
+  },
+  {
+    "id": "3a314a75-456c-4312-9fe6-0513a4a4eb59",
+    "date": "2026-11-16",
+    "timestamp": "2026-11-16T10:34:19.757373",
+    "ticker": "SBC",
+    "action": "BUY",
+    "quantity": 1405,
+    "price": 71.06
+  },
+  {
+    "id": "92cc0038-7898-41b9-8e56-bca228ae39e1",
+    "date": "2026-11-16",
+    "timestamp": "2026-11-16T10:34:34.647416",
+    "ticker": "SAILIFE",
+    "action": "BUY",
+    "quantity": 52,
+    "price": 1912.94
+  },
+  {
+    "id": "05a52a60-f00a-45e4-85d2-d059a522edac",
+    "date": "2026-11-16",
+    "timestamp": "2026-11-16T10:34:59.794502",
+    "ticker": "MENONBE",
+    "action": "BUY",
+    "quantity": 259,
+    "price": 385.44
+  },
+  {
+    "id": "3fe14e05-b5e9-4d2d-adc4-082c2e6684b1",
+    "date": "2026-11-16",
+    "timestamp": "2026-11-16T10:35:16.508931",
+    "ticker": "RATNAVEER",
+    "action": "BUY",
+    "quantity": 274,
+    "price": 364.2
   }
 ]
