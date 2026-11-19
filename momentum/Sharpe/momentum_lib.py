@@ -674,6 +674,76 @@ def compute_clenow(prices_df: pd.DataFrame,
     return slope_df, r2_df, raw_df, cz_df
 
 
+# ── CLENOW BOOK SCORE ─────────────────────────────────────────────────────────
+# Single-window score from the book's "Stocks on the Move" system. Ported from
+# the standalone Clenow Score tool's clenow_score()/analyse_ticker() so the
+# rankings workbook needs no dependency on that tool. Distinct from the
+# multi-window compute_clenow() above (252-day basis, Z-scored).
+
+CLENOW_BOOK_WINDOW       = 90    # trading days in the regression
+CLENOW_BOOK_TRADING_DAYS = 250   # book's annualisation constant (not 252)
+
+
+def _clenow_book_score(prices: np.ndarray) -> float:
+    """Annualised exp-regression slope (%) x R² over the given price window."""
+    if len(prices) < 2 or np.any(prices <= 0):
+        return np.nan
+    slope, _, r, _, _ = stats.linregress(np.arange(len(prices)), np.log(prices))
+    return (np.exp(slope * CLENOW_BOOK_TRADING_DAYS) - 1) * 100 * r ** 2
+
+
+def compute_clenow_book_scores(prices_df: pd.DataFrame,
+                               stock_tickers: list) -> pd.Series:
+    """
+    Clenow book score per ticker: last CLENOW_BOOK_WINDOW valid closes
+    (non-positive closes dropped, as in the tool). NaN when fewer than
+    CLENOW_BOOK_WINDOW valid closes exist.
+    """
+    out = {}
+    for t in stock_tickers:
+        px = prices_df.loc[t].dropna().astype(float)
+        px = px[px > 0]
+        out[t] = (_clenow_book_score(px.iloc[-CLENOW_BOOK_WINDOW:].values)
+                  if len(px) >= CLENOW_BOOK_WINDOW else np.nan)
+    return pd.Series(out, name="CLENOW_SCORE")
+
+
+_CLENOW_XLSX_CACHE: dict = {}
+
+
+def load_clenow_scores_from_workbook(path):
+    """
+    CLENOW_SCORE per ticker, read from the CALCS sheet of Sharpe.py's
+    `<UNIVERSE>_rankings.xlsx` (title row 1, header row 2).
+
+    Returns (Series indexed by ticker, workbook modified-time as a datetime), or
+    (None, None) when the file, the sheet or the column is missing/unreadable (e.g.
+    a workbook from before the column existed, or one Excel has locked). The values
+    are as of the last Sharpe.py run, not live. Cached per (path, mtime).
+    """
+    import datetime as _dt
+    import os as _os
+    try:
+        mtime = _os.path.getmtime(path)
+    except OSError:
+        return None, None
+    key = str(path)
+    cached = _CLENOW_XLSX_CACHE.get(key)
+    if cached and cached[0] == mtime:
+        return cached[1], cached[2]
+    try:
+        df = pd.read_excel(path, sheet_name="CALCS", header=1,
+                           usecols=["TICKER", "CLENOW_SCORE"])
+    except Exception:
+        return None, None
+    df = df.dropna(subset=["TICKER"]).drop_duplicates("TICKER", keep="last")
+    series = pd.to_numeric(df.set_index("TICKER")["CLENOW_SCORE"], errors="coerce")
+    series.name = "CLENOW_SCORE"
+    stamp = _dt.datetime.fromtimestamp(mtime)
+    _CLENOW_XLSX_CACHE[key] = (mtime, series, stamp)
+    return series, stamp
+
+
 # ── RESIDUAL MOMENTUM ─────────────────────────────────────────────────────────
 
 def _residual_information_ratio(stock_series: pd.Series, mkt_rets: pd.Series,

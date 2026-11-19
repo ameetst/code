@@ -1102,7 +1102,11 @@ calcs_cols = [
     ("RES_MOM",   10),
     ("3M%",        8), ("12M%",     8),
     ("52H%",      10), ("REL_DD",    10), ("BETA",      8),
+    ("CLENOW_SCORE", 13),
 ]
+# Display-only: Clenow book score (90d exp-regression slope x R2). Not used in
+# ranking, regime or entries/exits.
+clenow_scores = ml.compute_clenow_book_scores(prices_df, stock_tickers)
 for c, (col_name, col_w) in enumerate(calcs_cols, 1):
     set_hdr(ws2.cell(row=2, column=c), col_name)
     ws2.column_dimensions[get_column_letter(c)].width = col_w
@@ -1152,6 +1156,7 @@ for i, (ticker, row) in enumerate(result.iterrows(), 3):
         (pct52h,             pct52h_fnt, pct52h_bg, "0.0"),
         (reldd,              reldd_fnt,  reldd_bg,  "0.0"),
         (row.get("BETA", np.nan), MUTED_FONT, bg, "0.00"),
+        (clenow_scores.get(ticker, np.nan), CYAN_FONT, bg, "0.0"),
     ]
     for c, (val, fnt, bg_c, nfmt) in enumerate(values, 1):
         v = None if (isinstance(val, float) and np.isnan(val)) else val
