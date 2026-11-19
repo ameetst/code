@@ -25,6 +25,13 @@
   {{ blocked.n_blocked }} of {{ blocked.n_shown }} shown rows
   {% for label, n in blocked.by_reason %}&nbsp;|&nbsp; {{ label }}: {{ n }}{% endfor %}</p>
 {% endif %}
+{% if clenow_available %}
+<p class="caption">Clenow Score (90-day exp-regression slope &times; R&sup2;) is read from the rankings workbook written by
+  Sharpe.py ({{ clenow_generated }}); re-run Sharpe.py to refresh it. Display only &mdash; not used in ranking or exits.</p>
+{% else %}
+<p class="caption">Clenow Score is not shown: no CLENOW_SCORE column found in this universe's rankings workbook
+  (run Sharpe.py).</p>
+{% endif %}
 <p class="caption">
   Universe: {{ summary.universe_count }} &nbsp;|&nbsp;
   Eligible: {{ summary.eligible_count }} &nbsp;|&nbsp;

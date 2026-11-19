@@ -172,7 +172,7 @@ def compute_cap_tier_dual(result_df, prices_df, stock_tickers, stockdb):
     """
     Compute dual market cap momentum breakdown using STOCKDB classification.
     Signal 1: 63-day raw price return > 0%  (existing metric)
-    Signal 2: 3M Sharpe score > 0           (new metric — risk-adjusted)
+    Signal 2: 21-day raw price return > 0%  (shorter window, same construction)
     Returns a DataFrame with both signals and delta per cap tier.
     """
     CAP_ORDER   = ["LARGECAP", "MIDCAP", "SMALLCAP", "MICROCAP"]
@@ -190,13 +190,13 @@ def compute_cap_tier_dual(result_df, prices_df, stock_tickers, stockdb):
         # 63-day raw return
         px     = prices_df.loc[t].dropna()
         ret_63 = float(px.iloc[-1] / px.iloc[-63] - 1.0) if len(px) >= 63 else np.nan
-        # 3M raw Sharpe (S_3M column, not Z-score)
-        s3m    = result_df.loc[t, "S_3M"] if (t in result_df.index and "S_3M" in result_df.columns) else np.nan
+        # 21-day raw return (same construction as the 63-day signal; <21 prices -> not positive)
+        ret_21 = float(px.iloc[-1] / px.iloc[-21] - 1.0) if len(px) >= 21 else np.nan
         records.append({
             "Ticker":         t,
             "Cap_Tier":       tier,
             "Ret_63_Pos":     (ret_63 > 0)  if pd.notna(ret_63) else False,
-            "Sharpe_3M_Pos":  (float(s3m) > 0) if pd.notna(s3m)  else False,
+            "Ret_21_Pos":     (ret_21 > 0)  if pd.notna(ret_21) else False,
         })
 
     df   = pd.DataFrame(records)
@@ -207,16 +207,16 @@ def compute_cap_tier_dual(result_df, prices_df, stock_tickers, stockdb):
             continue
         total      = len(sub)
         ret_pos    = int(sub["Ret_63_Pos"].sum())
-        sharpe_pos = int(sub["Sharpe_3M_Pos"].sum())
-        delta      = sharpe_pos - ret_pos
+        ret21_pos  = int(sub["Ret_21_Pos"].sum())
+        delta      = ret21_pos - ret_pos
         rows.append({
             "Cap Tier":            CAP_LABELS.get(tier, tier),
             "Total":               total,
             "63D Ret +ve":         ret_pos,
             "63D Ret % +ve":       round(ret_pos    / total * 100, 1),
-            "3M Sharpe +ve":       sharpe_pos,
-            "3M Sharpe % +ve":     round(sharpe_pos / total * 100, 1),
-            "Delta (Sharpe-Ret)": delta,
+            "21D Ret +ve":         ret21_pos,
+            "21D Ret % +ve":       round(ret21_pos / total * 100, 1),
+            "Delta (21D-63D)":     delta,
         })
     return pd.DataFrame(rows)
 
@@ -962,12 +962,12 @@ with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
         else:           return "#C62828", "#FFEBEE", "#C62828"
 
     def _delta_color(d):
-        if d > 0:  return "#2E7D32"   # green  — Sharpe sees more positive
-        if d < 0:  return "#C62828"   # red    — Sharpe sees less positive
+        if d > 0:  return "#2E7D32"   # green  — more positive over 21d than 63d
+        if d < 0:  return "#C62828"   # red    — fewer positive over 21d than 63d
         return "#9E9E9E"              # grey   — identical
 
     def _render_dual_bars(dual_df):
-        """Render side-by-side bars: 63-day return vs 3M Sharpe per cap tier."""
+        """Render side-by-side bars: 63-day vs 21-day raw return per cap tier."""
         hdr1, hdr2 = st.columns(2)
         hdr1.markdown(
             "<div style='font-weight:700; font-size:13px; color:#1A1A2E; "
@@ -975,8 +975,7 @@ with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
             unsafe_allow_html=True)
         hdr2.markdown(
             "<div style='font-weight:700; font-size:13px; color:#1F4E79; "
-            "padding:4px 0 4px 14px;'>⚡ 3M Sharpe Score &gt; 0 &nbsp;"
-            "<span style='font-size:11px; color:#9E9E9E;'>(risk-adjusted)</span></div>",
+            "padding:4px 0 4px 14px;'>⚡ 21-Day Raw Return &gt; 0%</div>",
             unsafe_allow_html=True)
 
         for _, row in dual_df.iterrows():
@@ -984,14 +983,16 @@ with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
             total      = int(row["Total"])
             ret_pos    = int(row["63D Ret +ve"])
             ret_pct    = float(row["63D Ret % +ve"])
-            sharpe_pos = int(row["3M Sharpe +ve"])
-            sharpe_pct = float(row["3M Sharpe % +ve"])
-            delta      = int(row["Delta (Sharpe-Ret)"])
+            ret21_pos  = int(row["21D Ret +ve"])
+            ret21_pct  = float(row["21D Ret % +ve"])
+            delta      = int(row["Delta (21D-63D)"])
 
             rf, rt, rtxt = _tier_color(ret_pct)
-            sf, st_, stxt = _tier_color(sharpe_pct)
+            sf, st_, stxt = _tier_color(ret21_pct)
             dcol = _delta_color(delta)
-            delta_str = (f"+{delta}" if delta > 0 else str(delta))
+            delta_pp  = delta / total * 100 if total else 0.0
+            delta_str = (f"+{delta} | +{delta_pp:.1f} pp" if delta > 0
+                         else f"{delta} | {delta_pp:.1f} pp")
 
             col1, col2 = st.columns(2)
             with col1:
@@ -1016,28 +1017,30 @@ with st.expander("📊 Market Cap Momentum Breakdown", expanded=False):
                     <div style='min-width:100px;'>
                         <div style='font-weight:600; font-size:13px; color:#1A1A2E;'>{tier}</div>
                         <div style='font-size:11px; color:#9E9E9E; margin-top:1px;'>
-                            {sharpe_pos} of {total} &nbsp;
+                            {ret21_pos} of {total} &nbsp;
                             <span style='color:{dcol}; font-weight:600;'>({delta_str})</span>
                         </div>
                     </div>
                     <div style='flex:1; background:{st_}; border-radius:999px; height:8px; overflow:hidden;'>
-                        <div style='width:{min(100,sharpe_pct):.1f}%; height:100%; background:{sf};
+                        <div style='width:{min(100,ret21_pct):.1f}%; height:100%; background:{sf};
                                     border-radius:999px;'></div>
                     </div>
                     <div style='min-width:44px; text-align:left; font-weight:700;
-                                font-size:14px; color:{stxt};'>{sharpe_pct:.1f}%</div>
+                                font-size:14px; color:{stxt};'>{ret21_pct:.1f}%</div>
                 </div>""", unsafe_allow_html=True)
 
         st.caption(
-            "Delta (shown in count next to 3M Sharpe) = Sharpe positive count minus Return positive count. "
-            "Green = Sharpe identifies MORE positive-momentum stocks than raw return. "
-            "Red = Sharpe is more conservative.")
+            "Delta (next to 21-Day Return) = 21-day positive count minus 63-day positive count, shown as a "
+            "count and as percentage points of the tier's stock count (count / tier total), so tiers of "
+            "different size compare fairly. It equals the right bar's % minus the left bar's %. "
+            "Green = more stocks positive over the last 21 days than over 63 (short-term momentum improving). "
+            "Red = fewer (short-term momentum fading).")
 
     # ── Primary view: STOCKDB-based dual metric (instant, no network) ──────────
     stockdb = load_stockdb()
     if stockdb:
         st.markdown(
-            "Comparing **63-day raw return > 0%** vs **3M Sharpe score > 0** across cap tiers. "
+            "Comparing **63-day raw return > 0%** vs **21-day raw return > 0%** across cap tiers. "
             "Classification sourced from STOCKDB.csv.")
         dual_df = compute_cap_tier_dual(result, prices_df, stock_tickers, stockdb)
         if not dual_df.empty:
@@ -1955,6 +1958,10 @@ with tab_calcs:
     # so the slider can be disabled before the box itself is drawn.
     _search_terms = ml.ticker_search_terms(st.session_state.get("full_rank_search", ""))
 
+    # Clenow score: Sharpe.py writes it to the CALCS sheet of <universe>_rankings.xlsx only (it is
+    # not part of `result`), so it is read from there and is as of that Sharpe.py run.
+    _clenow, _clenow_ts = ml.load_clenow_scores_from_workbook(SCRIPT_DIR / f"{universe}_rankings.xlsx")
+
     fc1, fc2, fc3, fc4 = st.columns(4)
     with fc1:
         filter_elig = st.selectbox("Eligibility",
@@ -1964,19 +1971,26 @@ with tab_calcs:
                                 min(100, len(result)), 10, disabled=bool(_search_terms))
     with fc3:
         sort_col = st.selectbox("Sort by",
-                                 ["RANK", "COMPOSITE", "RES_MOM", "PCT_FROM_52H", "REL_52H_DD"])
+                                 ["RANK", "COMPOSITE", "RES_MOM"]
+                                 + (["CLENOW_SCORE"] if _clenow is not None else [])
+                                 + ["PCT_FROM_52H", "REL_52H_DD"])
     with fc4:
         st.text_input("Search ticker", key="full_rank_search", placeholder="e.g. SBC, HFCL",
                       help="Case-insensitive, partial match; separate several with commas or spaces. "
                            "Press Enter to apply. Searches the whole universe (Show top N is ignored).")
 
     display_cols = ["RANK", "SERIES", "COMPOSITE", "SHARPE_3"]
-    for c in ["RES_MOM", "3M%", "12M%", "PCT_FROM_52H", "REL_52H_DD", "BETA"]:
+    for c in ["RES_MOM", "PCT_FROM_52H", "REL_52H_DD", "BETA"]:
         if c in result.columns: display_cols.append(c)
 
     calcs_df = result[[c for c in display_cols if c in result.columns]].copy()
+    if _clenow is not None:   # right after RES_MOM
+        _pos = (list(calcs_df.columns).index("RES_MOM") + 1) if "RES_MOM" in calcs_df.columns else len(calcs_df.columns)
+        calcs_df.insert(_pos, "CLENOW_SCORE", _clenow.reindex(calcs_df.index))
     calcs_df.index.name = "TICKER"
     calcs_df = calcs_df.reset_index()
+    # SHARPE_3 = mean Z of the 12M/6M/3M Sharpe windows (not a 3-month Sharpe): label it as such.
+    calcs_df = calcs_df.rename(columns={"SHARPE_3": "SHARPE 12/6/3M"})
 
     if filter_elig == "Eligible only":
         calcs_df = calcs_df[calcs_df["PCT_FROM_52H"] >= -25]
@@ -2000,8 +2014,7 @@ with tab_calcs:
            if c not in ["RANK", "TICKER", "SERIES", "Blocked"]}
     fmt["PCT_FROM_52H"] = "{:.1f}"
     fmt["REL_52H_DD"]   = "{:.1f}"
-    for c in ["3M%", "12M%"]:
-        if c in fmt: fmt[c] = "{:.1f}"
+    if "CLENOW_SCORE" in fmt: fmt["CLENOW_SCORE"] = "{:.1f}"
     if "BETA" in fmt: fmt["BETA"] = "{:.2f}"
 
     def style_calcs(row):
@@ -2029,6 +2042,14 @@ with tab_calcs:
     st.dataframe(
         calcs_df.style.apply(style_calcs, axis=1).format(fmt, na_rep="—"),
         use_container_width=True, hide_index=True, height=600)
+
+    if _clenow is not None:
+        st.caption(f"Clenow Score (90-day exp-regression slope × R²) is read from {universe}_rankings.xlsx "
+                   f"({_clenow_ts:%d-%b-%y %H:%M}); re-run Sharpe.py to refresh it. "
+                   f"Display only — not used in ranking or exits.")
+    else:
+        st.caption("Clenow Score is not shown: no CLENOW_SCORE column found in this universe's "
+                   "rankings workbook (run Sharpe.py).")
 
     if _n_blocked:
         _blk = calcs_df["Blocked"]

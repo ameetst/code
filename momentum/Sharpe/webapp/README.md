@@ -154,7 +154,7 @@ Done:
   (reads `*_regime_history.json` read-only, `static/js/line_chart.js` — a generic version
   of the equity chart's SVG/hover-tooltip machinery). A second, separate **Market Cap
   Momentum Breakdown** expander was missing outright: the instant STOCKDB.csv-based dual
-  bars (63-day return vs. 3M Sharpe positive-% per cap tier, `core/cap_tier.py`) render
+  bars (63-day vs. 21-day raw-return positive-% per cap tier, `core/cap_tier.py`) render
   as plain server-side HTML (no JS needed — the dashboard's version was just computed
   pixel widths too), plus a nested, opt-in "Load Yahoo Market Cap Data" button
   (`/rankings/cap-tier/yahoo`, ~15s live fetch across the universe, 24h cache, same

@@ -83,10 +83,10 @@
   <div class="expander-body">
     {% if cap_tier.available %}
       <p class="caption">Comparing <strong>63-day raw return &gt; 0%</strong> vs
-         <strong>3M Sharpe score &gt; 0</strong> across cap tiers. Classification sourced from STOCKDB.csv.</p>
+         <strong>21-day raw return &gt; 0%</strong> across cap tiers. Classification sourced from STOCKDB.csv.</p>
       <div class="tier-dual-header">
         <div>63-Day Raw Return &gt; 0%</div>
-        <div>3M Sharpe Score &gt; 0 <span class="caption">(risk-adjusted)</span></div>
+        <div>21-Day Raw Return &gt; 0%</div>
       </div>
       {% for row in cap_tier.rows %}
       <div class="tier-dual-row">
@@ -103,21 +103,24 @@
         <div class="tier-bar">
           <div class="tier-bar-label">
             <div class="tier-bar-name">{{ row.cap_tier }}</div>
-            <div class="tier-bar-sub">{{ row.sharpe_pos }} of {{ row.total }}
+            <div class="tier-bar-sub">{{ row.ret21_pos }} of {{ row.total }}
               <span class="{{ 'value-pos' if row.delta > 0 else ('value-neg' if row.delta < 0 else '') }}">
-                ({{ "+%d"|format(row.delta) if row.delta > 0 else row.delta }})</span>
+                ({{ "+%d"|format(row.delta) if row.delta > 0 else row.delta }} |
+                {{ "+%.1f"|format(row.delta_pp) if row.delta_pp > 0 else "%.1f"|format(row.delta_pp) }} pp)</span>
             </div>
           </div>
-          <div class="tier-bar-track" style="background:{{ row.sharpe_colors[1] }};">
-            <div class="tier-bar-fill" style="width:{{ [row.sharpe_pct, 100]|min }}%; background:{{ row.sharpe_colors[0] }};"></div>
+          <div class="tier-bar-track" style="background:{{ row.ret21_colors[1] }};">
+            <div class="tier-bar-fill" style="width:{{ [row.ret21_pct, 100]|min }}%; background:{{ row.ret21_colors[0] }};"></div>
           </div>
-          <div class="tier-bar-pct" style="color:{{ row.sharpe_colors[2] }};">{{ row.sharpe_pct }}%</div>
+          <div class="tier-bar-pct" style="color:{{ row.ret21_colors[2] }};">{{ row.ret21_pct }}%</div>
         </div>
       </div>
       {% endfor %}
-      <p class="caption">Delta (shown in count next to 3M Sharpe) = Sharpe positive count minus Return positive
-         count. Green = Sharpe identifies MORE positive-momentum stocks than raw return. Red = Sharpe is more
-         conservative.</p>
+      <p class="caption">Delta (next to 21-Day Return) = 21-day positive count minus 63-day positive count,
+         shown as a count and as percentage points of the tier's stock count (count / tier total), so tiers of
+         different size compare fairly. It equals the right bar's % minus the left bar's %. Green = more stocks
+         positive over the last 21 days than over 63 (short-term momentum improving). Red = fewer (short-term
+         momentum fading).</p>
     {% else %}
       <div class="banner">⚠️ STOCKDB.csv not found. Cap tier classification unavailable.</div>
     {% endif %}

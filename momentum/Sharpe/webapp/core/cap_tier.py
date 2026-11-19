@@ -39,8 +39,11 @@ def tier_color(pct: float) -> tuple[str, str, str]:
 
 def compute_cap_tier_dual(result_df: pd.DataFrame, prices_df: pd.DataFrame,
                            stock_tickers: list, stockdb: dict) -> list[dict]:
-    """Signal 1: 63-day raw price return > 0%. Signal 2: 3M Sharpe score > 0
-    (risk-adjusted). Returns one row per cap tier with both signals and their delta."""
+    """Signal 1: 63-day raw price return > 0%. Signal 2: 21-day raw price return > 0%
+    (same construction, shorter window; a stock with fewer than 21 prices is not positive).
+    Returns one row per cap tier with both signals and delta = 21D count - 63D count
+    (delta_pp = that as percentage points of the tier's stock count).
+    result_df is unused now; the parameter is kept so callers don't change."""
     records = []
     for t in stock_tickers:
         tier = stockdb.get(t)
@@ -48,11 +51,11 @@ def compute_cap_tier_dual(result_df: pd.DataFrame, prices_df: pd.DataFrame,
             continue
         px = prices_df.loc[t].dropna() if t in prices_df.index else pd.Series(dtype=float)
         ret_63 = float(px.iloc[-1] / px.iloc[-63] - 1.0) if len(px) >= 63 else np.nan
-        s3m = result_df.loc[t, "S_3M"] if (t in result_df.index and "S_3M" in result_df.columns) else np.nan
+        ret_21 = float(px.iloc[-1] / px.iloc[-21] - 1.0) if len(px) >= 21 else np.nan
         records.append({
             "ticker": t, "cap_tier": tier,
             "ret_pos": bool(ret_63 > 0) if pd.notna(ret_63) else False,
-            "sharpe_pos": bool(float(s3m) > 0) if pd.notna(s3m) else False,
+            "ret21_pos": bool(ret_21 > 0) if pd.notna(ret_21) else False,
         })
 
     df = pd.DataFrame(records)
@@ -63,17 +66,18 @@ def compute_cap_tier_dual(result_df: pd.DataFrame, prices_df: pd.DataFrame,
             continue
         total = len(sub)
         ret_pos = int(sub["ret_pos"].sum())
-        sharpe_pos = int(sub["sharpe_pos"].sum())
-        delta = sharpe_pos - ret_pos
+        ret21_pos = int(sub["ret21_pos"].sum())
+        delta = ret21_pos - ret_pos
         ret_pct = round(ret_pos / total * 100, 1)
-        sharpe_pct = round(sharpe_pos / total * 100, 1)
+        ret21_pct = round(ret21_pos / total * 100, 1)
         rf, rt, rtxt = tier_color(ret_pct)
-        sf, st_, stxt = tier_color(sharpe_pct)
+        sf, st_, stxt = tier_color(ret21_pct)
         rows.append({
             "cap_tier": CAP_LABELS.get(tier, tier), "total": total,
             "ret_pos": ret_pos, "ret_pct": ret_pct, "ret_colors": (rf, rt, rtxt),
-            "sharpe_pos": sharpe_pos, "sharpe_pct": sharpe_pct, "sharpe_colors": (sf, st_, stxt),
+            "ret21_pos": ret21_pos, "ret21_pct": ret21_pct, "ret21_colors": (sf, st_, stxt),
             "delta": delta,
+            "delta_pp": round(delta / total * 100, 1),   # % points of the tier's stock count
         })
     return rows
 

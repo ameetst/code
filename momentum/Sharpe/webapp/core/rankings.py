@@ -297,20 +297,39 @@ def fmt_date(d) -> str:
 # ── Full Universe Rankings (ported from the tab_calcs block) ─────────────────
 
 FULL_DISPLAY_COLUMNS = ["RANK", "SERIES", "COMPOSITE", "SHARPE_3", "RES_MOM",
-                         "3M%", "12M%", "PCT_FROM_52H", "REL_52H_DD", "BETA"]
+                         "PCT_FROM_52H", "REL_52H_DD", "BETA"]
 FULL_COLUMN_LABELS = {
-    "RANK": "Rank", "SERIES": "Series", "COMPOSITE": "Composite", "SHARPE_3": "Sharpe 3M",
-    "RES_MOM": "Res Mom", "3M%": "3M %", "12M%": "12M %",
+    "RANK": "Rank", "SERIES": "Series", "COMPOSITE": "Composite", "SHARPE_3": "Sharpe 12/6/3M",
+    "RES_MOM": "Res Mom", "CLENOW_SCORE": "Clenow Score",
     "PCT_FROM_52H": "% From 52H", "REL_52H_DD": "Rel 52H DD", "BETA": "Beta",
 }
 SORT_OPTIONS = ["RANK", "COMPOSITE", "RES_MOM", "PCT_FROM_52H", "REL_52H_DD"]
 ELIGIBILITY_OPTIONS = ["All", "Eligible only", "Disqualified only"]
-_ONE_DECIMAL_COLS = {"PCT_FROM_52H", "REL_52H_DD", "3M%", "12M%"}
+_ONE_DECIMAL_COLS = {"PCT_FROM_52H", "REL_52H_DD", "CLENOW_SCORE"}
 _TWO_DECIMAL_COLS = {"BETA"}
 
 
-def full_display_columns(bundle: Bundle) -> list[str]:
-    return [c for c in FULL_DISPLAY_COLUMNS if c in bundle.result.columns]
+def load_clenow(cfg: dict):
+    """(Series | None, workbook-generated datetime | None): CLENOW_SCORE from this universe's
+    Sharpe.py rankings workbook. Strictly `<universe>_rankings.xlsx` (no N750/NSEAll fallback,
+    unlike the download button, so another universe's scores are never shown). Not part of the
+    ranking result: Sharpe.py computes it for the workbook only, so it is as of that run."""
+    universe = config_store.universe_name(config_store.resolve_file(cfg))
+    return ml.load_clenow_scores_from_workbook(DATA_DIR / f"{universe}_rankings.xlsx")
+
+
+def full_display_columns(bundle: Bundle, clenow=None) -> list[str]:
+    cols = [c for c in FULL_DISPLAY_COLUMNS if c in bundle.result.columns]
+    if clenow is not None and "RES_MOM" in cols:
+        cols.insert(cols.index("RES_MOM") + 1, "CLENOW_SCORE")   # right after Res Mom
+    return cols
+
+
+def sort_options(clenow=None) -> list[str]:
+    opts = list(SORT_OPTIONS)
+    if clenow is not None:
+        opts.insert(opts.index("RES_MOM") + 1, "CLENOW_SCORE")
+    return opts
 
 
 def search_terms(search: str) -> list[str]:
@@ -319,20 +338,23 @@ def search_terms(search: str) -> list[str]:
 
 
 def full_rankings_rows(bundle: Bundle, eligibility: str, sort_col: str,
-                        top_n: int, rel_dd_breach_threshold: float, search: str = "") -> list[dict]:
+                        top_n: int, rel_dd_breach_threshold: float, search: str = "",
+                        clenow=None) -> list[dict]:
     """With a non-empty `search`, rows are the tickers CONTAINING any search term (case-insensitive),
     taken from the whole universe: `top_n` is not applied, so a name outside the top N is still found."""
-    cols = full_display_columns(bundle)
-    df = bundle.result[cols].copy()
+    cols = full_display_columns(bundle, clenow)
+    df = bundle.result[[c for c in cols if c != "CLENOW_SCORE"]].copy()
     df.index.name = "TICKER"
     df = df.reset_index()
+    if clenow is not None:
+        df["CLENOW_SCORE"] = df["TICKER"].map(clenow)
 
     if eligibility == "Eligible only":
         df = df[df["PCT_FROM_52H"] >= ELIGIBLE_52H_FLOOR]
     elif eligibility == "Disqualified only":
         df = df[df["PCT_FROM_52H"] < ELIGIBLE_52H_FLOOR]
 
-    if sort_col not in SORT_OPTIONS or sort_col not in df.columns:
+    if sort_col not in sort_options(clenow) or sort_col not in df.columns:
         sort_col = "RANK"
     terms = search_terms(search)
     df = ml.filter_tickers_by_search(df, terms)

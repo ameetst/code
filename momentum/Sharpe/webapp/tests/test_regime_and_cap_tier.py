@@ -97,25 +97,29 @@ def test_load_stockdb_missing_file_returns_empty(tmp_path, monkeypatch):
 
 
 def test_compute_cap_tier_dual_buckets_and_computes_delta():
+    # 63 closes each. 63d return = last / first - 1; 21d return = last / close[-21] - 1.
     prices = _prices_df({
-        "A": [100] * 62 + [110],  # 63d return > 0
-        "B": [100] * 62 + [90],   # 63d return < 0
+        "A": [100] + [130] * 41 + [125] * 20 + [120],   # 63d +20%, 21d -4%   -> 63d only
+        "B": [100] + [80] * 41 + [85] * 20 + [90],      # 63d -10%, 21d +5.9% -> 21d only
+        "C": [100] + [80] * 41 + [85] * 20 + [95],      # 63d -5%,  21d +11.8% -> 21d only
+        "D": [None] * 53 + [100] * 10,                  # only 10 prices -> neither signal
     })
-    result = pd.DataFrame({"S_3M": [0.5, -0.5]}, index=["A", "B"])
-    stockdb = {"A": "LARGECAP", "B": "LARGECAP"}
-    rows = cap_tier.compute_cap_tier_dual(result, prices, ["A", "B"], stockdb)
+    result = pd.DataFrame(index=["A", "B", "C", "D"])   # no longer used by the calculation
+    stockdb = {t: "LARGECAP" for t in "ABCD"}
+    rows = cap_tier.compute_cap_tier_dual(result, prices, list("ABCD"), stockdb)
     assert len(rows) == 1
     row = rows[0]
     assert row["cap_tier"] == "Large Cap"
-    assert row["total"] == 2
-    assert row["ret_pos"] == 1 and row["ret_pct"] == 50.0
-    assert row["sharpe_pos"] == 1 and row["sharpe_pct"] == 50.0
-    assert row["delta"] == 0
+    assert row["total"] == 4
+    assert row["ret_pos"] == 1 and row["ret_pct"] == 25.0
+    assert row["ret21_pos"] == 2 and row["ret21_pct"] == 50.0
+    assert row["delta"] == 1      # 21D count - 63D count
+    assert row["delta_pp"] == 25.0   # 1 of 4 stocks, as percentage points of the tier
 
 
 def test_compute_cap_tier_dual_skips_unclassified_tickers():
     prices = _prices_df({"A": [100] * 63})
-    result = pd.DataFrame({"S_3M": [0.1]}, index=["A"])
+    result = pd.DataFrame(index=["A"])
     assert cap_tier.compute_cap_tier_dual(result, prices, ["A"], {}) == []
 
 
@@ -135,6 +139,8 @@ def test_index_page_includes_regime_breakdown_and_cap_tier_sections(client):
     assert "Live India VIX" in html
     assert "1D A/D Ratio" in html
     assert "Market Cap Momentum Breakdown" in html
+    assert "21-Day Raw Return" in html and "63-Day Raw Return" in html
+    assert "3M Sharpe" not in html
     assert "Yahoo Finance Market Cap View" in html
 
 
