@@ -260,7 +260,8 @@
   });
 
   // ── Live prices, rebalance, config ──
-  $("#btn-refresh")?.addEventListener("click", e => act(e.currentTarget, () => api("POST", "/api/refresh-prices")));
+  $$("#btn-refresh, #btn-refresh-top").forEach(b =>
+    b.addEventListener("click", e => act(e.currentTarget, () => api("POST", "/api/refresh-prices"))));
   $("#btn-rebalance")?.addEventListener("click", e => act(e.currentTarget, () => api("POST", "/api/rebalance", {})));
 
   const cfgValues = () => Object.fromEntries($$("#cfg-form [name]").map(el => [el.name, el.value]));

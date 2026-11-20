@@ -16,6 +16,32 @@
   </label>
 {%- endmacro %}
 
+{# Allocation table shared by "Top 5 Ranking" and the logged strategy portfolio, so the two always have the same columns. #}
+{% macro alloc_table(tid, rows) -%}
+    <div class="table-wrap">
+      <table class="data selectable-table sortable-table" id="{{ tid }}">
+        <thead><tr>
+          <th class="sortable">Slot</th><th class="sortable">Ticker</th><th class="sortable">ETF Name</th>
+          <th class="sortable">Sector</th><th class="sortable">Weight</th><th class="sortable">Inv Rank</th>
+          <th class="sortable" title="When the strategy started recommending this ETF (start of its current unbroken run in the rebalance log)">Recommended Since</th>
+          <th class="sortable num" title="Price now vs the close on (or just before) the Recommended Since date, per unit">Gain/Loss Since</th>
+        </tr></thead>
+        <tbody>
+        {% for r in rows %}
+          <tr class="{{ 'row-cash' if r.is_cash else 'selectable' }}" data-ticker="{{ r.ticker }}">
+            <td data-v="{{ r.slot }}">{{ r.slot }}</td><td>{{ r.ticker }}</td><td>{{ r.name }}</td><td>{{ r.sector }}</td>
+            <td data-v="{{ r.weight|replace('%','') }}">{{ r.weight }}</td><td>{{ r.inv_rank }}</td>
+            <td data-v="{{ r.entry_date or '' }}"{% if not r.entry_date and not r.is_cash %} title="Not in the strategy's logged portfolio: it is still holding other ETFs (hold-and-replace), so this one has no recommended date"{% endif %}>{{ r.entry_date or ('' if r.is_cash else '—') }}</td>
+            <td class="num" data-v="{{ r.gl.pct if r.gl else '' }}"{% if r.gl %} title="Buy {{ r.gl.buy|fmt }} (close of {{ r.gl.buy_date }}) → now {{ r.gl.now|fmt }}"{% endif %}>
+              {%- if r.gl -%}<span class="{{ 'pos' if r.gl.pct > 0 else ('neg' if r.gl.pct < 0 else '') }}">{{ '+' if r.gl.abs >= 0 else '-' }}Rs {{ '{:,.2f}'.format(r.gl.abs|abs) }} ({{ r.gl.pct|fmt('{:+.2f}%') }})</span>
+              {%- elif not r.is_cash -%}—{%- endif -%}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+{%- endmacro %}
+
 <main class="page">
   <div class="topbar">
     <h1>ETF Momentum Strategy</h1>
@@ -65,23 +91,20 @@
     {% endif %}
 
     <h2>Top 5 Ranking</h2>
-    <div class="table-wrap">
-      <table class="data selectable-table sortable-table" id="alloc-table">
-        <thead><tr>
-          <th class="sortable">Slot</th><th class="sortable">Ticker</th><th class="sortable">ETF Name</th>
-          <th class="sortable">Sector</th><th class="sortable">Weight</th><th class="sortable">Inv Rank</th>
-        </tr></thead>
-        <tbody>
-        {% for r in alloc_rows %}
-          <tr class="{{ 'row-cash' if r.is_cash else 'selectable' }}" data-ticker="{{ r.ticker }}">
-            <td data-v="{{ r.slot }}">{{ r.slot }}</td><td>{{ r.ticker }}</td><td>{{ r.name }}</td><td>{{ r.sector }}</td>
-            <td data-v="{{ r.weight|replace('%','') }}">{{ r.weight }}</td><td>{{ r.inv_rank }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    {{ alloc_table('alloc-table', alloc_rows) }}
     <p class="caption">💡 Select a row above to auto-fill it in <b>Log New Transaction</b> (Tradelog &amp; MTM tab).</p>
+    <p class="caption"><b>Recommended Since</b> = when the strategy started recommending the ETF (from the rebalance log). <b>Gain/Loss Since</b> = price now minus the close on or before that date, per unit and in %. Price now: {{ alloc_basis }}.
+      <button class="btn secondary small" id="btn-refresh-top" data-busy="Fetching latest prices from Dhan…" style="margin-left:8px">Refresh live prices</button></p>
+    <hr>
+
+    <h2>Strategy Portfolio (logged)</h2>
+    {% if logged_rows %}
+      {{ alloc_table('logged-table', logged_rows) }}
+      <p class="caption">What the weekly rebalance log says the strategy holds, as of the last logged run ({{ logged_run.week }}, {{ logged_run.run_date }}).
+        The strategy keeps an ETF until one of its exit rules trips (hold-and-replace), so this can differ from the fresh Top 5 above. Inv Rank is today's rank. Same price basis as above.</p>
+    {% else %}
+      <div class="alert info">No rebalance has been logged yet — run <b>Run Weekly Rebalance</b> to record the strategy portfolio.</div>
+    {% endif %}
     <hr>
 
     <h2>Actions</h2>
@@ -258,7 +281,7 @@
 
     <div class="row-head">
       <h3 style="margin:0">Active Holdings</h3>
-      <button class="btn" id="btn-refresh" data-busy="Fetching latest NAVs from Yahoo Finance (.NS)…">Refresh Live Market Prices</button>
+      <button class="btn" id="btn-refresh" data-busy="Fetching latest prices from Dhan…">Refresh Live Market Prices</button>
     </div>
 
     {% if not holdings %}

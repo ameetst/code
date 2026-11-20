@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% set active_tab = "rankings" %}
 {% block content %}
+<h2>Dashboard</h2>
 <div class="status-strip">
   <div class="status-item">
     <p class="status-label">Regime</p>
@@ -142,8 +143,25 @@
   </div>
 </details>
 
-<div id="rankings-table" hx-get="{{ url_for('rankings.table_partial') }}" hx-trigger="load"
-     hx-swap="innerHTML">
-  <p class="caption">Loading rankings…</p>
+<div id="holdings-content">
+  {% include "_holdings_mtm.html" %}
 </div>
+<script>
+  // The refresh re-renders #holdings-content; keep the section collapsed if the user had collapsed it.
+  (function () {
+    var wasOpen = true;
+    document.body.addEventListener('htmx:beforeRequest', function (e) {
+      if (e.detail.elt && e.detail.elt.id === 'refresh-prices-btn') {
+        var d = document.querySelector('#holdings-content details');
+        wasOpen = !d || d.open;
+      }
+    });
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      if (e.detail.target && e.detail.target.id === 'holdings-content' && !wasOpen) {
+        var d = document.querySelector('#holdings-content details');
+        if (d) d.open = false;
+      }
+    });
+  })();
+</script>
 {% endblock %}

@@ -30,6 +30,13 @@ import core
 from core import ROOT, ValidationError, emr
 import etf_rotation_sleeve as rot      # separate paper-only monthly sleeve; core put ROOT on sys.path
 
+try:                                    # Dhan HQ live prices; without the library the refresh uses Yahoo only
+    import dhandata as dh
+    from etf_update_prices_dhan import ALIAS_MAP as DHAN_ALIAS     # ETF ticker -> Dhan symbol renames
+    DHAN_AVAILABLE = True
+except Exception:
+    DHAN_AVAILABLE = False
+
 # run_pipeline prints non-ASCII characters; don't let a cp1252 console kill it.
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
@@ -45,6 +52,8 @@ STATE = {
     "uploaded_path": None,     # custom NAV file chosen on the Configuration tab
     "uploaded_name": None,
     "live_prices":   {},       # yfinance prices from "Refresh Live Market Prices"
+    "live_prices_at": None,    # when they were fetched; only same-day live prices are applied
+    "live_source":   "",       # "Dhan", "Dhan + Yahoo" or "Yahoo"
     "model":         None,     # cached (meta, prices, regime, ranking)
 }
 UPLOAD_DIR = ROOT / ".flask_tmp"
@@ -114,7 +123,9 @@ def build_view() -> dict:
 
     etf_tickers = sorted(meta["TICKER"].tolist()) if "TICKER" in meta.columns else []
     latest = {t: core.get_etf_latest_price(t, prices) for t in etf_tickers}
-    for tk, px in STATE["live_prices"].items():
+    live_at = STATE["live_prices_at"]
+    live_ok = bool(live_at) and live_at.date() == datetime.date.today()     # never show yesterday's quote as "live"
+    for tk, px in (STATE["live_prices"].items() if live_ok else ()):
         if tk in latest:
             latest[tk] = px
 
@@ -145,10 +156,45 @@ def build_view() -> dict:
     ]
 
     # ── Tab 1: allocation ──
-    alloc_rows = [dict(slot=r["SLOT"], ticker=r["TICKER"], name=r["ETF_NAME"], sector=r["SECTOR"],
-                       weight=f"{r['WEIGHT']:.0%}", inv_rank=str(r["INV_RANK"]),
-                       is_cash=r["TICKER"] == "CASH")
+    # Recommended Since = when the strategy started recommending it (holdings_log.json, read-only);
+    # Gain/Loss Since = price now vs the close on/before that date.
+    hlog = emr.load_holdings_log(ROOT)
+    since = core.recommended_since(hlog)
+
+    def alloc_row(slot, t, name, sector, weight, inv_rank):
+        row = dict(slot=slot, ticker=t, name=name, sector=sector, weight=f"{weight:.0%}", inv_rank=inv_rank,
+                   is_cash=t == "CASH", entry_date=None, gl=None)
+        if t != "CASH":
+            row["entry_date"] = since.get(t)
+            buy, buy_date = core.close_on_or_before(prices, t, row["entry_date"])
+            now = latest.get(t)
+            if buy and now:
+                row["gl"] = dict(abs=now - buy, pct=(now / buy - 1) * 100, buy=buy, buy_date=buy_date, now=now)
+        return row
+
+    alloc_rows = [alloc_row(r["SLOT"], r["TICKER"], r["ETF_NAME"], r["SECTOR"], r["WEIGHT"], str(r["INV_RANK"]))
                   for r in allocation.to_dict("records")]
+
+    # Strategy portfolio as of the last logged rebalance (hold-and-replace: ETFs stay until an exit rule trips,
+    # so this can differ from the fresh Top 5 above). Inv Rank is today's rank, not the logged one.
+    logged_rows, logged_run = [], None
+    if hlog:
+        lk = sorted(hlog)[-1]
+        logged_run = dict(week=lk, run_date=str(hlog[lk].get("run_date", ""))[:10])
+        cur = ranking.set_index("TICKER")
+        for s in hlog[lk].get("allocation", []):
+            t = s.get("ticker")
+            if t in cur.index:
+                rk = cur.at[t, "RANK_INVESTABLE"]
+                inv_rank = str(int(rk)) if pd.notna(rk) else "-"
+                name, sector = cur.at[t, "ETF_NAME"], cur.at[t, "SECTOR"]
+            else:
+                inv_rank, name, sector = str(s.get("inv_rank", "-")), s.get("etf_name") or t, s.get("sector") or ""
+            logged_rows.append(alloc_row(s.get("slot"), t, name, sector, s.get("weight") or 0, inv_rank))
+    live_top = sum(1 for t in {r["ticker"] for r in alloc_rows + logged_rows}
+                   if live_ok and t in STATE["live_prices"])
+    alloc_basis = (f"live {STATE['live_source']} prices fetched {live_at:%H:%M} (latest close where there is no live quote)" if live_top
+                   else f"close of {prices.index[-1]:%d %b %Y}")
 
     # ── Tab 2: full rankings ──
     rank_rows = [dict(rank=None if pd.isna(r["RANK_INVESTABLE"]) else int(r["RANK_INVESTABLE"]),
@@ -187,7 +233,7 @@ def build_view() -> dict:
     return dict(
         fatal=None, notices=notices, price_date=price_date,
         banner=banner, regime_view=regime_view, rotation=rotation,
-        alloc_rows=alloc_rows,
+        alloc_rows=alloc_rows, alloc_basis=alloc_basis, logged_rows=logged_rows, logged_run=logged_run,
         rank_rows=rank_rows,
         sectors=sorted({r["sector"] for r in rank_rows}),
         universe=len(meta),
@@ -417,25 +463,60 @@ def delete_trades():
 @app.post("/api/refresh-prices")
 @api
 def refresh_prices():
-    with LOCK:
+    with LOCK:                      # holdings + Top 5 + logged portfolio (their Gain/Loss Since uses the live price)
+        model = get_model()
         tradelog, _ = core.load_tradelog()
-        tickers = list(core.calculate_holdings_and_pnl(tradelog)["active_holdings"])
+        held = core.calculate_holdings_and_pnl(tradelog)["active_holdings"]
+        alloc = core.build_live_allocation(model["ranking"], model["regime"], held, model["prices"])
+        logged = core.recommended_since(emr.load_holdings_log(ROOT))      # keys = tickers in the last logged run
+        tickers = sorted(set(held) | set(alloc.loc[alloc["TICKER"] != "CASH", "TICKER"]) | set(logged))
     if not tickers:
-        raise ValidationError("No active holdings to refresh.")
+        raise ValidationError("No holdings or recommended ETFs to refresh.")
 
+    live, dhan_n, dhan_err = {}, 0, None
+    # Primary: Dhan batched LTP (one /marketfeed/ltp call), same dhandata pipeline as the price-history script.
+    if DHAN_AVAILABLE:
+        try:
+            got, _unmatched = dh.resolve_and_get_ltp(tickers, alias_map=DHAN_ALIAS)
+            live = {t: float(p) for t, p in got.items() if p and p > 0}
+            dhan_n = len(live)
+        except Exception as e:                      # e.g. expired token: fall back to Yahoo instead of failing
+            dhan_err = f"{type(e).__name__}: {str(e)[:120]}"
+            log.warning("Dhan live prices failed: %s", dhan_err)
+
+    # Fallback: Yahoo, only for tickers Dhan could not price.
     def fetch(tkr):
         try:
-            return tkr, yf.Ticker(f"{tkr}.NS").fast_info.last_price
+            fi = yf.Ticker(f"{tkr}.NS").fast_info
+            px, prev = fi.last_price, fi.previous_close
+            # For some ETFs Yahoo serves a placeholder (no previous close, zero volume, no history), e.g.
+            # SBIETFPB.NS -> 276 when it really trades ~312. Only a quote with a previous close is trusted.
+            return tkr, (px if px and prev else None)
         except Exception:
             return tkr, None
 
-    with ThreadPoolExecutor(max_workers=20) as exe:
-        live = {tkr: px for tkr, px in exe.map(fetch, tickers) if px}
+    missing = [t for t in tickers if t not in live]
+    if missing:
+        with ThreadPoolExecutor(max_workers=20) as exe:
+            live.update({tkr: px for tkr, px in exe.map(fetch, missing) if px})
+    yahoo_n = len(live) - dhan_n
     if not live:
-        raise RuntimeError("Could not fetch any live prices. Check NSE tickers.")
+        raise RuntimeError("Could not fetch any live prices from Dhan or Yahoo."
+                           + (f" Dhan error: {dhan_err}" if dhan_err else ""))
+    source = " + ".join(s for s, n in (("Dhan", dhan_n), ("Yahoo", yahoo_n)) if n)
     with LOCK:
         STATE["live_prices"] = live
-    return {"message": f"Live prices updated for {len(live)} of {len(tickers)} holdings."}
+        STATE["live_prices_at"] = datetime.datetime.now()
+        STATE["live_source"] = source
+    notes = []
+    if dhan_err:
+        notes.append(f"Dhan unavailable ({dhan_err}); used Yahoo.")
+    elif yahoo_n:
+        notes.append(f"{yahoo_n} priced via Yahoo (not on Dhan).")
+    skipped = sorted(set(tickers) - set(live))
+    if skipped:
+        notes.append(f"No usable live quote for {', '.join(skipped)}: using the latest close.")
+    return {"message": f"Live prices updated for {len(live)} of {len(tickers)} ETFs via {source}. " + " ".join(notes).strip()}
 
 
 def _save_config(values: dict):

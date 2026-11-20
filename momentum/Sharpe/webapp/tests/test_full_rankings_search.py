@@ -34,7 +34,7 @@ def test_page_has_a_search_box_wired_to_the_table(client):
 
 
 def test_search_is_case_insensitive_and_partial(client, bundle):
-    ticker = rankings._visible_and_hidden(bundle, 5)[0][0]
+    ticker = bundle.result.index[bundle.result["RANK"].notna()][0]   # a ranked name
     for q in (ticker, ticker.lower(), ticker[:3].lower()):
         assert ticker in _tickers(_get(client, q=q, top_n=10)), q
     assert all("SB" in t for t in _tickers(_get(client, q="sb")))

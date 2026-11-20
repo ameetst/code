@@ -36,69 +36,16 @@ def test_index_page_renders(client):
     r = client.get("/")
     assert r.status_code == 200
     assert b"Sharpe Momentum Strategy" in r.data
-    assert b'hx-get="/rankings/table"' in r.data
-
-
-def test_rankings_table_partial_shape_and_order(client):
-    import re
-    r = client.get("/rankings/table")
-    assert r.status_code == 200
-    html = r.data.decode()
-    assert html.count('<tr class="held-row">') + html.count('<tr class="">') >= 1
-    # Ranks render in increasing order. The only gaps allowed are names hidden because the
-    # current Configuration blocks buying them (Min CMP / Min Market Cap / ...).
-    from webapp.core import config_store, rankings
-    bundle = rankings.get_bundle(config_store.load_config())
-    rows = [int(x) for x in re.findall(r"<tr class=\"[^\"]*\">\s*<td>(\d+)</td>", html)]
-    assert rows == sorted(rows) and len(set(rows)) == len(rows)
-    blocked_ranks = {int(bundle.result.loc[t, "RANK"]) for t in bundle.result.index
-                     if bundle.purchase_block.get(t, "") and bundle.result.loc[t, "RANK"] == bundle.result.loc[t, "RANK"]}
-    assert set(range(1, rows[-1] + 1)) - set(rows) <= blocked_ranks
-
-
-def test_rankings_table_has_a_series_column_matching_the_ranking(client):
-    """Top N shows each name's NSE series (EQ / BE / ...) right after the ticker."""
-    import re
-    from pathlib import Path
-    from webapp.core import config_store, rankings
-    html = client.get("/rankings/table").data.decode()
-    heads = re.findall(r"<th>([^<]+)</th>", html)
-    assert heads[:4] == ["Rank", "Ticker", "Series", "Composite"]
-    bundle = rankings.get_bundle(config_store.load_config())
-    got = re.findall(r"<tr class=\"[^\"]*\">\s*<td>\d+</td>\s*<td>([^<]+)</td>\s*<td>([^<]+)</td>", html)
-    assert got and all(series == str(bundle.result.loc[t, "SERIES"]) for t, series in got)
-    root = Path(__file__).resolve().parents[2]
-    for name in ("sharpe_dashboard.py", "sharpe_dashboard_dhan.py"):  # the Streamlit tables carry it too
-        src = (root / name).read_text(encoding="utf-8")
-        assert '"Rank", "Ticker", "Series", "Composite"' in src and '"Series":        str(row["SERIES"])' in src, name
-
-
-def test_rankings_matches_library_output(client):
-    """The page must show exactly what momentum_lib ranks — no re-derivation drift."""
-    from webapp.core import config_store, rankings
-    bundle = rankings.get_bundle(config_store.load_config())
-    expected = rankings._visible_and_hidden(bundle, 5)[0]   # top 5 names purchasable under the current Configuration
-    html = client.get("/rankings/table?limit=5").data.decode()
-    for ticker in expected:
-        assert f"<td>{ticker}</td>" in html
-
-
-def test_held_rows_match_positions_ledger(client):
-    from webapp.core import config_store, rankings
-    cfg = config_store.load_config()
-    universe = config_store.universe_name(config_store.resolve_file(cfg))
-    held = rankings.held_tickers(universe)
-    html = client.get("/rankings/table?limit=200").data.decode()
-    import re
-    for ticker, row_html in re.findall(r'<tr class="([^"]*)">\s*<td>\d+</td>\s*<td>(\w+)</td>', html):
-        assert ("held-row" in ticker) == (row_html in held)
+    assert b"Dashboard" in r.data
+    assert b'id="holdings-content"' in r.data and b"Active Holdings" in r.data
+    assert b"rankings-table" not in r.data          # the Top N table is gone from the Dashboard
 
 
 def test_requests_do_not_modify_data_files(client):
     """Unlike the Streamlit page, loading rankings must not write regime history or ledgers."""
     watched = list(settings.DATA_DIR.glob("*.json")) + list(settings.DATA_DIR.glob("*.bak"))
     before = {p: p.stat().st_mtime_ns for p in watched}
-    client.get("/rankings/table")
+    client.get("/")
     client.get("/api/config")
     after = {p: p.stat().st_mtime_ns for p in watched}
     assert before == after
@@ -235,10 +182,9 @@ def test_performance_page_renders_chart_data(client):
 # ── Parity with the Streamlit dashboards: nav labels + Download Rankings Excel ──
 
 def test_nav_labels_match_streamlit_tab_labels(client):
-    from webapp.core import config_store
-    max_n = int(config_store.load_config()["max_n"])
     html = client.get("/").data.decode()
-    assert f"Top {max_n} Rankings" in html      # Streamlit: f"📊 Top {MAX_N} Rankings"
+    assert ">Dashboard</a>" in html and ">Tradelog</a>" in html   # Streamlit: "Dashboard" / "Tradelog" tabs
+    assert "Top " not in html.split("nav-tabs")[1].split("</nav>")[0]
     assert "Performance Tracker" in html        # Streamlit: "📈 Performance Tracker" (emoji dropped in the restyle)
 
 
@@ -260,3 +206,7 @@ def test_download_rankings_excel_serves_the_workbook_and_is_linked_in_the_footer
     assert "attachment" in r.headers.get("Content-Disposition", "")
     assert path.name in r.headers.get("Content-Disposition", "")
     assert openpyxl.load_workbook(io.BytesIO(r.data)).sheetnames  # a real, openable workbook
+
+
+def test_old_top_n_table_route_is_gone(client):
+    assert client.get("/rankings/table").status_code == 404

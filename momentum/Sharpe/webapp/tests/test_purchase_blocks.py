@@ -83,24 +83,6 @@ def _bundle(blocks):
                            purchase_block=pd.Series(blocks, index=result.index, dtype=object))
 
 
-def test_top_n_hides_blocked_names_and_keeps_original_rank_numbers():
-    bundle = _bundle(["", "Min CMP: Rs 63.00 < Rs 100", "", "", "MDTV: no turnover data"])
-    visible, hidden = rankings._visible_and_hidden(bundle, 2)
-    assert visible == ["A", "C"]                      # B hidden, list still filled to the limit
-    assert hidden == [("B", "Min CMP: Rs 63.00 < Rs 100")]   # E is unranked and beyond the cut
-
-    shown = rankings.top_hidden(bundle, 2, held={"B"})
-    assert shown == [{"ticker": "B", "reason": "Min CMP: Rs 63.00 < Rs 100", "held": True}]
-
-
-def test_top_n_without_blocks_is_unchanged():
-    bundle = _bundle([""] * 5)
-    assert rankings._visible_and_hidden(bundle, 3) == (["A", "B", "C"], [])
-    bundle = rankings.Bundle(prices_df=None, result=bundle.result, regime_score=0.5,
-                             regime_detail={"dynamic_n": 3}, dates=[], latest_prices={})
-    assert rankings._visible_and_hidden(bundle, 3)[0] == ["A", "B", "C"]   # purchase_block=None
-
-
 def test_full_rankings_greys_out_blocked_rows_with_reason():
     bundle = _bundle(["", "Min CMP: Rs 63.00 < Rs 100", "", "", "MDTV: no turnover data"])
     rows = rankings.full_rankings_rows(bundle, "All", "RANK", 10, -20)
@@ -134,21 +116,6 @@ def test_live_cmp_and_mcap_blocks_agree_with_the_ranking_columns():
     mcap_blocked = ~r["MCAP_ELIGIBLE"].astype(bool)
     assert (b.str.contains("Min CMP") == cmp_blocked).all()
     assert (b.str.contains("Min Market Cap") == mcap_blocked).all()
-
-
-def test_live_top_table_hides_blocked_names_and_explains_them(client):
-    cfg = config_store.load_config()
-    bundle = rankings.get_bundle(cfg)
-    max_n = int(cfg["max_n"])
-    _, hidden = rankings._visible_and_hidden(bundle, max_n)
-    html = client.get("/rankings/table").data.decode()    # the partial the index page loads
-    top_table = html[html.index("<table"):html.index("</table>")]
-    for ticker, _ in hidden:
-        assert f"<td>{ticker}</td>" not in top_table
-    if hidden:
-        assert "hidden — blocked from purchase by the current Configuration" in html
-    visible, _ = rankings._visible_and_hidden(bundle, max_n)
-    assert top_table.count("<tr") - 1 == len(visible)          # minus the header row
 
 
 def test_live_full_rankings_marks_blocked_rows(client):

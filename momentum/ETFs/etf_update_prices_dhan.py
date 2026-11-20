@@ -101,6 +101,9 @@ ALIAS_MAP = {
     "AXISTECETF": "ITAXIS",
     "AXISVALUE":  "VALUEAXIS",
     "AXISILVER":  "SILVERAXIS",
+    # Not an Axis fund: SBI Nifty Private Bank ETF is listed on Dhan as SBIPVTBNK (found Nov 2026;
+    # SBIETFPB has no match in the instrument master).
+    "SBIETFPB":   "SBIPVTBNK",
 }
 
 

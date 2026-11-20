@@ -1,5 +1,5 @@
-{# Included by _tradelog_content.html on full-page load, and re-rendered standalone
-   by GET /tradelog/row-form when an Active Holdings row is clicked. #}
+{# Included by _tradelog_content.html. Prefilled via /tradelog?ticker=..&qty=..&price=.. when a
+   Dashboard Active Holdings row is clicked. #}
 <h3>Log New Transaction</h3>
 {% if notice_in_form %}
 {% if error %}<div class="banner error">❌ {{ error }}</div>{% endif %}

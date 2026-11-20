@@ -1,0 +1,76 @@
+{# Real-time MTM boxes + Active Holdings. Included by rankings.html (the Dashboard) and re-rendered
+   standalone by POST /dashboard/refresh-prices into #holdings-content. #}
+{% if mtm_error %}<div class="banner error">❌ {{ mtm_error }}</div>{% endif %}
+{% if mtm_success %}<div class="banner success">✅ {{ mtm_success }}</div>{% endif %}
+{% if missing_price_tickers %}<div class="banner error">⚠️ No price available for {{ missing_price_tickers|join(", ") }} — valued at cost (0 PnL) in the totals below. Check the price file, or use Refresh Live Market Prices.</div>{% endif %}
+
+<div class="metric-row">
+  <div class="metric">
+    <p class="metric-label">Total Invested (Rs)</p>
+    <p class="metric-value">Rs {{ "{:,.2f}".format(total_invested) }}</p>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Current Market Value (Rs)</p>
+    <p class="metric-value">Rs {{ "{:,.2f}".format(total_market) }}</p>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Unrealized PnL (MTM)</p>
+    <p class="metric-value {{ 'value-pos' if total_unrealized >= 0 else 'value-neg' }}">
+      Rs {{ "{:,.2f}".format(total_unrealized) }}
+      <span class="metric-sub">({{ "%+.2f"|format(total_unrealized_pct) }}%)</span>
+    </p>
+  </div>
+  <div class="metric">
+    <p class="metric-label">Realized PnL (Rs)</p>
+    <p class="metric-value {{ 'value-pos' if realized_pnl >= 0 else 'value-neg' }}">
+      Rs {{ "{:,.2f}".format(realized_pnl) }}
+    </p>
+  </div>
+</div>
+
+<div class="holdings-section">
+  {# The button is a sibling of <details>, not inside it: it sits on the same bar as "Active Holdings"
+     and stays usable (and visible) while the section is collapsed. #}
+  <div class="holdings-actions">
+    <span id="refresh-prices-spinner" class="htmx-indicator caption">Fetching...</span>
+    <button type="button" class="btn-primary" id="refresh-prices-btn"
+            hx-post="{{ url_for('rankings.refresh_prices') }}" hx-target="#holdings-content" hx-swap="innerHTML"
+            hx-indicator="#refresh-prices-spinner">🔄 Refresh Live Market Prices</button>
+  </div>
+<details class="expander" open>
+  <summary>Active Holdings</summary>
+  <div class="expander-body">
+    {% if allocation %}{% include "_allocation_donuts.html" %}{% endif %}
+    {% if not holdings_rows %}
+      <div class="banner">No active holdings found. Log a BUY trade on the Tradelog tab to open a position.</div>
+    {% else %}
+      <table class="data-table">
+        <thead>
+          <tr><th>Ticker</th><th>Qty</th><th>Avg Price</th><th>Current Price</th><th>Cost Value</th>
+              <th>Market Value</th><th>Curr. Wt %</th><th>Unrealized PnL</th><th>Unrealized PnL %</th><th>First Buy Date</th></tr>
+        </thead>
+        <tbody>
+          {% for h in holdings_rows %}
+          <tr class="{{ h.row_class }} clickable-row"
+              onclick="window.location.href = this.dataset.href"
+              data-href="{{ url_for('tradelog.index', ticker=h.Ticker, qty=h.Qty|int, price=h['Current Price']) }}"
+              title="Click to open the Tradelog tab with this ticker, quantity and current price prefilled">
+            <td>{{ h.Ticker }}</td>
+            <td>{{ "{:,.0f}".format(h.Qty) }}</td>
+            <td>Rs {{ "{:,.2f}".format(h['Avg Price']) }}</td>
+            <td>Rs {{ "{:,.2f}".format(h['Current Price']) }}</td>
+            <td>Rs {{ "{:,.2f}".format(h['Cost Value']) }}</td>
+            <td>Rs {{ "{:,.2f}".format(h['Market Value']) }}</td>
+            <td>{{ "{:.2f}".format(h.weight_pct) }}%</td>
+            <td>Rs {{ "{:,.2f}".format(h['Unrealized PnL']) }}</td>
+            <td>{{ "%+.2f"|format(h['Unrealized PnL %']) }}%</td>
+            <td>{{ h['First Buy Date'] if h['First Buy Date'] else "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="caption">Click a row to open the Tradelog tab with that ticker, quantity and current price prefilled in the trade form.</p>
+    {% endif %}
+  </div>
+</details>
+</div>

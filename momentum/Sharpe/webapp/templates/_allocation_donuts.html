@@ -1,0 +1,30 @@
+{# Two donuts side by side: holdings by market cap and by sector. Included by _holdings_mtm.html. #}
+{% macro donut(d) %}
+<div class="donut-card">
+  <p class="donut-title">{{ d.title }}</p>
+  <div class="donut-body">
+    <svg class="donut-svg" viewBox="0 0 120 120" role="img" aria-label="{{ d.title }}">
+      {% for s in d.slices %}
+      <circle cx="60" cy="60" r="{{ d.r }}" fill="none" stroke="{{ s.color }}" stroke-width="{{ d.stroke }}"
+              stroke-dasharray="{{ s.dash }}" stroke-dashoffset="{{ s.offset }}" transform="rotate(-90 60 60)">
+        <title>{{ s.label }}: {{ "%.1f"|format(s.pct) }}% (Rs {{ "{:,.0f}".format(s.value) }}, {{ s.n }} stock{{ "" if s.n == 1 else "s" }})</title>
+      </circle>
+      {% endfor %}
+      <text x="60" y="58" text-anchor="middle" class="donut-center-num">{{ d.n_stocks }}</text>
+      <text x="60" y="72" text-anchor="middle" class="donut-center-sub">stocks</text>
+    </svg>
+    <ul class="donut-legend">
+      {% for s in d.slices %}
+      <li><span class="donut-swatch" style="background:{{ s.color }};"></span>
+          <span class="donut-label">{{ s.label }}</span>
+          <span class="donut-pct">{{ "%.1f"|format(s.pct) }}%</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% if d.note %}<p class="caption">{{ d.note }}</p>{% endif %}
+</div>
+{% endmacro %}
+<div class="donut-row">
+  {{ donut(allocation.cap) }}
+  {{ donut(allocation.sector) }}
+</div>

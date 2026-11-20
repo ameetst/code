@@ -1,0 +1,14 @@
+[
+  {
+    "date": "2026-11-20",
+    "portfolio_nav": 100.0164,
+    "benchmark_nav": 101.1295,
+    "portfolio_ret": 0.000164,
+    "benchmark_ret": 0.011295,
+    "n_held": 0,
+    "invested_frac": 0.0,
+    "qty_weighted": false,
+    "price_date": "2026-11-19",
+    "portfolio_nav_sma50": null
+  }
+]

@@ -14,6 +14,9 @@
       {% for opt in eligibility_options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
     </select>
   </label>
+  <label class="check" title="Only the stocks you hold now (from the trade log); Show top N is ignored">
+    <input type="checkbox" name="held" value="1"> Current holdings only
+  </label>
   <label>Show top N
     <input type="range" name="top_n" min="10" max="{{ total }}" step="10" value="{{ default_top_n }}"
            oninput="this.nextElementSibling.textContent = this.value">

@@ -117,7 +117,15 @@ def client():
         yield c
 
 
-def test_tradelog_page_renders_and_matches_core_calc(client):
+def test_tradelog_page_has_no_holdings_section_any_more(client):
+    html = client.get("/tradelog").data.decode()
+    assert "<h2>Tradelog</h2>" in html
+    assert "Log New Transaction" in html and "Transaction History" in html
+    assert "Active Holdings" not in html and "Total Invested" not in html
+    assert "Refresh Live Market Prices" not in html
+
+
+def test_dashboard_lists_the_held_tickers_matching_core_calc(client):
     from webapp.core import config_store, rankings
 
     cfg = config_store.load_config()
@@ -126,22 +134,21 @@ def test_tradelog_page_renders_and_matches_core_calc(client):
     tl = tradelog.load_tradelog(universe)
     pnl = tradelog.calculate_holdings_and_pnl(tl, bundle.latest_prices)
 
-    r = client.get("/tradelog")
+    r = client.get("/")
     assert r.status_code == 200
     html = r.data.decode()
-    assert "Tradelog" in html
-    # each held ticker appears at least once (it may also repeat in Transaction History,
-    # which lists every trade, not just open positions)
+    assert "Active Holdings" in html and "Total Invested (Rs)" in html
     for h in pnl["holdings_metrics"]:
         assert f"<td>{h['Ticker']}</td>" in html
+    assert f'data-href="/tradelog?ticker={pnl["holdings_metrics"][0]["Ticker"]}&amp;' in html
 
 
-def test_row_form_prefills_from_query_params(client):
+def test_tradelog_form_prefills_from_query_params(client):
     from webapp.core import config_store, rankings
     bundle = rankings.get_bundle(config_store.load_config())
     ticker = bundle.prices_df.index[0]
 
-    html = client.get(f"/tradelog/row-form?ticker={ticker}&qty=42&price=99.5").data.decode()
+    html = client.get(f"/tradelog?ticker={ticker}&qty=42&price=99.5").data.decode()
     assert f'value="{ticker}" selected' in html
     assert 'value="42"' in html
     assert 'value="99.5"' in html
@@ -149,7 +156,7 @@ def test_row_form_prefills_from_query_params(client):
 
 def test_active_holdings_shows_current_weight_that_sums_to_100(client):
     import re
-    html = client.get("/tradelog").data.decode()
+    html = client.get("/").data.decode()
     assert "<th>Curr. Wt %</th>" in html
     table = html.split("Active Holdings")[1].split("</table>")[0]
     weights = [float(w) for w in re.findall(r"<td>(\d+\.\d\d)%</td>", table)]
@@ -272,7 +279,7 @@ def test_refresh_prices_route_renders_and_is_not_gated_by_read_only(client):
     watched = list(settings.DATA_DIR.glob("*.json")) + list(settings.DATA_DIR.glob("*.bak"))
     before = {p: p.stat().st_mtime_ns for p in watched}
 
-    r = client.post("/tradelog/refresh-prices")
+    r = client.post("/dashboard/refresh-prices")
     assert r.status_code == 200
     html = r.data.decode()
     # The page always shows a static "submitting will show why it's blocked" caption on
@@ -312,24 +319,28 @@ def test_download_excel_link_is_in_the_page_when_history_exists(client):
     assert "Download Excel" in html
 
 
-def test_refresh_prices_button_and_source_caption_are_in_the_page(client):
-    html = client.get("/tradelog").data.decode()
+def test_refresh_prices_button_is_on_the_dashboard(client):
+    html = client.get("/").data.decode()
     assert "Refresh Live Market Prices" in html
-    assert 'hx-post="/tradelog/refresh-prices"' in html
+    assert 'hx-post="/dashboard/refresh-prices"' in html
 
 
-def test_cached_live_price_also_overrides_the_rankings_ltp_column(client, monkeypatch):
-    """The dashboard's price override was global (one button, effect visible everywhere
-    via st.session_state) -- confirms the webapp's shared cache reaches Top-N Rankings
-    too, not just Tradelog."""
+def test_cached_live_price_overrides_the_dashboard_holdings_price(client, monkeypatch):
+    """One refresh button, effect visible everywhere (the workbook's last close is overridden)."""
     from webapp.core import config_store, dhan_client, rankings
 
-    bundle = rankings.get_bundle(config_store.load_config())
-    ticker = rankings._visible_and_hidden(bundle, 5)[0][0]   # a name Top-N actually shows (ranked + purchasable)
+    cfg = config_store.load_config()
+    bundle = rankings.get_bundle(cfg)
+    universe = config_store.universe_name(config_store.resolve_file(cfg))
+    held = tradelog.calculate_holdings_and_pnl(tradelog.load_tradelog(universe), bundle.latest_prices)["holdings_metrics"]
+    if not held:
+        pytest.skip("no open positions in the live tradelog")
+    ticker = held[0]["Ticker"]
     fake_price = round(bundle.latest_prices.get(ticker, 100.0) * 2 + 1, 2)  # unmistakably not the real price
 
     monkeypatch.setattr(dhan_client, "_live_price_cache",
                          {"value": {"prices": {ticker: fake_price}, "source": "Dhan", "unmatched": []}})
 
-    html = client.get(f"/rankings/table?limit={len(bundle.result)}").data.decode()
-    assert f"Rs {fake_price:.2f}" in html  # the table prints LTP without a thousands separator
+    html = client.get("/").data.decode()
+    assert f"Rs {fake_price:,.2f}" in html
+    assert "Live prices last refreshed" not in html     # no "refreshed from <source>" label any more

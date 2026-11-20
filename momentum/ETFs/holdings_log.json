@@ -1026,7 +1026,7 @@
     ]
   },
   "2026-W47": {
-    "run_date": "2026-11-18 09:20",
+    "run_date": "2026-11-20 09:58",
     "regime": "BULL",
     "active_slots": 5,
     "allocation": [
@@ -1042,13 +1042,13 @@
       },
       {
         "slot": 2,
-        "ticker": "SBIETFPB",
-        "etf_name": "SBI Nifty Private Bank ETF",
-        "sector": "BANK",
+        "ticker": "PVTBANIETF",
+        "etf_name": "ICICI Pru Nifty PB ETF",
+        "sector": "NIFTY BANK",
         "weight": 0.2,
-        "inv_rank": "3",
-        "entry_price": 301.29,
-        "peak": 312.46
+        "inv_rank": "4",
+        "entry_price": 29.73,
+        "peak": 31.12
       },
       {
         "slot": 3,
@@ -1056,19 +1056,19 @@
         "etf_name": "Nippon India Nifty Pharma ETF",
         "sector": "NIFTY PHARMA",
         "weight": 0.2,
-        "inv_rank": "4",
+        "inv_rank": "5",
         "entry_price": 28.68,
-        "peak": 28.9
+        "peak": 29.08
       },
       {
         "slot": 4,
-        "ticker": "PVTBANIETF",
-        "etf_name": "ICICI Pru Nifty PB ETF",
-        "sector": "NIFTY BANK",
+        "ticker": "SBIETFPB",
+        "etf_name": "SBI Nifty Private Bank ETF",
+        "sector": "BANK",
         "weight": 0.2,
-        "inv_rank": "5",
-        "entry_price": 29.73,
-        "peak": 30.84
+        "inv_rank": "6",
+        "entry_price": 301.29,
+        "peak": 313.59
       },
       {
         "slot": 5,
@@ -1076,9 +1076,9 @@
         "etf_name": "Tata Nifty Private Bank ETF",
         "sector": "NIFTY PRIVATE BANK INDEX",
         "weight": 0.2,
-        "inv_rank": "27",
+        "inv_rank": "29",
         "entry_price": 313.35,
-        "peak": 316.45
+        "peak": 319.0
       }
     ]
   }

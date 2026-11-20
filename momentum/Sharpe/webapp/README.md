@@ -85,8 +85,8 @@ Tests (uses live data, read-only; ~15s because of the ranking compute):
       storage.py                safe_write_json + lock, require_writable decorator
     blueprints/              one per tab
       config.py                 /api/health, /api/config (JSON API, unrelated to the page below)
-      rankings.py                /  and /rankings/full (pages), /rankings/table and
-                                    /rankings/full/table (HTMX partials), /rankings/cap-tier/yahoo
+      rankings.py                /  (the Dashboard) and /rankings/full (pages), /rankings/full/table (HTMX
+                                    partial), /dashboard/refresh-prices, /rankings/cap-tier/yahoo
                                     (opt-in live fetch partial)
       actions.py                 /actions
       tradelog.py                 /tradelog and every add/edit/delete route
@@ -97,10 +97,10 @@ Tests (uses live data, read-only; ~15s because of the ranking compute):
     templates/
       base.html                  shared shell: title, read-only banner, nav tabs (incl. the live
                                     🔴/🟢 Actions Monitor dot), HTMX script tag
-      rankings.html               Top-N regime header + Regime Score Breakdown (VIX/A-D-ratio/
+      rankings.html               Dashboard: regime header + Regime Score Breakdown (VIX/A-D-ratio/
                                     trend chart) + Market Cap Momentum Breakdown expanders +
-                                    HTMX-loaded table container
-      _rankings_table.html         the Top-N table partial
+                                    Market Cap Momentum Breakdown expanders + the MTM boxes / Active Holdings
+      _holdings_mtm.html           real-time MTM boxes + Active Holdings (Refresh button swaps this partial)
       _cap_tier_yahoo.html         the opt-in Yahoo market-cap fetch result/button, swapped into
                                     #cap-tier-yahoo-root
       full_rankings.html          Full Rankings filter form (eligibility / top N / sort)
@@ -145,7 +145,7 @@ that can change several things on the page at once — i.e. every actual mutatio
 ## Status
 
 Done:
-- **Top-N Rankings** — regime header, held-row highlighting, LTP from last data-sheet price.
+- **Dashboard** (was Top-N Rankings) — regime header, Regime Score Breakdown, Market Cap Momentum Breakdown, and the real-time MTM boxes + Active Holdings moved here from Tradelog. The Top-N table (and its blocked-names caption) was removed.
   Its **Regime Score Breakdown** expander (a first pass had drifted from the dashboard —
   mislabeled column, missing signals) now matches in full: all 4 weighted signal scores
   with their % labels, live India VIX (`core/dhan_client.py`, Dhan primary/Yahoo Finance
@@ -162,6 +162,12 @@ Done:
 - **Full Rankings** — eligibility filter, top-N range, sort-by, all three row-highlight rules
   (disqualified / Rel-52H-DD breach / within regime N) as CSS classes instead of a pandas Styler.
   Filters are a single `<form hx-get hx-trigger="change">` swapping `#full-table` — no page reload.
+  **% From ATH** (after % From 52H, sortable) is read from the
+  `ATH` / `ATH_DATE` / `PCT_FROM_ATH` columns of the rankings workbook's CALCS sheet (`rankings.load_ath`,
+  `ml.load_ath_from_workbook`); Sharpe.py computes them from the full Dhan close history cached in `ATH_cache.json`.
+  Hover a value for the ATH price and date; blank until Sharpe.py has backfilled that ticker.
+  **Current holdings only** (checkbox, `?held=1`) keeps just the names in the trade log's open positions
+  (`actions.current_holdings`); it combines with Eligibility / Sort / Search and, like search, ignores Show top N.
 - **Performance Tracker** — NAV/alpha/drawdown metric cards, the equity curve (same hover
   crosshair + tooltip as the Streamlit version, now `static/js/equity_chart.js` instead of a
   `components.html()` blob), and the collapsible daily-NAV table. Handles the 0/1/2+ day
@@ -173,15 +179,11 @@ Done:
   (sell-immediately / sell / locked / healthy). Fully read-only page, no HTMX needed. The nav bar's
   🔴/🟢 dot next to "Actions Monitor" is live on every page (via a Flask `context_processor`), same
   signal as the Streamlit tab label.
-- **Tradelog & MTM** — metric cards (Total Invested, Market Value, Unrealized/Realized PnL),
-  the Active Holdings table where **clicking a row prefills the Log New Transaction form**
-  (ticker, qty, current price) via `hx-get` into `#trade-form-wrapper`, the trade-entry form
-  itself, and Transaction History with per-row **Edit** (`hx-get` into `#edit-form-wrapper`)
-  and multi-select **Delete**. All three mutating routes (add/edit/delete) are fully
-  implemented against `core/tradelog.py`'s ported `validate_tradelog_integrity` +
-  `calculate_holdings_and_pnl` + `sync_to_positions_ledger`, and are exercised end to end —
-  they're just gated behind `settings.READ_ONLY` (default on) until cutover, at which point
-  flipping the flag is the only change needed to enable them for real.
+- **Tradelog** — the Log New Transaction form and Transaction History with per-row **Edit** and multi-select
+  **Delete**. Clicking an Active Holdings row on the **Dashboard** opens `/tradelog?ticker=..&qty=..&price=..`,
+  which prefills the form. Add/edit/delete are implemented against `core/tradelog.py`'s
+  `validate_tradelog_integrity` + `calculate_holdings_and_pnl` + `sync_to_positions_ledger`, gated behind
+  `settings.READ_ONLY`. The Refresh Live Market Prices button lives on the Dashboard (`POST /dashboard/refresh-prices`).
 - **Cash Ledger** — deposit/withdrawal/dividend/interest/fee tracking, independent of stock
   trades. Metric cards (Total Deposits, Withdrawals, Dividends+Interest, Net Cash Contributed),
   add-entry form, and history with running balance, per-row **Edit**, and multi-select **Delete**.
@@ -220,10 +222,7 @@ Done:
   rather than migrated, since it was dead weight even before this change.
   **Blocked-from-purchase display** (all three dashboards): `momentum_lib.compute_purchase_blocks`
   returns, per ticker, why the *current* Configuration forbids buying it (Min CMP, Min Market
-  Cap, MDTV, Series EQ, Circuit hits; the fixed 52H floor is not included). **Top N Rankings
-  hides** those names and fills the table with the next purchasable ones (rank numbers are
-  unchanged, so a hidden name leaves a visible gap, and a caption lists what was hidden and
-  why); **Full Rankings greys them out** with the reason in a "Blocked" column and a caption
+  Cap, MDTV, Series EQ, Circuit hits; the fixed 52H floor is not included). (The Top N table that used to hide them was removed from the Dashboard.) **Full Rankings greys them out** with the reason in a "Blocked" column and a caption
   breaking the count down by reason; New Entry Candidates skip them. In the Streamlit
   dashboards the blocks are re-evaluated on every run, so they follow the Configuration in
   effect after Refresh Rankings; the webapp's cache key already covers every setting involved.
@@ -301,10 +300,8 @@ dashboard). `dhan_client.apply_cached_prices()` is the shared merge -- overrides
 workbook's last price wherever it's applied, until the next click. Not gated by
 `SHARPE_READ_ONLY` -- it's a live external read with no file write, same category as the
 VIX/cap-tier fetches. **The override is global, matching the dashboard's own
-`st.session_state.live_prices` semantics**: Tradelog applies it via `_effective_prices()`,
-and Top-N Rankings' LTP column applies the exact same cache via
-`core.rankings.top_rows(..., prices=dhan_client.apply_cached_prices(...))` -- one button,
-one shared cache, both pages read it. Verified live: refreshing on Tradelog changed
+`st.session_state.live_prices` semantics**: the Dashboard holdings and the Tradelog form defaults apply it via `rankings.effective_prices()` /
+`dhan_client.apply_cached_prices(...)` -- one button, one shared cache, every page reads it. Verified live: refreshing on Tradelog changed
 WELCORP to Rs 2,796.80 there, and the Top Rankings page (a full navigation away, no shared
 browser state involved) showed the identical Rs 2,796.80 in its LTP column.
 

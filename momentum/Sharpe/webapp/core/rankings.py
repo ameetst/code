@@ -178,19 +178,6 @@ def mean_volatility(ticker, prices_df):
     return float(np.mean(vols)) if vols else None
 
 
-def held_tickers(universe: str) -> set:
-    """Tickers with an open position, from the positions ledger (read-only; the Streamlit app keeps it synced)."""
-    path = config_store.positions_ledger_path(universe)
-    if not path.exists():
-        return set()
-    try:
-        with open(path) as f:
-            raw = json.load(f)
-    except (OSError, ValueError):
-        return set()
-    return {t for t, rec in raw.items() if isinstance(rec, dict) and float(rec.get("qty", 1) or 0) > 0}
-
-
 def regime_badge(score: float) -> str:
     if score >= 0.65:
         return "high"
@@ -199,81 +186,11 @@ def regime_badge(score: float) -> str:
     return "low"
 
 
-def _visible_and_hidden(bundle: Bundle, limit: int) -> tuple[list, list]:
-    """Walk the ranking in order, skipping names blocked from purchase by the current
-    Configuration (Min CMP / Min Market Cap / MDTV / Series / Circuit) until `limit`
-    purchasable names are collected. Returns (visible tickers, [(ticker, reason), ...]
-    for the blocked names ranked above the cut). Rank numbers are unchanged, so a hidden
-    name leaves a visible gap in the Rank column."""
-    blocks = bundle.purchase_block
-    visible, hidden = [], []
-    for t in bundle.result.index[bundle.result["RANK"].notna()]:
-        reason = blocks.get(t, "") if blocks is not None else ""
-        if reason:
-            hidden.append((t, reason))
-        else:
-            visible.append(t)
-            if len(visible) >= limit:
-                break
-    return visible, hidden
-
-
-def top_hidden(bundle: Bundle, limit: int, held: set) -> list[dict]:
-    """Ranked names hidden from the Top-N table because the current Configuration blocks
-    buying them (see _visible_and_hidden), for the table's explanatory caption."""
-    return [{"ticker": t, "reason": r, "held": t in held}
-            for t, r in _visible_and_hidden(bundle, limit)[1]]
-
-
 def effective_prices(bundle: Bundle) -> dict:
     """bundle.latest_prices overridden by the last "Refresh Live Market Prices" fetch, including
     tickers the workbook has no usable close for."""
     known = bundle.prices_df.index if bundle.prices_df is not None else None
     return dhan_client.apply_cached_prices(bundle.latest_prices, known=known)
-
-
-def top_rows(bundle: Bundle, limit: int, held: set, prices: dict | None = None) -> list[dict]:
-    """`prices` overrides bundle.latest_prices for the LTP column when given -- pass
-    dhan_client.apply_cached_prices(bundle.latest_prices) to reflect Tradelog's
-    "Refresh Live Market Prices" button here too, matching the dashboard's single
-    global price override."""
-    prices = prices if prices is not None else bundle.latest_prices
-    top_tickers, _ = _visible_and_hidden(bundle, limit)
-    top_view = bundle.result.loc[top_tickers]
-
-    # Circuit-hit frequency (UC/LC over trailing 252 sessions) — always computed
-    # here regardless of the Circuit Hit Frequency Filter setting, matching the
-    # dashboard's New Entry Candidates precedent.
-    try:
-        circuit_df = ml.compute_circuit_hits(
-            bundle.prices_df, top_tickers, str(STOCKDB_CSV), lookback_period=252)
-    except Exception:
-        circuit_df = None
-
-    rows = []
-    for ticker, row in top_view.iterrows():
-        mean_vol = mean_volatility(ticker, bundle.prices_df)
-        comp = finite(row["COMPOSITE"])
-        vol_adj = round(comp / mean_vol, 3) if (comp is not None and mean_vol and mean_vol > 0) else None
-        ltp = prices.get(ticker, 0.0)
-        rank = finite(row["RANK"])
-        if circuit_df is not None and ticker in circuit_df.index:
-            circuit_hits = f"{int(circuit_df.loc[ticker, 'UC_COUNT'])} / {int(circuit_df.loc[ticker, 'LC_COUNT'])}"
-        else:
-            circuit_hits = None
-        rows.append({
-            "rank": int(rank) if rank is not None else None,
-            "ticker": ticker,
-            "series": str(row["SERIES"]) if pd.notna(row.get("SERIES")) else None,
-            "composite": comp,
-            "res_mom": finite(row.get("RES_MOM")),
-            "volatility_pct": round(mean_vol * 100, 1) if mean_vol is not None else None,
-            "vol_adj_score": vol_adj,
-            "ltp": ltp if ltp > 0 else None,
-            "circuit_hits": circuit_hits,
-            "held": ticker in held,
-        })
-    return rows
 
 
 def eligible_52h_count(bundle: Bundle) -> int:
@@ -301,11 +218,13 @@ FULL_DISPLAY_COLUMNS = ["RANK", "SERIES", "COMPOSITE", "SHARPE_3", "RES_MOM",
 FULL_COLUMN_LABELS = {
     "RANK": "Rank", "SERIES": "Series", "COMPOSITE": "Composite", "SHARPE_3": "Sharpe 12/6/3M",
     "RES_MOM": "Res Mom", "CLENOW_SCORE": "Clenow Score",
-    "PCT_FROM_52H": "% From 52H", "REL_52H_DD": "Rel 52H DD", "BETA": "Beta",
+    "PCT_FROM_52H": "% From 52H", "PCT_FROM_ATH": "% From ATH", "REL_52H_DD": "Rel 52H DD", "BETA": "Beta",
 }
 SORT_OPTIONS = ["RANK", "COMPOSITE", "RES_MOM", "PCT_FROM_52H", "REL_52H_DD"]
 ELIGIBILITY_OPTIONS = ["All", "Eligible only", "Disqualified only"]
-_ONE_DECIMAL_COLS = {"PCT_FROM_52H", "REL_52H_DD", "CLENOW_SCORE"}
+_ONE_DECIMAL_COLS = {"PCT_FROM_52H", "PCT_FROM_ATH", "REL_52H_DD", "CLENOW_SCORE"}
+# Columns that come from the rankings workbook's CALCS sheet, not from the ranking result.
+_WORKBOOK_COLS = {"CLENOW_SCORE", "PCT_FROM_ATH"}
 _TWO_DECIMAL_COLS = {"BETA"}
 
 
@@ -318,17 +237,31 @@ def load_clenow(cfg: dict):
     return ml.load_clenow_scores_from_workbook(DATA_DIR / f"{universe}_rankings.xlsx")
 
 
-def full_display_columns(bundle: Bundle, clenow=None) -> list[str]:
+def load_ath(cfg: dict):
+    """(DataFrame | None, workbook-generated datetime | None): ATH / ATH_DATE / PCT_FROM_ATH from this
+    universe's Sharpe.py rankings workbook (CALCS sheet), as of that run. Same rules as load_clenow."""
+    return load_ath_for_universe(config_store.universe_name(config_store.resolve_file(cfg)))
+
+
+def load_ath_for_universe(universe: str):
+    return ml.load_ath_from_workbook(DATA_DIR / f"{universe}_rankings.xlsx")
+
+
+def full_display_columns(bundle: Bundle, clenow=None, ath=None) -> list[str]:
     cols = [c for c in FULL_DISPLAY_COLUMNS if c in bundle.result.columns]
     if clenow is not None and "RES_MOM" in cols:
         cols.insert(cols.index("RES_MOM") + 1, "CLENOW_SCORE")   # right after Res Mom
+    if ath is not None and "PCT_FROM_52H" in cols:
+        cols.insert(cols.index("PCT_FROM_52H") + 1, "PCT_FROM_ATH")   # right after % From 52H
     return cols
 
 
-def sort_options(clenow=None) -> list[str]:
+def sort_options(clenow=None, ath=None) -> list[str]:
     opts = list(SORT_OPTIONS)
     if clenow is not None:
         opts.insert(opts.index("RES_MOM") + 1, "CLENOW_SCORE")
+    if ath is not None:
+        opts.insert(opts.index("PCT_FROM_52H") + 1, "PCT_FROM_ATH")
     return opts
 
 
@@ -337,29 +270,44 @@ def search_terms(search: str) -> list[str]:
     return ml.ticker_search_terms(search)
 
 
+def ath_tooltip(ath, ticker) -> str:
+    """'ATH Rs 1,234.50 on 09-Nov-26' for the % From ATH cell, '' when the workbook has no ATH for it."""
+    if ath is None or ticker not in ath.index:
+        return ""
+    price, when = finite(ath.at[ticker, "ATH"]), ath.at[ticker, "ATH_DATE"]
+    if price is None or not isinstance(when, str):
+        return ""
+    return f"ATH Rs {price:,.2f} on {fmt_date(when)}"
+
+
 def full_rankings_rows(bundle: Bundle, eligibility: str, sort_col: str,
                         top_n: int, rel_dd_breach_threshold: float, search: str = "",
-                        clenow=None) -> list[dict]:
+                        clenow=None, ath=None, held=None) -> list[dict]:
     """With a non-empty `search`, rows are the tickers CONTAINING any search term (case-insensitive),
-    taken from the whole universe: `top_n` is not applied, so a name outside the top N is still found."""
-    cols = full_display_columns(bundle, clenow)
-    df = bundle.result[[c for c in cols if c != "CLENOW_SCORE"]].copy()
+    taken from the whole universe: `top_n` is not applied, so a name outside the top N is still found.
+    `held` (a set of tickers, or None for no filter) keeps only those names; it too ignores `top_n`."""
+    cols = full_display_columns(bundle, clenow, ath)
+    df = bundle.result[[c for c in cols if c not in _WORKBOOK_COLS]].copy()
     df.index.name = "TICKER"
     df = df.reset_index()
     if clenow is not None:
         df["CLENOW_SCORE"] = df["TICKER"].map(clenow)
+    if ath is not None:
+        df["PCT_FROM_ATH"] = df["TICKER"].map(ath["PCT_FROM_ATH"])
 
     if eligibility == "Eligible only":
         df = df[df["PCT_FROM_52H"] >= ELIGIBLE_52H_FLOOR]
     elif eligibility == "Disqualified only":
         df = df[df["PCT_FROM_52H"] < ELIGIBLE_52H_FLOOR]
 
-    if sort_col not in sort_options(clenow) or sort_col not in df.columns:
+    if sort_col not in sort_options(clenow, ath) or sort_col not in df.columns:
         sort_col = "RANK"
+    if held is not None:
+        df = df[df["TICKER"].isin(held)]
     terms = search_terms(search)
     df = ml.filter_tickers_by_search(df, terms)
     df = df.sort_values(sort_col, ascending=(sort_col == "RANK"), na_position="last")
-    if not terms:
+    if not terms and held is None:
         df = df.head(top_n)
 
     dynamic_n = int(bundle.regime_detail["dynamic_n"])
@@ -381,8 +329,9 @@ def full_rankings_rows(bundle: Bundle, eligibility: str, sort_col: str,
         else:
             row_class = ""
 
-        cells = []
+        cells, titles = [], []
         for c in cols:
+            titles.append(ath_tooltip(ath, r["TICKER"]) if c == "PCT_FROM_ATH" else "")
             if c == "RANK":
                 cells.append(str(int(rank)) if rank is not None else "—")
             elif c == "SERIES":
@@ -398,7 +347,7 @@ def full_rankings_rows(bundle: Bundle, eligibility: str, sort_col: str,
                 else:
                     cells.append(f"{fv:.3f}")
         rows.append({"ticker": r["TICKER"], "row_class": row_class, "cells": cells,
-                     "blocked": blocked})
+                     "titles": titles, "blocked": blocked})
     return rows
 
 

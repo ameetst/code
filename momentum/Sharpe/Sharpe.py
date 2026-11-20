@@ -57,8 +57,17 @@ to equal-weighting for the day -- see EQUITY CURVE TRACKING below.)
 The ledger is loaded at the start of each run and used to evaluate exit
 conditions and the equity curve.
 
+All-time high (display only)
+----------------------------
+CALCS gets ATH, ATH_DATE and PCT_FROM_ATH (last close vs the highest close ever, <= 0). The workbook
+only holds ~1-2 years of prices, so each ticker's full history is fetched from Dhan ONCE (daily
+closes, as supplied by Dhan) and kept in ATH_cache.json; later runs only raise it from the
+workbook's own closes. The first run therefore needs one Dhan call per ticker (~5 per second);
+it saves progress as it goes and can be interrupted and re-run. --no-ath-fetch skips the Dhan
+calls (tickers without a cached ATH are left blank).
+
 Usage:  python Sharpe.py <UNIVERSE> [path/to/ledger.json]
-          UNIVERSE examples: N500, N750, NSEAll
+          UNIVERSE examples: N500, N750, N1000, NSEAll
           Derives: <UNIVERSE>_updated.xlsx  ->  <UNIVERSE>_rankings.xlsx
                    <UNIVERSE>_positions_ledger.json (overridden by 2nd arg)
           --dry-run is accepted for compatibility; this script never writes the ledger.
@@ -82,7 +91,7 @@ import momentum_lib as ml
 # -- ARGUMENT PARSING ----------------------------------------------------------
 _parser = argparse.ArgumentParser(description="Sharpe Momentum Ranking")
 _parser.add_argument("universe", nargs="?", default="N500",
-                     help="Universe name (e.g., N500, N750, NSEAll)")
+                     help="Universe name (e.g., N500, N750, N1000, NSEAll)")
 _parser.add_argument("ledger", nargs="?", default=None,
                      help="Path to positions ledger JSON (optional)")
 _parser.add_argument("--update", action="store_true",
@@ -90,6 +99,9 @@ _parser.add_argument("--update", action="store_true",
 _parser.add_argument("--data-source", choices=["dhan", "yfinance"], default="dhan",
                      help="Provider used by --update (default: dhan). Has no effect without --update; "
                           "rankings always read <UNIVERSE>_updated.xlsx")
+_parser.add_argument("--no-ath-fetch", action="store_true",
+                     help="Do not call Dhan to backfill all-time highs; use ATH_cache.json as it stands "
+                          "(tickers without a cached ATH get a blank ATH column)")
 _parser.add_argument("--min-turnover", type=float, default=1.0,
                      help="Minimum median daily turnover in Rs Cr (default: 1.0)")
 _parser.add_argument("--min-cmp", type=float, default=None,
@@ -215,7 +227,7 @@ _DATA_SOURCES = {
         "script":   _GITHUB_ROOT / "dhan_datahq" / "update_stock_price_dhan.py",
         "cwd":      _GITHUB_ROOT / "dhan_datahq",
         "template": _GITHUB_ROOT / "dhan_datahq" / "base files",
-        "universes": {"N750", "NSEAll"},
+        "universes": {"N750", "N1000", "NSEAll"},
     },
     "yfinance": {
         "script":   _GITHUB_ROOT / "code" / "yfinance data scripts" / "update_stock_price.py",
@@ -1103,10 +1115,66 @@ calcs_cols = [
     ("3M%",        8), ("12M%",     8),
     ("52H%",      10), ("REL_DD",    10), ("BETA",      8),
     ("CLENOW_SCORE", 13),
+    ("ATH",        11), ("ATH_DATE",  11), ("PCT_FROM_ATH", 13),
 ]
 # Display-only: Clenow book score (90d exp-regression slope x R2). Not used in
 # ranking, regime or entries/exits.
 clenow_scores = ml.compute_clenow_book_scores(prices_df, stock_tickers)
+
+# Display-only: all-time high on a closing basis (see the docstring). Never allowed to break the run.
+ATH_CACHE_PATH = _SCRIPT_DIR / ml.ATH_CACHE_FILENAME
+
+
+def _dhan_history_fetcher():
+    """fetch_history(symbols) for ml.update_ath_cache, or None when Dhan is not importable."""
+    _dh_dir = _GITHUB_ROOT / "dhan_datahq"
+    if str(_dh_dir) not in sys.path:
+        sys.path.insert(0, str(_dh_dir))
+    try:
+        import dhandata as _dh
+    except Exception as e:
+        print(f"  ATH: Dhan library not available ({e}) -- skipping the backfill.")
+        return None
+    try:
+        import update_stock_price_dhan as _usp          # renamed-ticker map shared with the price updater
+        _alias = dict(_usp.ALIAS_MAP)
+    except Exception:
+        _alias = {}
+    _to = (TODAY + datetime.timedelta(days=1)).isoformat()   # Dhan's toDate is non-inclusive
+
+    def fetch(symbols):
+        data, unmatched, failed = _dh.get_daily_history_bulk(
+            symbols, from_date=ml.ATH_HISTORY_START, to_date=_to,
+            fields=["close"], alias_map=_alias, progress=False)
+        closes = {t: df["close"] for t, df in data.items() if "close" in df.columns}
+        unmatched = list(unmatched) + [t for t in data if t not in closes]   # answered with no data
+        return closes, unmatched, failed
+    return fetch
+
+
+print("Computing all-time highs ...")
+_ath_cache = ml.load_ath_cache(ATH_CACHE_PATH)
+_ath_missing = [t for t in stock_tickers if not (_ath_cache.get(t) or {}).get("full")]
+if _args.no_ath_fetch:
+    print(f"  --no-ath-fetch: {len(_ath_missing)} ticker(s) without a cached ATH stay blank.")
+elif _ath_missing:
+    print(f"  {len(_ath_missing)} ticker(s) have no cached all-time high; fetching their full history "
+          f"from Dhan (~5 per second, progress is saved, safe to interrupt) ...")
+    try:
+        _fetch = _dhan_history_fetcher()
+        if _fetch is not None:
+            _st = ml.update_ath_cache(_ath_cache, stock_tickers, _fetch,
+                                      on_chunk=lambda c: ml.save_ath_cache(ATH_CACHE_PATH, c))
+            if _st["aborted"]:
+                print("  ATH: Dhan rate-limited the run; the rest will be fetched next time.")
+    except Exception as e:
+        print(f"  ATH: backfill stopped ({e}); continuing with what is cached.")
+ath_table = ml.compute_ath_table(prices_df, stock_tickers, _ath_cache)
+try:
+    ml.save_ath_cache(ATH_CACHE_PATH, _ath_cache)
+except OSError as e:
+    print(f"  ATH: could not write {ATH_CACHE_PATH.name} ({e})")
+print(f"  ATH available for {int(ath_table['ATH'].notna().sum())} of {len(ath_table)} tickers")
 for c, (col_name, col_w) in enumerate(calcs_cols, 1):
     set_hdr(ws2.cell(row=2, column=c), col_name)
     ws2.column_dimensions[get_column_letter(c)].width = col_w
@@ -1157,6 +1225,9 @@ for i, (ticker, row) in enumerate(result.iterrows(), 3):
         (reldd,              reldd_fnt,  reldd_bg,  "0.0"),
         (row.get("BETA", np.nan), MUTED_FONT, bg, "0.00"),
         (clenow_scores.get(ticker, np.nan), CYAN_FONT, bg, "0.0"),
+        (ath_table["ATH"].get(ticker, np.nan),          MUTED_FONT, bg, "0.00"),
+        (ath_table["ATH_DATE"].get(ticker),             MUTED_FONT, bg, None),
+        (ath_table["PCT_FROM_ATH"].get(ticker, np.nan), TEXT_FONT,  bg, "0.0"),
     ]
     for c, (val, fnt, bg_c, nfmt) in enumerate(values, 1):
         v = None if (isinstance(val, float) and np.isnan(val)) else val

@@ -220,6 +220,41 @@ def get_etf_latest_price(ticker: str, prices_df: pd.DataFrame) -> float:
     return 0.0
 
 
+def recommended_since(log: dict) -> dict:
+    """ticker -> ISO date (YYYY-MM-DD) the strategy started recommending it, from holdings_log.json.
+
+    Walks back through consecutive weekly log entries while the ticker stays in the
+    allocation: the date is the run_date of the first entry of its current unbroken run.
+    Only tickers in the LATEST log entry qualify; anything newer than the last run has no
+    date until the next rebalance logs it. run_date is the day the pipeline ran, which is
+    not necessarily a trading day."""
+    keys = sorted(log)
+    if not keys:
+        return {}
+
+    def tickers(key):
+        return {s.get("ticker") for s in log[key].get("allocation", [])}
+
+    out = {}
+    for t in tickers(keys[-1]) - {"CASH", None}:
+        i = len(keys) - 1
+        while i > 0 and t in tickers(keys[i - 1]):
+            i -= 1
+        out[t] = str(log[keys[i]].get("run_date", ""))[:10] or None
+    return out
+
+
+def close_on_or_before(prices_df: pd.DataFrame, ticker: str, date_str: str):
+    """(close, trading_date_iso) for the last close on or before date_str; (None, None) if none."""
+    if not date_str or ticker not in prices_df.columns:
+        return None, None
+    s = prices_df[ticker].dropna()
+    s = s[s.index <= pd.Timestamp(date_str)]
+    if s.empty:
+        return None, None
+    return float(s.iloc[-1]), s.index[-1].strftime("%Y-%m-%d")
+
+
 def build_live_allocation(ranking, regime, active_holdings, prices):
     """
     Weekly hold-and-replace allocation seeded from the REAL tradelog holdings

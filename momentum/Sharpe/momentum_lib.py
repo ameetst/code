@@ -744,6 +744,159 @@ def load_clenow_scores_from_workbook(path):
     return series, stamp
 
 
+# ── ALL-TIME HIGH (closing basis) ─────────────────────────────────────────────
+# The rankings workbook only holds ~1-2 years of closes, so the true all-time high needs the
+# full price history. Sharpe.py backfills it once per ticker (from Dhan) into ATH_cache.json and
+# afterwards only tops it up from the workbook's own closes. Closes are used as supplied by the
+# data provider (not adjusted for splits/bonuses), by the user's choice.
+
+ATH_CACHE_FILENAME = "ATH_cache.json"
+ATH_HISTORY_START = "1990-01-01"   # earliest date requested when backfilling a ticker
+ATH_RETRY_DAYS = 7                 # a ticker that returned nothing is not retried for this long
+ATH_CHUNK = 200                    # tickers per fetch batch (the cache is saved after each)
+
+
+def load_ath_cache(path) -> dict:
+    """{TICKER: {"ath": float, "date": "YYYY-MM-DD", "full": True} | {"tried": "YYYY-MM-DD"}}.
+    {} when the file is absent or unreadable."""
+    p = Path(path)
+    if not p.exists():
+        return {}
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def save_ath_cache(path, cache: dict) -> None:
+    """Atomic write (temp file + replace) so an interrupted run never leaves a half-written cache."""
+    p = Path(path)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(json.dumps(cache, indent=1, sort_keys=True), encoding="utf-8")
+    tmp.replace(p)
+
+
+def ath_from_closes(closes):
+    """(highest positive close, its date) from a date-indexed series, or None if it has none."""
+    s = pd.to_numeric(pd.Series(closes), errors="coerce").dropna()
+    s = s[s > 0]
+    if s.empty:
+        return None
+    return float(s.max()), pd.Timestamp(s.idxmax()).date()
+
+
+def update_ath_cache(cache: dict, tickers, fetch_history, today=None, chunk: int = ATH_CHUNK,
+                     on_chunk=None, log=print) -> dict:
+    """
+    Backfill the full-history ATH for every ticker that does not have one yet (mutates `cache`).
+
+    fetch_history(symbols) -> (data {symbol: close Series indexed by date},
+                               unmatched [symbol], failed {symbol: message})
+    A ticker the provider returns nothing for is stamped {"tried": today} and left alone for
+    ATH_RETRY_DAYS; one whose call failed is simply retried on the next run. A "skipped..." failure
+    means the provider's rate-limit circuit breaker tripped: stop and keep what was fetched.
+    `on_chunk(cache)` runs after each batch (used to save progress).
+    Returns {"todo", "filled", "no_data", "failed", "aborted"}.
+    """
+    today = today or datetime.date.today()
+    todo = []
+    for t in tickers:
+        e = cache.get(t) or {}
+        if e.get("full"):
+            continue
+        if e.get("tried"):
+            try:
+                if (today - datetime.date.fromisoformat(e["tried"])).days < ATH_RETRY_DAYS:
+                    continue
+            except ValueError:
+                pass
+        todo.append(t)
+
+    stats = {"todo": len(todo), "filled": 0, "no_data": 0, "failed": 0, "aborted": False}
+    for i in range(0, len(todo), chunk):
+        part = todo[i:i + chunk]
+        data, unmatched, failed = fetch_history(part)
+        for t, series in data.items():
+            hit = ath_from_closes(series)
+            if hit:
+                cache[t] = {"ath": round(hit[0], 4), "date": hit[1].isoformat(), "full": True}
+                stats["filled"] += 1
+            else:
+                cache[t] = {"tried": today.isoformat()}
+                stats["no_data"] += 1
+        for t in unmatched:
+            cache[t] = {"tried": today.isoformat()}
+            stats["no_data"] += 1
+        stats["failed"] += len(failed)
+        if on_chunk:
+            on_chunk(cache)
+        log(f"  ATH backfill: {min(i + chunk, len(todo))}/{len(todo)} tickers "
+            f"({stats['filled']} ok, {stats['no_data']} no data, {stats['failed']} failed)")
+        if any(str(m).startswith("skipped") for m in failed.values()):
+            stats["aborted"] = True
+            break
+    return stats
+
+
+def compute_ath_table(prices_df: pd.DataFrame, tickers, cache: dict) -> pd.DataFrame:
+    """
+    ATH / ATH_DATE / PCT_FROM_ATH per ticker: the cached full-history ATH, raised to the
+    workbook's own highest close if that is higher (a new high since the backfill; the cache entry
+    is updated in place so the high survives the workbook's rolling window).
+    PCT_FROM_ATH = (last close / ATH - 1) * 100, so it is <= 0 and exactly 0 at a new high.
+    Tickers without a backfilled ATH are left blank rather than showing a partial-window high.
+    """
+    rows = {}
+    for t in tickers:
+        px = pd.to_numeric(prices_df.loc[t], errors="coerce").dropna()
+        px = px[px > 0]
+        last = float(px.iloc[-1]) if len(px) else np.nan
+        ath, ath_date = np.nan, None
+        e = cache.get(t) or {}
+        if e.get("full"):
+            ath, ath_date = float(e["ath"]), e["date"]
+            hit = ath_from_closes(px)
+            if hit and hit[0] > ath:
+                ath, ath_date = hit[0], hit[1].isoformat()
+                cache[t] = {"ath": round(ath, 4), "date": ath_date, "full": True}
+        pct = (last / ath - 1) * 100 if (ath and ath > 0 and np.isfinite(last)) else np.nan
+        rows[t] = (ath, ath_date, pct)
+    return pd.DataFrame.from_dict(rows, orient="index", columns=["ATH", "ATH_DATE", "PCT_FROM_ATH"])
+
+
+_ATH_XLSX_CACHE: dict = {}
+
+
+def load_ath_from_workbook(path):
+    """
+    (DataFrame indexed by ticker with ATH, ATH_DATE, PCT_FROM_ATH ; workbook modified-time), read
+    from the CALCS sheet of Sharpe.py's `<UNIVERSE>_rankings.xlsx`; (None, None) when the file, the
+    sheet or the columns are missing/unreadable (e.g. a workbook from before the columns existed).
+    Values are as of the last Sharpe.py run, not live. Cached per (path, mtime).
+    """
+    import os as _os
+    try:
+        mtime = _os.path.getmtime(path)
+    except OSError:
+        return None, None
+    key = str(path)
+    cached = _ATH_XLSX_CACHE.get(key)
+    if cached and cached[0] == mtime:
+        return cached[1], cached[2]
+    try:
+        df = pd.read_excel(path, sheet_name="CALCS", header=1,
+                           usecols=["TICKER", "ATH", "ATH_DATE", "PCT_FROM_ATH"])
+    except Exception:
+        return None, None
+    df = df.dropna(subset=["TICKER"]).drop_duplicates("TICKER", keep="last").set_index("TICKER")
+    for c in ("ATH", "PCT_FROM_ATH"):
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    stamp = datetime.datetime.fromtimestamp(mtime)
+    _ATH_XLSX_CACHE[key] = (mtime, df, stamp)
+    return df, stamp
+
+
 # ── RESIDUAL MOMENTUM ─────────────────────────────────────────────────────────
 
 def _residual_information_ratio(stock_series: pd.Series, mkt_rets: pd.Series,
@@ -1647,3 +1800,72 @@ def filter_tickers_by_search(df, terms, ticker_col: str = "TICKER"):
     if not terms:
         return df
     return df[df[ticker_col].astype(str).str.upper().map(lambda t: any(x in t for x in terms))]
+
+
+# ── HOLDINGS ALLOCATION (Dashboard donut charts) ─────────────────────────────
+
+CAP_TIER_LABELS = {"LARGECAP": "Large Cap", "MIDCAP": "Mid Cap", "SMALLCAP": "Small Cap",
+                   "MICROCAP": "Micro Cap", "NANOCAP": "Nano Cap"}   # STOCKDB.csv MARKETCAP values
+UNCLASSIFIED = "Unclassified"
+DONUT_PALETTE = ["#4F46E5", "#067647", "#B54708", "#0E7490", "#9333EA", "#BE185D",
+                 "#65A30D", "#CA8A04", "#0369A1", "#DC2626", "#0D9488", "#7C3AED"]
+DONUT_UNCLASSIFIED_COLOR = "#98A1AE"
+
+
+def load_sector_map(path) -> dict:
+    """{TICKER: sector} from `SECTOR.csv` (columns Symbol, Industry; the older Sector Metadata.csv
+    layout TICKER, SECTOR is accepted too). Keys are stripped and upper-cased so the join with a
+    holding's ticker is exact. {} if the file is absent/unreadable. It only covers part of the
+    universe, so callers must tolerate gaps (label them UNCLASSIFIED)."""
+    p = Path(path)
+    if not p.exists():
+        return {}
+    try:
+        df = pd.read_csv(p, encoding="utf-8-sig")
+    except Exception:
+        return {}
+    cols = {str(c).strip().upper(): c for c in df.columns}
+    key, val = cols.get("SYMBOL") or cols.get("TICKER"), cols.get("INDUSTRY") or cols.get("SECTOR")
+    if key is None or val is None:
+        return {}
+    df = df.dropna(subset=[key, val])
+    return dict(zip(df[key].astype(str).str.strip().str.upper(), df[val].astype(str).str.strip()))
+
+
+def allocation_breakdown(holdings_metrics: list, label_by_ticker: dict, order: list | None = None) -> list:
+    """
+    Share of the portfolio's current market value per label (market-cap tier or sector).
+
+    holdings_metrics : rows with "Ticker" and "Market Value" (calculate_holdings_and_pnl output)
+    label_by_ticker  : {ticker: label}; a ticker with no label goes to UNCLASSIFIED
+    order            : label display order (e.g. Large -> Nano); default is largest slice first.
+                       UNCLASSIFIED is always last.
+    Returns [{"label", "value", "pct", "n"}], pct summing to 100; [] when there is no value.
+    """
+    values, counts = {}, {}
+    for h in holdings_metrics:
+        label = label_by_ticker.get(h["Ticker"]) or UNCLASSIFIED
+        values[label] = values.get(label, 0.0) + float(h["Market Value"])
+        counts[label] = counts.get(label, 0) + 1
+    total = sum(values.values())
+    if total <= 0:
+        return []
+    if order:
+        labels = [l for l in order if l in values] + [l for l in values if l not in order and l != UNCLASSIFIED]
+    else:
+        labels = sorted((l for l in values if l != UNCLASSIFIED), key=lambda l: -values[l])
+    if UNCLASSIFIED in values:
+        labels.append(UNCLASSIFIED)
+    return [{"label": l, "value": values[l], "pct": values[l] / total * 100.0, "n": counts[l]} for l in labels]
+
+
+def donut_colors(labels: list) -> list:
+    """One colour per label, in order; UNCLASSIFIED is always grey."""
+    out, i = [], 0
+    for l in labels:
+        if l == UNCLASSIFIED:
+            out.append(DONUT_UNCLASSIFIED_COLOR)
+        else:
+            out.append(DONUT_PALETTE[i % len(DONUT_PALETTE)])
+            i += 1
+    return out

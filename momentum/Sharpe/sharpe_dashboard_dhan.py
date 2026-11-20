@@ -1137,7 +1137,7 @@ st.divider()
 SHOW_CASH_LEDGER_TAB = True  # toggle to re-enable the Cash Ledger tab
 
 _actions_dot = "🔴" if n_exits > 0 else "🟢"
-_tab_labels = [f"Top {MAX_N} Rankings", f"{_actions_dot} Actions Monitor", "Tradelog & MTM"]
+_tab_labels = ["Dashboard", f"{_actions_dot} Actions Monitor", "Tradelog"]
 if SHOW_CASH_LEDGER_TAB:
     _tab_labels.append("Cash Ledger")
 _tab_labels += ["Full Rankings", "Configuration", "Performance Tracker", "Co-relation Matrix"]
@@ -1148,109 +1148,179 @@ if SHOW_CASH_LEDGER_TAB:
     tab_cash = next(_tabs)
 tab_calcs, tab_config, tab_perf, tab_corr = next(_tabs), next(_tabs), next(_tabs), next(_tabs)
 
-# ── TAB 1: TOP N RANKINGS ─────────────────────────────────────────────────────
+# ── TAB 1: DASHBOARD ─────────────────────────────────────────────────────
 with tab_top:
-    st.markdown(
-        f"## Top {MAX_N} Rankings <span class='dm-h-meta'>— "
-        f"Regime Score: {regime_score:.2f} | "
-        f"Dynamic N (Strategy): {dynamic_n}</span>",
-        unsafe_allow_html=True)
+    st.markdown("## Dashboard")
 
-    DISPLAY_N = MAX_N
-    held_tickers = set(active_holdings.keys())
-    rows = []
+    # Real-time MTM + Active Holdings (moved here from the Tradelog tab). Selecting a holdings
+    # row prefills the Log New Transaction form on the Tradelog tab (shared session state).
+    # 1. Metric Cards
+    total_invested_val = sum(h["Cost Value"] for h in holdings_metrics)
+    total_market_val = sum(h["Market Value"] for h in holdings_metrics)
+    total_unrealized_pnl = total_market_val - total_invested_val
+    total_unrealized_pnl_pct = (total_unrealized_pnl / total_invested_val * 100) if total_invested_val > 0 else 0.0
 
-    # Show only names that can be bought under the current Configuration: walk the ranking
-    # in order, skipping blocked names (Min CMP / Min Market Cap / MDTV / Series / Circuit)
-    # until DISPLAY_N purchasable names are collected. Rank numbers are unchanged, so a
-    # hidden name leaves a visible gap in the Rank column.
-    _visible, _hidden = [], []
-    for _t in result.index[result["RANK"].notna()]:
-        if purchase_block.get(_t, ""):
-            _hidden.append((_t, purchase_block[_t]))
-        else:
-            _visible.append(_t)
-            if len(_visible) >= DISPLAY_N:
-                break
-    top_view = result.loc[_visible]
-
-    # Circuit-hit frequency (UC/LC over trailing 252 sessions) — always computed
-    # here regardless of the Circuit Hit Frequency Filter setting, same as the
-    # New Entry Candidates section below.
-    try:
-        _top_circuit_df = ml.compute_circuit_hits(
-            prices_df, top_view.index.tolist(), str(band_csv), lookback_period=252)
-    except Exception:
-        _top_circuit_df = None
-
-    for ticker, row in top_view.iterrows():
-        ltp = latest_prices.get(ticker, 0.0)
-
-        if _top_circuit_df is not None and ticker in _top_circuit_df.index:
-            circuit_hits_str = f"{int(_top_circuit_df.loc[ticker, 'UC_COUNT'])} / {int(_top_circuit_df.loc[ticker, 'LC_COUNT'])}"
-        else:
-            circuit_hits_str = "—"
-
-        # Compute annualised volatility — mean across 4 windows (same as weight-sizing engine)
-        mean_vol = None
-        if ticker in prices_df.index:
-            px = prices_df.loc[ticker].dropna()
-            if len(px) > 10:
-                vols = []
-                for w in [252, 189, 126, 63]:
-                    pw = px.iloc[-w:] if len(px) >= w else px
-                    lr = np.diff(np.log(pw.values))
-                    if len(lr) > 5:
-                        vols.append(np.std(lr, ddof=1) * np.sqrt(252))
-                if vols:
-                    mean_vol = float(np.mean(vols))
-
-        comp = row["COMPOSITE"] if pd.notna(row["COMPOSITE"]) else None
-        vol_adj = round(comp / mean_vol, 3) if (comp is not None and mean_vol and mean_vol > 0) else None
-
-        rows.append({
-            "Rank":          int(row["RANK"]) if pd.notna(row["RANK"]) else None,
-            "Ticker":        ticker,
-            "Series":        str(row["SERIES"]) if pd.notna(row.get("SERIES")) else "—",
-            "Composite":     comp,
-            "Res Mom":       float(row["RES_MOM"]) if pd.notna(row.get("RES_MOM")) else None,
-            "Volatility %":  round(mean_vol * 100, 1) if mean_vol is not None else None,
-            "Vol-Adj Score": vol_adj,
-            "LTP":           ltp if ltp > 0 else None,
-            "Circuit Hits (UC/LC)": circuit_hits_str,
-        })
-
-    top25_df = pd.DataFrame(rows, columns=[
-        "Rank", "Ticker", "Series", "Composite", "Res Mom", "Volatility %", "Vol-Adj Score",
-        "LTP", "Circuit Hits (UC/LC)"])  # explicit columns: stays valid if every name is blocked
-
-    def style_top25(row):
-        if row["Ticker"] in held_tickers:
-            return ["background-color:#FEF6EA;"] * len(row)
-        return ["background-color:#FFFFFF;"] * len(row)
-
-    st.dataframe(
-        top25_df.style.apply(style_top25, axis=1).format(
-            {"Rank":          "{:.0f}",
-             "Composite":     "{:.3f}",
-             "Res Mom":       "{:.3f}",
-             "Volatility %":  "{:.1f}%",
-             "Vol-Adj Score": "{:.3f}",
-             "LTP":           "Rs {:,.2f}"}, na_rep="\u2014"),
-        use_container_width=True, hide_index=True,
-        height=min(950, (DISPLAY_N + 2) * 36))
-
-
-    st.caption("Tinted rows = currently held positions  |  White rows = not yet in portfolio")
-    if _hidden:
-        _hid_txt = "; ".join(
-            f"{t}{' [held]' if t in held_tickers else ''} ({r})" for t, r in _hidden[:10])
-        _hid_more = f" … and {len(_hidden) - 10} more" if len(_hidden) > 10 else ""
-        st.caption(f"⛔ {len(_hidden)} ranked name(s) hidden — blocked from purchase by the "
-                   f"current Configuration: {_hid_txt}{_hid_more}")
+    tc1, tc2, tc3, tc4 = st.columns(4)
+    with tc1:
+        st.markdown(_metric_card("Total Invested (Rs)", f"Rs {total_invested_val:,.2f}"), unsafe_allow_html=True)
+    with tc2:
+        st.markdown(_metric_card("Current Market Value (Rs)", f"Rs {total_market_val:,.2f}"), unsafe_allow_html=True)
+    with tc3:
+        st.markdown(_metric_card("Unrealized PnL (MTM)", f"Rs {total_unrealized_pnl:,.2f}",
+                                 delta=f"{total_unrealized_pnl_pct:+.2f}%"), unsafe_allow_html=True)
+    with tc4:
+        st.markdown(_metric_card("Realized PnL (Rs)", f"Rs {realized_pnl:,.2f}"), unsafe_allow_html=True)
+    if tradelog_result.get("missing_price_tickers"):
+        st.warning("⚠️ No price available for "
+                   + ", ".join(tradelog_result["missing_price_tickers"])
+                   + " — valued at cost (0 PnL) in the totals above. Check the price file, "
+                   "or use Refresh Live Market Prices.")
 
     st.divider()
-    
+
+    # 2. Active Holdings: heading row with the Refresh button (not collapsible); the donuts and
+    #    table below it sit in a collapsible expander, open by default.
+    hc1, hc2 = st.columns([0.7, 0.3])
+    with hc1:
+        st.markdown("### Active Holdings")
+    with hc2:
+        if st.button("Refresh Live Market Prices", use_container_width=True):
+            live_prices = {}
+            price_source = None
+            held_tickers_list = [h["Ticker"] for h in holdings_metrics]
+
+            if holdings_metrics:
+                # ── Primary: Dhan batched LTP (single /marketfeed/ltp call) ────
+                if DHAN_AVAILABLE:
+                    try:
+                        with st.spinner("Fetching latest prices from Dhan..."):
+                            live_prices, unmatched = dh.resolve_and_get_ltp(held_tickers_list)
+                        if live_prices:
+                            price_source = "Dhan"
+                        if unmatched:
+                            st.warning(
+                                f"Dhan couldn't resolve {len(unmatched)} ticker(s) to a "
+                                f"securityId (renamed/delisted?): {', '.join(unmatched)}")
+                    except Exception as e:
+                        st.warning(f"Dhan live price fetch failed ({e}) — falling back to Yahoo Finance.")
+                        live_prices = {}
+
+                # ── Fallback: yfinance per-ticker thread pool (original path) ──
+                if not live_prices:
+                    with st.spinner("Fetching latest prices from Yahoo Finance..."):
+                        def fetch_price(tkr):
+                            try:
+                                return tkr, yf.Ticker(f"{tkr}.NS").fast_info.last_price
+                            except:
+                                try:
+                                    return tkr, yf.Ticker(f"{tkr}.BO").fast_info.last_price
+                                except:
+                                    return tkr, None
+
+                        with ThreadPoolExecutor(max_workers=20) as exe:
+                            results = exe.map(fetch_price, held_tickers_list)
+                            for tkr, price in results:
+                                if price: live_prices[tkr] = price
+                    if live_prices:
+                        price_source = "Yahoo Finance"
+
+            if live_prices:
+                st.session_state.live_prices = live_prices
+                st.session_state.live_prices_source = price_source
+                st.rerun()
+
+    with st.expander("Allocation & holdings table", expanded=True):
+        if holdings_metrics:   # holdings allocation donuts (market value share), above the table
+            _cap_map = {_t: ml.CAP_TIER_LABELS.get(_tr, _tr) for _t, _tr in load_stockdb().items()}
+            _sec_map = ml.load_sector_map(SCRIPT_DIR / "SECTOR.csv")
+            _donuts = [
+                ("Holdings by Market Cap", ml.allocation_breakdown(
+                    holdings_metrics, _cap_map, order=list(ml.CAP_TIER_LABELS.values()))),
+                ("Holdings by Sector", ml.allocation_breakdown(holdings_metrics, _sec_map)),
+            ]
+            _dcols = st.columns(2)
+            for _dcol, (_dtitle, _slices) in zip(_dcols, _donuts):
+                with _dcol:
+                    st.markdown(f"**{_dtitle}**")
+                    if not _slices:
+                        st.caption("No market value to chart.")
+                        continue
+                    _ddf = pd.DataFrame(_slices)
+                    _ddf["sort_idx"] = range(len(_ddf))
+                    _dlabels = list(_ddf["label"])
+                    st.altair_chart(
+                        alt.Chart(_ddf).mark_arc(innerRadius=55, outerRadius=95).encode(
+                            theta=alt.Theta("value:Q", stack=True),
+                            color=alt.Color("label:N", sort=_dlabels,
+                                            scale=alt.Scale(domain=_dlabels, range=ml.donut_colors(_dlabels)),
+                                            legend=alt.Legend(title=None, orient="right")),
+                            order=alt.Order("sort_idx:Q"),
+                            tooltip=[alt.Tooltip("label:N", title="Group"),
+                                     alt.Tooltip("pct:Q", title="Weight %", format=".1f"),
+                                     alt.Tooltip("value:Q", title="Market value (Rs)", format=",.0f"),
+                                     alt.Tooltip("n:Q", title="Stocks")],
+                        ).properties(height=220),
+                        use_container_width=True)
+                    _unc = next((_s for _s in _slices if _s["label"] == ml.UNCLASSIFIED), None)
+                    if _unc and _dtitle.endswith("Sector"):
+                        st.caption(f"{_unc['pct']:.0f}% of holdings value ({_unc['n']} stock"
+                                   f"{'' if _unc['n'] == 1 else 's'}) is not in SECTOR.csv (shown as Unclassified).")
+
+        # Initialize state keys for tracking row selection and dropdown state
+        if "last_selected_row" not in st.session_state:
+            st.session_state.last_selected_row = None
+        if "last_seen_ticker" not in st.session_state:
+            st.session_state.last_seen_ticker = None
+
+        if not holdings_metrics:
+            st.info("No active holdings found. Log a BUY trade on the Tradelog tab to open a position.")
+        else:
+            holdings_df = pd.DataFrame(holdings_metrics)
+            cols_order = ["Ticker", "Qty", "Avg Price", "Current Price", "Cost Value", "Market Value", "Unrealized PnL", "Unrealized PnL %", "First Buy Date"]
+            holdings_df = holdings_df[cols_order].sort_values(by="Unrealized PnL", ascending=False)
+
+            def style_holdings(row):
+                pnl = row["Unrealized PnL"]
+                if pnl > 0:
+                    return ["background-color:#E8F5EE;"] * len(row)
+                elif pnl < 0:
+                    return ["background-color:#FDEDEB;"] * len(row)
+                return [""] * len(row)
+
+            event = st.dataframe(
+                holdings_df.style.apply(style_holdings, axis=1).format(
+                    {"Qty": "{:,.0f}", "Avg Price": "Rs {:,.2f}", "Current Price": "Rs {:,.2f}",
+                     "Cost Value": "Rs {:,.2f}", "Market Value": "Rs {:,.2f}",
+                     "Unrealized PnL": "Rs {:,.2f}", "Unrealized PnL %": "{:+.2f}%",
+                     "First Buy Date": lambda x: x.isoformat() if hasattr(x, "isoformat") else str(x)}, na_rep="—"
+                ),
+                use_container_width=True, hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row"
+            )
+
+            # Extract selected row details
+            rows = []
+            if event and hasattr(event, "selection"):
+                if hasattr(event.selection, "rows"):
+                    rows = event.selection.rows
+                elif isinstance(event.selection, dict):
+                    rows = event.selection.get("rows", [])
+
+            if rows:
+                selected_row_idx = rows[0]
+                if st.session_state.last_selected_row != selected_row_idx:
+                    selected_row = holdings_df.iloc[selected_row_idx]
+                    st.session_state.tradelog_select_ticker = selected_row["Ticker"]
+                    st.session_state.tradelog_qty = int(selected_row["Qty"])
+                    st.session_state.tradelog_price = float(selected_row["Current Price"])
+                    st.session_state.last_selected_row = selected_row_idx
+                    st.session_state.last_seen_ticker = selected_row["Ticker"]
+            else:
+                st.session_state.last_selected_row = None
+
+    st.divider()
+
     # Calculate exact portfolio valuation based on active holdings
     actual_cost_basis = sum(h["Cost Value"] for h in holdings_metrics)
     
@@ -1461,141 +1531,9 @@ with tab_exits:
             f"**Hold-Locked:** {len(exit_df[exit_df['Trigger'].isin(['HOLD_LOCK', 'REL_DD_LOCK'])])}  |  "
             f"**Healthy:** {len(exit_df[exit_df['Trigger']=='HEALTHY'])}")
 
-# ── TAB 3: TRADELOG & MTM ─────────────────────────────────────────────────────
+# ── TAB 3: TRADELOG ─────────────────────────────────────────────────────
 with tab_tradelog:
-    st.markdown("## Tradelog & Real-time MTM")
-
-    # 1. Metric Cards
-    total_invested_val = sum(h["Cost Value"] for h in holdings_metrics)
-    total_market_val = sum(h["Market Value"] for h in holdings_metrics)
-    total_unrealized_pnl = total_market_val - total_invested_val
-    total_unrealized_pnl_pct = (total_unrealized_pnl / total_invested_val * 100) if total_invested_val > 0 else 0.0
-
-    tc1, tc2, tc3, tc4 = st.columns(4)
-    with tc1:
-        st.markdown(_metric_card("Total Invested (Rs)", f"Rs {total_invested_val:,.2f}"), unsafe_allow_html=True)
-    with tc2:
-        st.markdown(_metric_card("Current Market Value (Rs)", f"Rs {total_market_val:,.2f}"), unsafe_allow_html=True)
-    with tc3:
-        st.markdown(_metric_card("Unrealized PnL (MTM)", f"Rs {total_unrealized_pnl:,.2f}",
-                                 delta=f"{total_unrealized_pnl_pct:+.2f}%"), unsafe_allow_html=True)
-    with tc4:
-        st.markdown(_metric_card("Realized PnL (Rs)", f"Rs {realized_pnl:,.2f}"), unsafe_allow_html=True)
-    if tradelog_result.get("missing_price_tickers"):
-        st.warning("⚠️ No price available for "
-                   + ", ".join(tradelog_result["missing_price_tickers"])
-                   + " — valued at cost (0 PnL) in the totals above. Check the price file, "
-                   "or use Refresh Live Market Prices.")
-
-    st.divider()
-
-    # 2. Active Holdings Table
-    hc1, hc2 = st.columns([0.7, 0.3])
-    with hc1: 
-        st.markdown("### Active Holdings")
-    with hc2:
-        if st.button("Refresh Live Market Prices", use_container_width=True):
-            live_prices = {}
-            price_source = None
-            held_tickers_list = [h["Ticker"] for h in holdings_metrics]
-
-            if holdings_metrics:
-                # ── Primary: Dhan batched LTP (single /marketfeed/ltp call) ────
-                if DHAN_AVAILABLE:
-                    try:
-                        with st.spinner("Fetching latest prices from Dhan..."):
-                            live_prices, unmatched = dh.resolve_and_get_ltp(held_tickers_list)
-                        if live_prices:
-                            price_source = "Dhan"
-                        if unmatched:
-                            st.warning(
-                                f"Dhan couldn't resolve {len(unmatched)} ticker(s) to a "
-                                f"securityId (renamed/delisted?): {', '.join(unmatched)}")
-                    except Exception as e:
-                        st.warning(f"Dhan live price fetch failed ({e}) — falling back to Yahoo Finance.")
-                        live_prices = {}
-
-                # ── Fallback: yfinance per-ticker thread pool (original path) ──
-                if not live_prices:
-                    with st.spinner("Fetching latest prices from Yahoo Finance..."):
-                        def fetch_price(tkr):
-                            try:
-                                return tkr, yf.Ticker(f"{tkr}.NS").fast_info.last_price
-                            except:
-                                try:
-                                    return tkr, yf.Ticker(f"{tkr}.BO").fast_info.last_price
-                                except:
-                                    return tkr, None
-
-                        with ThreadPoolExecutor(max_workers=20) as exe:
-                            results = exe.map(fetch_price, held_tickers_list)
-                            for tkr, price in results:
-                                if price: live_prices[tkr] = price
-                    if live_prices:
-                        price_source = "Yahoo Finance"
-
-            if live_prices:
-                st.session_state.live_prices = live_prices
-                st.session_state.live_prices_source = price_source
-                st.rerun()
-
-    if st.session_state.get("live_prices_source"):
-        st.caption(f"💹 Live prices last refreshed from **{st.session_state['live_prices_source']}**.")
-
-    # Initialize state keys for tracking row selection and dropdown state
-    if "last_selected_row" not in st.session_state:
-        st.session_state.last_selected_row = None
-    if "last_seen_ticker" not in st.session_state:
-        st.session_state.last_seen_ticker = None
-
-    if not holdings_metrics:
-        st.info("No active holdings found. Log a BUY trade below to open a position.")
-    else:
-        holdings_df = pd.DataFrame(holdings_metrics)
-        cols_order = ["Ticker", "Qty", "Avg Price", "Current Price", "Cost Value", "Market Value", "Unrealized PnL", "Unrealized PnL %", "First Buy Date"]
-        holdings_df = holdings_df[cols_order].sort_values(by="Unrealized PnL", ascending=False)
-
-        def style_holdings(row):
-            pnl = row["Unrealized PnL"]
-            if pnl > 0:
-                return ["background-color:#E8F5EE;"] * len(row)
-            elif pnl < 0:
-                return ["background-color:#FDEDEB;"] * len(row)
-            return [""] * len(row)
-
-        event = st.dataframe(
-            holdings_df.style.apply(style_holdings, axis=1).format(
-                {"Qty": "{:,.0f}", "Avg Price": "Rs {:,.2f}", "Current Price": "Rs {:,.2f}",
-                 "Cost Value": "Rs {:,.2f}", "Market Value": "Rs {:,.2f}",
-                 "Unrealized PnL": "Rs {:,.2f}", "Unrealized PnL %": "{:+.2f}%",
-                 "First Buy Date": lambda x: x.isoformat() if hasattr(x, "isoformat") else str(x)}, na_rep="—"
-            ),
-            use_container_width=True, hide_index=True,
-            on_select="rerun",
-            selection_mode="single-row"
-        )
-
-        # Extract selected row details
-        rows = []
-        if event and hasattr(event, "selection"):
-            if hasattr(event.selection, "rows"):
-                rows = event.selection.rows
-            elif isinstance(event.selection, dict):
-                rows = event.selection.get("rows", [])
-
-        if rows:
-            selected_row_idx = rows[0]
-            if st.session_state.last_selected_row != selected_row_idx:
-                selected_row = holdings_df.iloc[selected_row_idx]
-                st.session_state.tradelog_select_ticker = selected_row["Ticker"]
-                st.session_state.tradelog_qty = int(selected_row["Qty"])
-                st.session_state.tradelog_price = float(selected_row["Current Price"])
-                st.session_state.last_selected_row = selected_row_idx
-                st.session_state.last_seen_ticker = selected_row["Ticker"]
-        else:
-            st.session_state.last_selected_row = None
-
-    st.divider()
+    st.markdown("## Tradelog")
 
     # 3. Log Trade Form & Transaction History
     st.markdown("### Log New Transaction")
@@ -2017,10 +1955,13 @@ with tab_calcs:
     # ignored (and disabled); Eligibility and Sort by still apply. Read from session state first
     # so the slider can be disabled before the box itself is drawn.
     _search_terms = ml.ticker_search_terms(st.session_state.get("full_rank_search", ""))
+    _held_only = bool(st.session_state.get("full_rank_held_only", False))
 
     # Clenow score: Sharpe.py writes it to the CALCS sheet of <universe>_rankings.xlsx only (it is
     # not part of `result`), so it is read from there and is as of that Sharpe.py run.
     _clenow, _clenow_ts = ml.load_clenow_scores_from_workbook(SCRIPT_DIR / f"{universe}_rankings.xlsx")
+    # All-time high: Sharpe.py computes ATH / ATH_DATE / PCT_FROM_ATH into the same CALCS sheet.
+    _ath, _ath_ts = ml.load_ath_from_workbook(SCRIPT_DIR / f"{universe}_rankings.xlsx")
 
     fc1, fc2, fc3, fc4 = st.columns(4)
     with fc1:
@@ -2028,16 +1969,21 @@ with tab_calcs:
                                     ["All", "Eligible only", "Disqualified only"])
     with fc2:
         top_n_show = st.slider("Show top N", 10, len(result),
-                                min(100, len(result)), 10, disabled=bool(_search_terms))
+                                min(100, len(result)), 10, disabled=bool(_search_terms) or _held_only)
     with fc3:
         sort_col = st.selectbox("Sort by",
                                  ["RANK", "COMPOSITE", "RES_MOM"]
                                  + (["CLENOW_SCORE"] if _clenow is not None else [])
-                                 + ["PCT_FROM_52H", "REL_52H_DD"])
+                                 + ["PCT_FROM_52H"]
+                                 + (["PCT_FROM_ATH"] if _ath is not None else [])
+                                 + ["REL_52H_DD"])
     with fc4:
         st.text_input("Search ticker", key="full_rank_search", placeholder="e.g. SBC, HFCL",
                       help="Case-insensitive, partial match; separate several with commas or spaces. "
                            "Press Enter to apply. Searches the whole universe (Show top N is ignored).")
+        st.checkbox("Current holdings only", key="full_rank_held_only",
+                    help="Show only the stocks you hold now (from the trade log). Combines with Eligibility, "
+                         "Sort by and Search; Show top N is ignored.")
 
     display_cols = ["RANK", "SERIES", "COMPOSITE", "SHARPE_3"]
     for c in ["RES_MOM", "PCT_FROM_52H", "REL_52H_DD", "BETA"]:
@@ -2047,6 +1993,9 @@ with tab_calcs:
     if _clenow is not None:   # right after RES_MOM
         _pos = (list(calcs_df.columns).index("RES_MOM") + 1) if "RES_MOM" in calcs_df.columns else len(calcs_df.columns)
         calcs_df.insert(_pos, "CLENOW_SCORE", _clenow.reindex(calcs_df.index))
+    if _ath is not None:      # right after PCT_FROM_52H
+        _pos = (list(calcs_df.columns).index("PCT_FROM_52H") + 1) if "PCT_FROM_52H" in calcs_df.columns else len(calcs_df.columns)
+        calcs_df.insert(_pos, "PCT_FROM_ATH", _ath["PCT_FROM_ATH"].reindex(calcs_df.index))
     calcs_df.index.name = "TICKER"
     calcs_df = calcs_df.reset_index()
     # SHARPE_3 = mean Z of the 12M/6M/3M Sharpe windows (not a 3-month Sharpe): label it as such.
@@ -2057,10 +2006,14 @@ with tab_calcs:
     elif filter_elig == "Disqualified only":
         calcs_df = calcs_df[calcs_df["PCT_FROM_52H"] < -25]
 
+    _held_names = {h["Ticker"] for h in holdings_metrics}
+    if _held_only:
+        calcs_df = calcs_df[calcs_df["TICKER"].isin(_held_names)]
+
     calcs_df = ml.filter_tickers_by_search(calcs_df, _search_terms)
     calcs_df = calcs_df.sort_values(
         sort_col, ascending=(sort_col == "RANK"), na_position="last")
-    if not _search_terms:
+    if not _search_terms and not _held_only:
         calcs_df = calcs_df.head(top_n_show)
 
     # Names blocked from purchase by the current Configuration: greyed out below, with the
@@ -2074,6 +2027,7 @@ with tab_calcs:
            if c not in ["RANK", "TICKER", "SERIES", "Blocked"]}
     fmt["PCT_FROM_52H"] = "{:.1f}"
     fmt["REL_52H_DD"]   = "{:.1f}"
+    if "PCT_FROM_ATH" in fmt: fmt["PCT_FROM_ATH"] = "{:.1f}"
     if "CLENOW_SCORE" in fmt: fmt["CLENOW_SCORE"] = "{:.1f}"
     if "BETA" in fmt: fmt["BETA"] = "{:.2f}"
 
@@ -2090,6 +2044,14 @@ with tab_calcs:
         except (ValueError, TypeError): pass
         return [""] * len(row)
 
+    if _held_only:
+        _n_missing = len(_held_names - set(result.index))
+        st.caption(f"🧺 Current holdings only: {len(calcs_df)} of {len(_held_names)} held name"
+                   f"{'' if len(_held_names) == 1 else 's'} shown (Show top N is ignored)"
+                   + (f"; {_n_missing} held name{'' if _n_missing == 1 else 's'} not in this universe's ranking."
+                      if _n_missing else "."))
+        if not _held_names:
+            st.info("No current holdings: log a BUY trade on the Tradelog tab.")
     if _search_terms:
         if calcs_df.empty:
             st.info(f"No tickers match “{st.session_state.get('full_rank_search', '').strip()}”"
@@ -2109,6 +2071,15 @@ with tab_calcs:
                    f"Display only — not used in ranking or exits.")
     else:
         st.caption("Clenow Score is not shown: no CLENOW_SCORE column found in this universe's "
+                   "rankings workbook (run Sharpe.py).")
+
+    if _ath is not None:
+        st.caption(f"% From ATH = last close vs the highest daily close on record (0 at a new high), read from "
+                   f"{universe}_rankings.xlsx ({_ath_ts:%d-%b-%y %H:%M}). "
+                   f"{int(_ath['PCT_FROM_ATH'].notna().sum())} tickers have one; the rest show — until "
+                   f"Sharpe.py has backfilled their history. Display only.")
+    else:
+        st.caption("% From ATH is not shown: no PCT_FROM_ATH column found in this universe's "
                    "rankings workbook (run Sharpe.py).")
 
     if _n_blocked:

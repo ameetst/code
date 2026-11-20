@@ -1,0 +1,150 @@
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+  [sectors] Loaded 326 mappings from ETF_SECTOR.xlsx
+[load] C:\Users\ameet\Documents\Github\dhan_datahq\base files\History_ETFs.xlsx
+       283 tickers (non-empty) | 2609 trading days (2016-09-12 -> 2026-09-10)
+[config] LIVE blend weights Sharpe/Clenow = 0.5/0.5; Sharpe risk-free = 5.00%; EXIT_MAX_RANK=40; TOP_N=5; SECTOR_CAP=1; EXCLUDE_SECTORS=['LIQUID']; variant=live; 70 bad-print fixes (same cleaning as earlier runs)
+[regime/benchmark] Fetching ^CRSLDX (Nifty 500 Index) via yfinance ...
+       2462 rows (2016-09-12 -> 2026-09-11)
+[rank] computing 1880 weekly rankings (470 decisions x 4 variants) on 7 worker(s) ...
+[cache] saved rankcache_live_score_vs_sharpe_only_4fd9dc2d.pkl
+=== running SHARPE-ONLY ===
+=== running BLEND (live) ===
+=== running SHARPE-ONLY +guard ===
+=== running BLEND (live) +guard ===
+
+Window: 2017-09-11 -> 2026-09-10 (9.0 yrs); same start date and capital for every series.
+
+### 1. HEADLINE METRICS (same window)
+                  SHARPE-ONLY BLEND (live) SHARPE-ONLY +guard BLEND (live) +guard Buy&Hold N500
+CAGR                   11.79%       13.47%             12.43%              13.70%        11.23%
+Total return           172.5%       211.8%             187.0%              217.3%        160.5%
+Max drawdown          -21.47%      -21.73%            -20.87%             -21.73%       -38.30%
+Volatility             13.21%       14.01%             12.86%              13.77%        16.16%
+Sharpe (CAGR/vol)        0.89         0.96               0.97                0.99          0.69
+Final equity (Rs)   2,764,424    3,162,797          2,911,406           3,218,532     3,093,104
+
+### 2. 2018-2020 STRESS WINDOW
+                  SHARPE-ONLY BLEND (live) SHARPE-ONLY +guard BLEND (live) +guard Buy&Hold N500
+CAGR                    3.33%        8.53%              9.00%               7.48%         6.88%
+Total return            10.3%        27.8%              29.5%               24.1%         22.1%
+Max drawdown          -17.81%      -12.20%            -11.97%             -14.93%       -38.30%
+Volatility             10.54%       11.49%             10.31%              10.68%        19.81%
+Sharpe (CAGR/vol)        0.32         0.74               0.87                0.70          0.35
+Final equity (Rs)   1,137,240    1,341,714          1,345,719           1,319,573     1,552,227
+
+### 3. CALENDAR-YEAR RETURNS (first year partial)
+     SHARPE-ONLY BLEND (live) SHARPE-ONLY +guard BLEND (live) +guard Buy&Hold N500
+2017        1.9%         3.7%               3.5%                5.1%          7.7%
+2018       -5.0%         2.1%              -0.6%                2.1%         -3.4%
+2019       -4.6%         1.9%               6.0%               -3.5%          7.7%
+2020       21.5%        22.6%              21.7%               25.6%         16.7%
+2021       25.3%         6.6%              20.0%               12.9%         30.2%
+2022        4.9%        19.3%               1.5%               15.5%          3.0%
+2023       37.2%        34.5%              29.8%               35.7%         25.8%
+2024       24.2%        29.0%              26.0%               29.0%         15.2%
+2025        5.2%         1.1%               5.2%                1.1%          6.7%
+2026        3.2%         5.8%               3.2%                5.8%         -3.9%
+
+### 4. TRADE & PORTFOLIO STATISTICS
+                           SHARPE-ONLY BLEND (live) SHARPE-ONLY +guard BLEND (live) +guard
+Buys                               179          185                177                 180
+Closed trades                      174          180                172                 175
+Win rate                         48.9%        52.2%              51.7%               52.6%
+Avg win                          11.2%        11.5%              10.5%               11.7%
+Avg loss                         -4.3%        -4.8%              -4.3%               -4.9%
+Profit factor                     2.32         2.28               2.35                2.30
+Avg hold (days)                  76.40        73.69              77.20               74.56
+Median hold (days)               56.00        49.00              56.00               56.00
+Best trade                      104.1%        88.5%              74.2%               78.0%
+Worst trade                     -22.3%       -22.3%             -22.3%              -22.3%
+Closed net P&L (Rs)          1,681,436    2,041,691          1,822,789           2,093,194
+Open at end                          5            5                  5                   5
+Open unrealized (Rs)            42,511       75,639             44,771              76,972
+Distinct ETFs traded                84           86                 86                  83
+Avg holdings                      4.11         4.13               4.11                4.06
+% weeks risk-off                 31.1%        31.1%              31.1%               31.1%
+% weeks < 5 held                 25.7%        24.7%              26.2%               25.7%
+Exit: TSL                          116          125                108                 125
+Exit: 52wk-high DD                   3            4                  2                   5
+Exit: Rank > 40                     73           61                 74                  61
+Exit: Dropped from ranking           0            0                  2                   0
+
+### 5. ETF-LEVEL STATS -- SHARPE-ONLY
+Top 6 by net P&L (Rs):
+            Trades   NetPnL WinRate AvgHold    Sector
+TICKER                                               
+CPSEETF          6  345,398     67%    102d  CPSE ETF
+SILVERIETF       3  338,235     67%     47d    SILVER
+ICICIB22         2  285,669    100%    332d    SENSEX
+AUTOIETF         4  130,150    100%    112d      AUTO
+TATSILV          1  124,951    100%    105d    SILVER
+MID150BEES       4  106,304     50%    114d    MIDCAP
+Bottom 4 by net P&L (Rs):
+            Trades    NetPnL WinRate AvgHold           Sector
+TICKER                                                       
+MAHKTECH         3  -171,719      0%     21d            OTHER
+HNGSNGBEES      10  -136,743     30%     40d  HANG SENG INDEX
+MODEFENCE        2   -58,162      0%     28d    NIFTY DEFENCE
+GROWWDEFNC       2   -56,930      0%     18d          DEFENCE
+Sector view (top 5):
+               Trades   NetPnL
+SECTOR                        
+SILVER              4  463,187
+SENSEX             12  400,054
+CPSE ETF            6  345,398
+MIDCAP              7  191,408
+NIFTY NEXT 50      10  142,956
+
+### 5. ETF-LEVEL STATS -- BLEND (live)
+Top 6 by net P&L (Rs):
+            Trades   NetPnL WinRate AvgHold      Sector
+TICKER                                                 
+SILVERIETF       3  373,561     67%     47d      SILVER
+AUTOIETF         3  310,330    100%    198d        AUTO
+ICICIB22         4  284,504     75%    203d      SENSEX
+AUTOBEES         3  256,230    100%    184d  NIFTY AUTO
+CPSEETF          6  154,449     67%     97d    CPSE ETF
+MID150BEES       2  146,666    100%    189d      MIDCAP
+Bottom 4 by net P&L (Rs):
+            Trades    NetPnL WinRate AvgHold           Sector
+TICKER                                                       
+MAHKTECH         4  -234,766     25%     18d            OTHER
+HNGSNGBEES      13  -122,639     31%     49d  HANG SENG INDEX
+SNXT50BETA       3   -71,348      0%     21d    NIFTY NEXT 50
+GROWWDEFNC       2   -66,085      0%     24d          DEFENCE
+Sector view (top 5):
+            Trades   NetPnL
+SECTOR                     
+SILVER           6  443,504
+SENSEX          11  365,783
+AUTO             3  310,330
+NIFTY AUTO       3  256,230
+MIDCAP           6  169,485
+
+### 6. HOW DIFFERENT ARE THE TWO RANKINGS? (weekly decisions, fresh top-5 with sector cap)
+      avg names in common (of 5)  same #1 pick  rank corr (Spearman)  ETFs scored  of which Clenow blank (gap)
+year                                                                                                          
+2017                        2.00          0.06                  0.77        48.29                         2.94
+2018                        3.10          0.29                  0.80        48.62                         2.73
+2019                        2.60          0.17                  0.79        55.85                         2.81
+2020                        2.27          0.25                  0.68        52.83                         5.75
+2021                        2.02          0.21                  0.87        74.79                         3.17
+2022                        3.62          0.46                  0.84        90.98                         5.17
+2023                        2.56          0.29                  0.88       121.46                         5.48
+2024                        2.96          0.37                  0.93       161.90                         7.27
+2025                        3.54          0.19                  0.94       205.48                         5.88
+2026                        3.56          0.58                  0.98       248.47                         7.78
+All weeks: avg 2.86 of 5 picks in common; identical top-5 set in 8.1% of weeks; same #1 in 29.4%; avg rank correlation 0.85
+Actual portfolios: avg 2.17 names in common on days both invested; identical on 11.9% of those days; distinct ETFs traded BLEND 86 / SHARPE-ONLY 84 / both 66
+
+Chart -> C:\Users\ameet\Documents\Github\code\momentum\ETFs\backtest\live_score_vs_sharpe_only_equity_curve.png
+[check] SHARPE-ONLY: residual daily equity moves > 15%: 0
+[check] BLEND (live): residual daily equity moves > 15%: 0
+[check] SHARPE-ONLY +guard: residual daily equity moves > 15%: 0
+[check] BLEND (live) +guard: residual daily equity moves > 15%: 0

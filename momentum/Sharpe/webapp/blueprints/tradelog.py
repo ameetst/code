@@ -6,11 +6,9 @@ blocked, re-renders the same content partial with an explanatory banner and HTTP
 200 -- not a 403 -- because HTMX does not swap in error-status response bodies by
 default, and a blocked write is an expected state here, not a server error.
 
-The row-click-to-prefill flow: clicking an Active Holdings row does
-hx-get /tradelog/row-form?ticker=..&qty=..&price=.. which swaps just the
-Log New Transaction form (#trade-form-wrapper). Every other mutation (add,
-edit, delete) swaps the whole #tradelog-content div, since it can change
-holdings, history and the form's ticker list all at once.
+Active Holdings and the real-time MTM boxes live on the Dashboard. Clicking a holdings row
+there opens /tradelog?ticker=..&qty=..&price=.. , which prefills the Log New Transaction form.
+Every mutation (add, edit, delete) swaps the whole #tradelog-content div.
 """
 import datetime
 import io
@@ -19,7 +17,7 @@ import uuid
 from flask import Blueprint, render_template, request, send_file
 
 from webapp import settings
-from webapp.core import config_store, dhan_client, rankings, tradelog
+from webapp.core import config_store, rankings, tradelog
 
 bp = Blueprint("tradelog", __name__)
 
@@ -35,26 +33,7 @@ def _effective_prices(bundle: rankings.Bundle) -> dict:
 def _build_context(universe: str, bundle: rankings.Bundle, *, form_ticker=None,
                     form_qty=None, form_price=None, error=None, success=None,
                     editing_id=None) -> dict:
-    live_prices = _effective_prices(bundle)
     tl = tradelog.load_tradelog(universe)
-    pnl = tradelog.calculate_holdings_and_pnl(tl, live_prices)
-    holdings_metrics = pnl["holdings_metrics"]
-    missing_price_tickers = pnl["missing_price_tickers"]
-    cached_live = dhan_client.get_cached_live_prices()
-
-    total_invested = sum(h["Cost Value"] for h in holdings_metrics)
-    total_market = sum(h["Market Value"] for h in holdings_metrics)
-    total_unrealized = total_market - total_invested
-    total_unrealized_pct = (total_unrealized / total_invested * 100) if total_invested > 0 else 0.0
-
-    holdings_rows = sorted(holdings_metrics, key=lambda h: h["Unrealized PnL"], reverse=True)
-    for h in holdings_rows:
-        # Share of total holdings market value (weights add up to 100%; cash is not included).
-        h["weight_pct"] = (h["Market Value"] / total_market * 100) if total_market > 0 else 0.0
-        h["row_class"] = ("row-regime" if h["Unrealized PnL"] > 0
-                           else "row-breach" if h["Unrealized PnL"] < 0 else "")
-        fbd = h["First Buy Date"]
-        h["First Buy Date"] = fbd.isoformat() if hasattr(fbd, "isoformat") else fbd
 
     history_rows = []
     for tx in reversed(tl):
@@ -73,18 +52,12 @@ def _build_context(universe: str, bundle: rankings.Bundle, *, form_ticker=None,
 
     return {
         "universe": universe,
-        "total_invested": total_invested, "total_market": total_market,
-        "total_unrealized": total_unrealized, "total_unrealized_pct": total_unrealized_pct,
-        "realized_pnl": pnl["realized_pnl"],
-        "missing_price_tickers": missing_price_tickers,
-        "holdings_rows": holdings_rows,
         "history_rows": history_rows,
         "stock_tickers": stock_tickers,
         "form": {"ticker": default_ticker, "qty": default_qty, "price": default_price},
         "error": error, "success": success,
         "editing_tx": editing_tx,
         "today": datetime.date.today().isoformat(),
-        "live_price_source": cached_live["source"] if cached_live else None,
     }
 
 
@@ -98,20 +71,13 @@ def _bundle_and_universe():
 @bp.route("/tradelog")
 def index():
     bundle, universe = _bundle_and_universe()
-    ctx = _build_context(universe, bundle)
-    return render_template("tradelog.html", **ctx)
-
-
-@bp.route("/tradelog/row-form")
-def row_form():
-    bundle, universe = _bundle_and_universe()
     ctx = _build_context(
         universe, bundle,
-        form_ticker=request.args.get("ticker"),
+        form_ticker=request.args.get("ticker"),     # set when a Dashboard holdings row was clicked
         form_qty=request.args.get("qty", type=int),
         form_price=request.args.get("price", type=float),
     )
-    return render_template("_trade_form.html", **ctx)
+    return render_template("tradelog.html", **ctx)
 
 
 @bp.route("/tradelog/edit-form/<tx_id>")
@@ -134,34 +100,6 @@ def export():
         as_attachment=True,
         download_name=f"{universe}_tradelog.xlsx",
     )
-
-
-@bp.route("/tradelog/refresh-prices", methods=["POST"])
-def refresh_prices():
-    """Fetches live LTP for currently-held tickers (Dhan, Yahoo Finance fallback) and
-    caches it -- overriding the workbook's last price everywhere in this tab until the
-    next refresh. Not gated by READ_ONLY: it's a live external read with no file write,
-    same category as the VIX/cap-tier fetches elsewhere."""
-    bundle, universe = _bundle_and_universe()
-    tl = tradelog.load_tradelog(universe)
-    pnl = tradelog.calculate_holdings_and_pnl(tl, _effective_prices(bundle))
-    held_tickers = [h["Ticker"] for h in pnl["holdings_metrics"]]
-
-    success, error = None, None
-    if not held_tickers:
-        error = "No active holdings to refresh."
-    else:
-        result = dhan_client.refresh_live_prices(held_tickers)
-        if result["prices"]:
-            success = f"Live prices refreshed from {result['source']}."
-            if result["unmatched"]:
-                success += (f" {len(result['unmatched'])} ticker(s) could not be resolved: "
-                            f"{', '.join(result['unmatched'])}.")
-        else:
-            error = "Could not fetch live prices from Dhan or Yahoo Finance. Try again shortly."
-
-    ctx = _build_context(universe, bundle, error=error, success=success)
-    return render_template("_tradelog_content.html", **ctx)
 
 
 @bp.route("/tradelog/add", methods=["POST"])

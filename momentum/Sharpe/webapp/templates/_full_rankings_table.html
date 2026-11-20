@@ -3,6 +3,11 @@
 <p class="caption">🔎 {{ rows|length }} ticker{{ "" if rows|length == 1 else "s" }} matching “{{ search }}” in the whole universe
   (Show top N is ignored while searching{% if eligibility != "All" %}; Eligibility: {{ eligibility }}{% endif %}).</p>
 {% endif %}
+{% if held_only %}
+<p class="caption">🧺 Current holdings only: {{ rows|length }} of {{ held_count }} held name{{ "" if held_count == 1 else "s" }} shown
+  (Show top N is ignored){% if held_missing %}; {{ held_missing }} held name{{ "" if held_missing == 1 else "s" }} not in this universe's ranking{% endif %}.
+  {% if not held_count %}No current holdings: log a BUY trade on the Tradelog tab.{% endif %}</p>
+{% endif %}
 <table class="data-table">
   <thead>
     <tr><th>Ticker</th>{% for h in headers %}<th>{{ h }}</th>{% endfor %}{% if blocked.n_blocked %}<th>Blocked</th>{% endif %}</tr>
@@ -11,7 +16,7 @@
     {% for row in rows %}
     <tr class="{{ row.row_class }}">
       <td>{{ row.ticker }}</td>
-      {% for value in row.cells %}<td>{{ value }}</td>{% endfor %}
+      {% for value in row.cells %}<td{% if row.titles[loop.index0] %} title="{{ row.titles[loop.index0] }}"{% endif %}>{{ value }}</td>{% endfor %}
       {% if blocked.n_blocked %}<td>{{ row.blocked }}</td>{% endif %}
     </tr>
     {% endfor %}
@@ -31,6 +36,12 @@
 {% else %}
 <p class="caption">Clenow Score is not shown: no CLENOW_SCORE column found in this universe's rankings workbook
   (run Sharpe.py).</p>
+{% endif %}
+{% if ath_available %}
+<p class="caption">% From ATH = last close vs the highest daily close on record (0 at a new high; hover a value for the ATH price and date).
+  Read from the same workbook; {{ ath_coverage }} tickers have one &mdash; the rest show &mdash; until Sharpe.py has backfilled their history.</p>
+{% else %}
+<p class="caption">% From ATH is not shown: no PCT_FROM_ATH column found in this universe's rankings workbook (run Sharpe.py).</p>
 {% endif %}
 <p class="caption">
   Universe: {{ summary.universe_count }} &nbsp;|&nbsp;

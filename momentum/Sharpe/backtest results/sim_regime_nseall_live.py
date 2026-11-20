@@ -30,7 +30,8 @@ RFR_ANNUAL, TRADING_DAYS, FRICTION = 0.07, 252, 0.002
 SHARPE_WINDOWS = {"12M": 252, "9M": 189, "6M": 126, "3M": 63}
 MIN_N = 5
 MIN_TURNOVER_CR, REL_DD, HOLD_BUF, MIN_HOLD = 1.0, -20, 75, 28
-CASH_WK = (1.06 ** (1 / 52)) - 1.0
+STEP = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+CASH_WK = (1.06 ** (STEP / 52)) - 1.0   # cash return per rebalance period
 LIVE_W = {"ema50_breadth": 0.35, "ema_trend_breadth": 0.25, "breadth": 0.25, "momentum": 0.15}
 LW = (0.35, 0.25, 0.25, 0.15)
 EW = (0.25, 0.25, 0.25, 0.25)
@@ -70,7 +71,8 @@ eow = [dates[i] for i in range(len(dt_idx) - 1)
        if dt_idx[i].isocalendar().week != dt_idx[i + 1].isocalendar().week]
 eow.append(dates[-1])
 valid_dates = [d for d in eow if dates.index(d) >= 252]
-print(f"Rebalance points: {len(valid_dates)}")
+valid_dates = valid_dates[::STEP]      # STEP=2 -> every second week (even positions, so the weekly cache is reused)
+print(f"Rebalance points: {len(valid_dates)} (step {STEP} week(s))")
 pf = prices_df.ffill(axis=1)
 nifty_ff = nifty_series.ffill()
 
@@ -228,7 +230,7 @@ for i in range(len(valid_dates) - 1):
 
 print()
 ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-out = os.path.join(HERE, f"run_regnseall_{TAG}_{ts}")
+out = os.path.join(HERE, f"run_regnseall_{TAG}_step{STEP}_{ts}")
 os.makedirs(out, exist_ok=True)
 years = (valid_dates[-1] - valid_dates[0]).days / 365.25
 for (vname, mode, max_n), st in states.items():

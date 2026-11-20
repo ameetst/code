@@ -28,10 +28,12 @@ FOLDER STRUCTURE
   ├── momentum_lib.py                (library)
   ├── sharpe_dashboard.py            (Streamlit dashboard)
   ├── <UNIVERSE>_updated.xlsx        (generated — prices + volume filled in)
-  ├── <UNIVERSE>_rankings.xlsx       (output — ranked workbook)
+  ├── <UNIVERSE>_rankings.xlsx       (output — ranked workbook; CALCS sheet also holds ATH, ATH_DATE, PCT_FROM_ATH)
+  ├── ATH_cache.json                 (all-time-high closes per ticker; built and kept by Sharpe.py)
   ├── <UNIVERSE>_positions_ledger.json (written by the dashboards/webapp from the trade log)
   ├── STOCKDB.csv                    (market cap classification)
-  └── Sector Metadata.csv            (sector info)
+  ├── Sector Metadata.csv            (sector info)
+  └── SECTOR.csv                     (Symbol -> Industry; feeds the Dashboard's Holdings by Sector donut)
 
 
 REQUIRED FILES (in momentum/Sharpe Score/)
@@ -181,6 +183,17 @@ Sharpe.py:
   --update        Fetch fresh data before computing  (optional)
   --data-source   dhan | yfinance, used with --update (default: dhan)
   --min-turnover  Min median daily turnover in Rs Cr (default: 1.0)
+  --no-ath-fetch  Do not call Dhan for all-time highs; use ATH_cache.json as it is
+
+ALL-TIME HIGH (% From ATH column)
+  Sharpe.py writes ATH, ATH_DATE and PCT_FROM_ATH (last close vs the highest daily close on record,
+  0 at a new high) to the CALCS sheet; the dashboards only read it (Full Rankings, "% From ATH" column).
+  The price workbook holds only ~1-2 years, so each ticker's full Dhan history (from 2002 / listing) is
+  fetched ONCE into ATH_cache.json; later runs just raise it from the workbook's own closes. The first
+  run of a universe makes one Dhan call per ticker (~5/sec, ~10 minutes for NSEAll) and saves progress
+  every 200 tickers, so it can be interrupted and re-run. Tickers Dhan does not know are retried weekly;
+  until a ticker has a backfilled ATH its column stays blank. Closes are used as Dhan supplies them
+  (no extra split/bonus adjustment).
 
 update_stock_price_dhan.py (run from ../dhan_datahq):
   python update_stock_price_dhan.py {NSEAll|N750|ETF} [--template-dir PATH] [--output-dir PATH]
@@ -461,6 +474,7 @@ TYPICAL RUNTIME
 ---------------
   update_stock_price*.py: ~5-10 minutes for 750 tickers (network-bound)
   Sharpe.py             : ~30-60 seconds (compute-bound)
+                          (first run of a universe: + ~10 min once to backfill all-time highs from Dhan)
   Combined (--update)   : ~6-11 minutes total
 
   Residual Momentum (OLS per stock per window) is the most compute-intensive step.

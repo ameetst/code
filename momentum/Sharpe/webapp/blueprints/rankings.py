@@ -3,7 +3,7 @@ from flask import Blueprint, abort, render_template, request, send_file
 import momentum_lib as ml
 
 from webapp import settings
-from webapp.core import cap_tier, config_store, dhan_client, rankings, regime
+from webapp.core import actions, cap_tier, config_store, dhan_client, holdings_view, rankings, regime, tradelog
 
 bp = Blueprint("rankings", __name__)
 
@@ -21,7 +21,7 @@ def download():
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-def _view_model(limit: int | None):
+def _view_model():
     cfg = config_store.load_config()
     try:
         bundle = rankings.get_bundle(cfg)
@@ -67,9 +67,6 @@ def _view_model(limit: int | None):
             "data_start": rankings.fmt_date(bundle.dates[0]),
             "data_end": rankings.fmt_date(bundle.dates[-1]),
         },
-        "rows": rankings.top_rows(bundle, limit or max_n, rankings.held_tickers(universe),
-                                   prices=rankings.effective_prices(bundle)),
-        "hidden": rankings.top_hidden(bundle, limit or max_n, rankings.held_tickers(universe)),
     }
 
 
@@ -94,7 +91,7 @@ def _cap_tier_dual_context(bundle: rankings.Bundle) -> dict:
 
 @bp.route("/")
 def index():
-    view = _view_model(None)
+    view = _view_model()
     cfg = config_store.load_config()
     bundle = rankings.get_bundle(cfg)  # already cached by _view_model's own call above
     if not settings.READ_ONLY:
@@ -103,7 +100,40 @@ def index():
         regime.record_today(view["universe"], bundle.regime_score, bundle.regime_detail)
     view["trend"] = _regime_trend_context(view["universe"], ml.DEFAULT_NEW_ENTRY_THRESHOLD)
     view["cap_tier"] = _cap_tier_dual_context(bundle)
+    view.update(holdings_view.build(view["universe"], bundle))   # MTM boxes + Active Holdings
     return render_template("rankings.html", **view)
+
+
+@bp.route("/dashboard/refresh-prices", methods=["POST"])
+def refresh_prices():
+    """Fetches live LTP for currently-held tickers (Dhan, Yahoo Finance fallback) and caches it,
+    overriding the workbook's last price everywhere (Dashboard holdings, Tradelog form defaults,
+    Actions) until the next refresh. Not gated by READ_ONLY: it's a live external read with no
+    file write, same category as the VIX/cap-tier fetches. Re-renders just #holdings-content."""
+    cfg = config_store.load_config()
+    try:
+        bundle = rankings.get_bundle(cfg)
+    except FileNotFoundError as e:
+        abort(404, description=str(e))
+    universe = config_store.universe_name(config_store.resolve_file(cfg))
+    tl = tradelog.load_tradelog(universe)
+    pnl = tradelog.calculate_holdings_and_pnl(tl, rankings.effective_prices(bundle))
+    held = [h["Ticker"] for h in pnl["holdings_metrics"]]
+
+    success, error = None, None
+    if not held:
+        error = "No active holdings to refresh."
+    else:
+        result = dhan_client.refresh_live_prices(held)
+        if result["prices"]:
+            success = f"Live prices refreshed from {result['source']}."
+            if result["unmatched"]:
+                success += (f" {len(result['unmatched'])} ticker(s) could not be resolved: "
+                            f"{', '.join(result['unmatched'])}.")
+        else:
+            error = "Could not fetch live prices from Dhan or Yahoo Finance. Try again shortly."
+
+    return render_template("_holdings_mtm.html", **holdings_view.build(universe, bundle, error=error, success=success))
 
 
 @bp.route("/rankings/cap-tier/yahoo")
@@ -123,13 +153,6 @@ def cap_tier_yahoo():
     return render_template("_cap_tier_yahoo.html", rows=rows, error=error)
 
 
-@bp.route("/rankings/table")
-def table_partial():
-    """HTMX target: re-renders just the table, e.g. after a limit change or a manual refresh click."""
-    limit = request.args.get("limit", type=int)
-    return render_template("_rankings_table.html", **_view_model(limit))
-
-
 _FULL_DEFAULT_TOP_N = 100
 
 
@@ -147,13 +170,14 @@ def full_page():
     bundle, cfg = _full_bundle_and_cfg()
     total = len(bundle.result)
     clenow, _ = rankings.load_clenow(cfg)
+    ath, _ = rankings.load_ath(cfg)
     return render_template(
         "full_rankings.html",
         universe=config_store.universe_name(config_store.resolve_file(cfg)),
         total=total,
         default_top_n=min(_FULL_DEFAULT_TOP_N, total),
         eligibility_options=rankings.ELIGIBILITY_OPTIONS,
-        sort_options=rankings.sort_options(clenow),
+        sort_options=rankings.sort_options(clenow, ath),
     )
 
 
@@ -172,16 +196,23 @@ def full_table_partial():
     search = request.args.get("q", "").strip()[:100]
 
     clenow, clenow_generated = rankings.load_clenow(cfg)
+    ath, ath_generated = rankings.load_ath(cfg)
+    held_only = request.args.get("held") == "1"
+    held = set(actions.current_holdings(config_store.universe_name(config_store.resolve_file(cfg)))) if held_only else None
     rows = rankings.full_rankings_rows(bundle, eligibility, sort_col, top_n, rel_dd_breach_threshold,
-                                        search=search, clenow=clenow)
+                                        search=search, clenow=clenow, ath=ath, held=held)
     return render_template(
         "_full_rankings_table.html",
-        headers=[rankings.FULL_COLUMN_LABELS.get(c, c) for c in rankings.full_display_columns(bundle, clenow)],
+        headers=[rankings.FULL_COLUMN_LABELS.get(c, c) for c in rankings.full_display_columns(bundle, clenow, ath)],
         clenow_available=clenow is not None,
         clenow_generated=clenow_generated.strftime("%d-%b-%y %H:%M") if clenow_generated else None,
+        ath_available=ath is not None,
+        ath_coverage=int(ath["PCT_FROM_ATH"].notna().sum()) if ath is not None else 0,
         rows=rows,
         blocked=rankings.blocked_breakdown(rows),
         summary=rankings.full_rankings_summary(bundle, rel_dd_breach_threshold),
         rel_dd_breach_threshold=rel_dd_breach_threshold,
         search=search, eligibility=eligibility,
+        held_only=held_only, held_count=len(held) if held is not None else 0,
+        held_missing=len(held - set(bundle.result.index)) if held is not None else 0,
     )
