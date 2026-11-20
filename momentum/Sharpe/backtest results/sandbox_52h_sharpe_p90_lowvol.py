@@ -93,7 +93,8 @@ FRICTION = 0.002          # per side
 MIN_OBS  = 240            # min valid closes in the Sharpe/vol window
 
 
-SCORE_MODE = os.environ.get("SCORE_MODE", "z")   # "z" = avg of 3 z-scores; "clenow" = rank by 90d Clenow score
+FILTER_SHARPE = os.environ.get("FILTER_SHARPE", "1y")   # "1y" or "6m": which Sharpe must beat NIFTY500's
+SCORE_MODE = os.environ.get("SCORE_MODE", "z")  # "z" = avg of 3 z-scores; "clenow" = rank by 90d Clenow score
 
 
 def rolling_clenow(px: pd.DataFrame, w: int = 90, ann: int = 250) -> pd.DataFrame:
@@ -137,7 +138,12 @@ def build_signals(px: pd.DataFrame, bench: pd.Series, tov: pd.DataFrame):
     tov_med = tov.rolling(WIN, min_periods=120).median()   # median daily traded value (Rs)
     bret = bench.pct_change(fill_method=None)
     bsd = bret.rolling(WIN, min_periods=MIN_OBS).std()
-    bsharpe = (bret - RFR / WIN).rolling(WIN, min_periods=MIN_OBS).mean() / bsd * np.sqrt(WIN)
+    # benchmark Sharpe for the stock-vs-NIFTY500 filter; FILTER_SHARPE=6m uses 126d, default 1y uses 252d
+    if FILTER_SHARPE == "6m":
+        bsd6 = bret.rolling(126, min_periods=120).std()
+        bsharpe = (bret - RFR / WIN).rolling(126, min_periods=120).mean() / bsd6 * np.sqrt(WIN)
+    else:
+        bsharpe = (bret - RFR / WIN).rolling(WIN, min_periods=MIN_OBS).mean() / bsd * np.sqrt(WIN)
     clenow = rolling_clenow(px) if SCORE_MODE == "clenow" else px * np.nan
     return dict(clenow=clenow, near52=near52, sharpe=sharpe, sharpe6=sharpe6, p90=p90, vol=vol, ath=ath, tov=tov_med), bsharpe
 
@@ -155,7 +161,7 @@ def score_on(sig: dict, bsharpe: pd.Series, d, vol_max: float) -> pd.Series:
     df = df[(df["vol"] < vol_max) & (df["ath"] >= 1 - ATH_DD) & (df["near52"] >= 1 - NEAR52_DD) \
             & (df["tov"] >= MIN_TURNOVER)]
     if BENCH_SHARPE_FILTER:
-        df = df[df["sharpe"] > bsharpe.loc[d]]
+        df = df[df["sharpe6" if FILTER_SHARPE == "6m" else "sharpe"] > bsharpe.loc[d]]
     if df.empty:
         return pd.Series(dtype=float)
     if SCORE_MODE == "clenow":
@@ -180,7 +186,7 @@ def main():
         tbl["tov"] = tbl["tov"] / 1e7           # Rs crore
         tbl = tbl.rename(columns={"tov": "med_tov_cr"})
         tbl.insert(0, "score", cur)
-        print(f"\nNIFTY500 1Y Sharpe {bsharpe.loc[last]:.2f}; close {bench.loc[last]:.0f} vs "
+        print(f"\nNIFTY500 {FILTER_SHARPE.upper()} Sharpe {bsharpe.loc[last]:.2f}; close {bench.loc[last]:.0f} vs "
               f"{EMA_SPAN}EMA {ema.loc[last]:.0f} -> new entries {'ON' if bull.loc[last] else 'OFF'}")
         print(f"Current top {N} as of {last.date()}  (eligible: {len(score_on(sig, bsharpe, last, VOL_MAX))}):")
         print(tbl.round(3).to_string())
