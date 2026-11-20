@@ -93,6 +93,30 @@ FRICTION = 0.002          # per side
 MIN_OBS  = 240            # min valid closes in the Sharpe/vol window
 
 
+SCORE_MODE = os.environ.get("SCORE_MODE", "z")   # "z" = avg of 3 z-scores; "clenow" = rank by 90d Clenow score
+
+
+def rolling_clenow(px: pd.DataFrame, w: int = 90, ann: int = 250) -> pd.DataFrame:
+    """Clenow momentum score per date: annualised slope of a 90d log-price
+    regression, (exp(slope*250)-1)*100, times R^2. Same formula as
+    Clenow Score/Clenow.py::clenow_score, vectorised over rolling windows.
+    NaN if any close in the window is missing."""
+    from numpy.lib.stride_tricks import sliding_window_view
+    ly = np.log(px.where(px > 0)).values
+    T, C = ly.shape
+    x = np.arange(w) - (w - 1) / 2
+    sxx = float((x ** 2).sum())
+    out = np.full((T, C), np.nan)
+    for j in range(C):
+        win = sliding_window_view(ly[:, j], w)
+        yc = win - win.mean(axis=1, keepdims=True)
+        sxy = yc @ x
+        syy = (yc ** 2).sum(axis=1)
+        with np.errstate(all="ignore"):
+            out[w - 1:, j] = (np.exp(sxy / sxx * ann) - 1) * 100 * (sxy ** 2 / (sxx * syy))
+    return pd.DataFrame(out, index=px.index, columns=px.columns)
+
+
 def build_signals(px: pd.DataFrame, bench: pd.Series, tov: pd.DataFrame):
     """px: DataFrame index=date, columns=ticker. Returns dict of date x ticker frames."""
     ret = px.pct_change(fill_method=None)
@@ -114,7 +138,8 @@ def build_signals(px: pd.DataFrame, bench: pd.Series, tov: pd.DataFrame):
     bret = bench.pct_change(fill_method=None)
     bsd = bret.rolling(WIN, min_periods=MIN_OBS).std()
     bsharpe = (bret - RFR / WIN).rolling(WIN, min_periods=MIN_OBS).mean() / bsd * np.sqrt(WIN)
-    return dict(near52=near52, sharpe=sharpe, sharpe6=sharpe6, p90=p90, vol=vol, ath=ath, tov=tov_med), bsharpe
+    clenow = rolling_clenow(px) if SCORE_MODE == "clenow" else px * np.nan
+    return dict(clenow=clenow, near52=near52, sharpe=sharpe, sharpe6=sharpe6, p90=p90, vol=vol, ath=ath, tov=tov_med), bsharpe
 
 
 def z(s: pd.Series) -> pd.Series:
@@ -123,13 +148,20 @@ def z(s: pd.Series) -> pd.Series:
 
 
 def score_on(sig: dict, bsharpe: pd.Series, d, vol_max: float) -> pd.Series:
-    df = pd.DataFrame({k: v.loc[d] for k, v in sig.items()}).dropna()
+    df = pd.DataFrame({k: v.loc[d] for k, v in sig.items()})
+    if SCORE_MODE != "clenow":
+        df = df.drop(columns="clenow")
+    df = df.dropna()
     df = df[(df["vol"] < vol_max) & (df["ath"] >= 1 - ATH_DD) & (df["near52"] >= 1 - NEAR52_DD) \
             & (df["tov"] >= MIN_TURNOVER)]
     if BENCH_SHARPE_FILTER:
         df = df[df["sharpe"] > bsharpe.loc[d]]
     if df.empty:
         return pd.Series(dtype=float)
+    if SCORE_MODE == "clenow":
+        return df["clenow"]           # rank by raw 90d Clenow score; all other signals are filters/info only
+    if SCORE_MODE == "sharpe6":
+        return df["sharpe6"]          # rank by raw 6-month Sharpe
     return (z(df["near52"]) + z(df["sharpe6"]) + z(df["p90"])) / 3   # 1Y Sharpe is a filter only
 
 
@@ -143,6 +175,8 @@ def main():
         last = px.index[-1]
         cur = score_on(sig, bsharpe, last, VOL_MAX).sort_values(ascending=False).head(N)
         tbl = pd.DataFrame({k: sig[k].loc[last, cur.index] for k in ("near52", "sharpe6", "sharpe", "p90", "vol", "tov")})
+        if SCORE_MODE == "clenow":
+            tbl.insert(0, "clenow", sig["clenow"].loc[last, cur.index])
         tbl["tov"] = tbl["tov"] / 1e7           # Rs crore
         tbl = tbl.rename(columns={"tov": "med_tov_cr"})
         tbl.insert(0, "score", cur)
