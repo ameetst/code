@@ -1378,5 +1378,17 @@
     "qty_weighted": true,
     "price_date": "2026-11-19",
     "portfolio_nav_sma50": 108.4469
+  },
+  {
+    "date": "2026-11-22",
+    "portfolio_nav": 107.891,
+    "benchmark_nav": 103.5553,
+    "portfolio_ret": -0.00482,
+    "benchmark_ret": 0.00802,
+    "n_held": 20,
+    "invested_frac": 0.667,
+    "qty_weighted": true,
+    "price_date": "2026-11-20",
+    "portfolio_nav_sma50": 108.4781
   }
 ]

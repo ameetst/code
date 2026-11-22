@@ -1,24 +1,26 @@
 """
 SANDBOX -- "Quality Highs" momentum strategy. Does not touch live code.
 
-Signals (all from daily closes, no volume needed):
-  1. NEAR_52H : close / rolling 252d high           (1.0 = at a new high)
-  2. SHARPE_1Y: annualised excess-return Sharpe, last 252d
-  3. P90_FRAC : % of the last 252 days on which the close was ABOVE the
-                90th percentile of the PREVIOUS 252 closes (threshold
-                recomputed each day, ending the day before -> no look-ahead
-                and not circular). Measures how persistently the stock has
-                been breaking out, not just where it sits today.
-  Filters    : 1Y Sharpe > NIFTY500 1Y Sharpe (default on); % below all-time high < ATH_DD (default 25%); optional 1Y vol cap VOL_MAX (default off)
+FINAL RULES (defaults):
+  Eligibility (all must hold):
+    - within 25% of the all-time high in the file (ATH_DD)
+    - 1Y Sharpe > NIFTY500 1Y Sharpe (FILTER_SHARPE=1y)
+    - median daily traded value over 252d >= Rs 1 crore (MIN_TURNOVER)
+    - P90_FRAC >= 0.40 (P90_MIN): % of the last 252 days on which the close was
+      ABOVE the 90th percentile of the PREVIOUS 252 closes (threshold recomputed
+      each day, ending the day before -> no look-ahead)
+    - (optional, off) 52W-high proximity NEAR52_DD, 1Y vol cap VOL_MAX
+  Rank (SCORE_MODE=blend): 0.5*z(3M Sharpe) + 0.5*z(12M Sharpe), z-scored across
+    the eligible stocks. Sharpe = annualised, 7% risk-free; 3M=63d, 12M=252d.
+  Portfolio: top N=20, fixed 1/N slots, weekly rebalance at the week-end close.
+    Entry: fill empty slots from the top of the ranking, but only if NIFTY500 >=
+    its 100-day EMA. Exit: rank > 60 (BUFFER) or no longer eligible; the regime
+    filter never forces a sale. Idle slots earn 6% (CASH_RATE); friction 0.2%/side.
+    Signal at close t, return t -> next rebalance close (no look-ahead).
 
-Score  = mean of cross-sectional z-scores of the three signals, among stocks
-         passing the vol filter.
-Portfolio: top N by score, equal weight, weekly rebalance at the week-end
-         close, hold-buffer (an existing holding stays while rank <= BUFFER),
-         friction per side on turnover. Signal at close t, return t -> next
-         rebalance close (no look-ahead).
-
-Usage:  python sandbox_52h_sharpe_p90_lowvol.py [file.xlsx] [N] [VOL_MAX] [ATH_DD] [BENCH_SHARPE_FILTER 1|0]
+Usage:  python sandbox_52h_sharpe_p90_lowvol.py   (all defaults = final rules)
+        optional args: [file.xlsx] [N] [VOL_MAX] [ATH_DD] [BENCH_SHARPE_FILTER 1|0] [BUFFER] [REGIME 1|0] [NEAR52_DD] [MIN_TURNOVER]
+        env: SCORE_MODE, P90_MIN, FILTER_SHARPE, SCREEN_ONLY=1
 Needs 504 trading days of history before the first signal.
 NOTE: N750 file = current constituents only -> survivorship bias flatters
       absolute returns; compare variants, not the headline CAGR.
@@ -43,7 +45,7 @@ ATH_DD   = float(sys.argv[4]) if len(sys.argv) > 4 else 0.25  # max % below all-
 BENCH_SHARPE_FILTER = (sys.argv[5] if len(sys.argv) > 5 else "1") == "1"  # stock 1Y Sharpe > NIFTY500 1Y Sharpe
 BUFFER   = int(sys.argv[6]) if len(sys.argv) > 6 else 60      # exit a holding when rank > BUFFER
 REGIME   = (sys.argv[7] if len(sys.argv) > 7 else "1") == "1"  # NIFTY500 < 100 EMA -> no new entries
-NEAR52_DD = float(sys.argv[8]) if len(sys.argv) > 8 else 0.25  # must be within this % of 52W high
+NEAR52_DD = float(sys.argv[8]) if len(sys.argv) > 8 else 1.0   # max % below 52W high (1.0 = filter off; was 0.25)
 EMA_SPAN = 100
 CASH_RATE = 0.06          # annual return on uninvested cash
 MIN_TURNOVER = float(sys.argv[9]) if len(sys.argv) > 9 else 1e7   # Rs 1 crore median daily traded value (252d)
@@ -93,8 +95,9 @@ FRICTION = 0.002          # per side
 MIN_OBS  = 240            # min valid closes in the Sharpe/vol window
 
 
-FILTER_SHARPE = os.environ.get("FILTER_SHARPE", "1y")   # "1y" or "6m": which Sharpe must beat NIFTY500's
-SCORE_MODE = os.environ.get("SCORE_MODE", "z")  # "z" = avg of 3 z-scores; "clenow" = rank by 90d Clenow score
+P90_MIN = float(os.environ.get("P90_MIN", "0.40"))     # eligibility: % of days above rolling 90th pct must be >= this (0 = off)
+FILTER_SHARPE = os.environ.get("FILTER_SHARPE", "1y")  # "1y" or "6m": which Sharpe must beat NIFTY500's
+SCORE_MODE = os.environ.get("SCORE_MODE", "blend")  # "blend" = 50/50 z(3M Sharpe)+z(12M Sharpe) (default); "z" = old 3-signal avg; "sharpe6"; "clenow"
 
 
 def rolling_clenow(px: pd.DataFrame, w: int = 90, ann: int = 250) -> pd.DataFrame:
@@ -129,6 +132,8 @@ def build_signals(px: pd.DataFrame, bench: pd.Series, tov: pd.DataFrame):
     # 6-month Sharpe (126d, annualised) -> used in the SCORE; the 1Y Sharpe above stays a filter only
     sd6 = ret.rolling(126, min_periods=120).std()
     sharpe6 = ex.rolling(126, min_periods=120).mean() / sd6 * np.sqrt(WIN)
+    sd3 = ret.rolling(63, min_periods=60).std()
+    sharpe3 = ex.rolling(63, min_periods=60).mean() / sd3 * np.sqrt(WIN)   # 3-month Sharpe (63d, annualised)
     near52 = px / px.rolling(WIN, min_periods=MIN_OBS).max()
     q90 = px.rolling(WIN, min_periods=MIN_OBS).quantile(0.90).shift(1)
     above = (px > q90).astype(float).where(q90.notna())
@@ -145,7 +150,7 @@ def build_signals(px: pd.DataFrame, bench: pd.Series, tov: pd.DataFrame):
     else:
         bsharpe = (bret - RFR / WIN).rolling(WIN, min_periods=MIN_OBS).mean() / bsd * np.sqrt(WIN)
     clenow = rolling_clenow(px) if SCORE_MODE == "clenow" else px * np.nan
-    return dict(clenow=clenow, near52=near52, sharpe=sharpe, sharpe6=sharpe6, p90=p90, vol=vol, ath=ath, tov=tov_med), bsharpe
+    return dict(clenow=clenow, near52=near52, sharpe=sharpe, sharpe6=sharpe6, sharpe3=sharpe3, p90=p90, vol=vol, ath=ath, tov=tov_med), bsharpe
 
 
 def z(s: pd.Series) -> pd.Series:
@@ -159,13 +164,16 @@ def score_on(sig: dict, bsharpe: pd.Series, d, vol_max: float) -> pd.Series:
         df = df.drop(columns="clenow")
     df = df.dropna()
     df = df[(df["vol"] < vol_max) & (df["ath"] >= 1 - ATH_DD) & (df["near52"] >= 1 - NEAR52_DD) \
-            & (df["tov"] >= MIN_TURNOVER)]
+            & (df["tov"] >= MIN_TURNOVER) & (df["p90"] >= P90_MIN)]
     if BENCH_SHARPE_FILTER:
         df = df[df["sharpe6" if FILTER_SHARPE == "6m" else "sharpe"] > bsharpe.loc[d]]
     if df.empty:
         return pd.Series(dtype=float)
     if SCORE_MODE == "clenow":
         return df["clenow"]           # rank by raw 90d Clenow score; all other signals are filters/info only
+    if SCORE_MODE == "blend":
+        # 50/50 blend of cross-sectional z-scores of 3-month and 12-month Sharpe
+        return (z(df["sharpe3"]) + z(df["sharpe"])) / 2
     if SCORE_MODE == "sharpe6":
         return df["sharpe6"]          # rank by raw 6-month Sharpe
     return (z(df["near52"]) + z(df["sharpe6"]) + z(df["p90"])) / 3   # 1Y Sharpe is a filter only
@@ -180,7 +188,7 @@ def main():
     def show_current():
         last = px.index[-1]
         cur = score_on(sig, bsharpe, last, VOL_MAX).sort_values(ascending=False).head(N)
-        tbl = pd.DataFrame({k: sig[k].loc[last, cur.index] for k in ("near52", "sharpe6", "sharpe", "p90", "vol", "tov")})
+        tbl = pd.DataFrame({k: sig[k].loc[last, cur.index] for k in ("near52", "sharpe3", "sharpe6", "sharpe", "p90", "vol", "tov")})
         if SCORE_MODE == "clenow":
             tbl.insert(0, "clenow", sig["clenow"].loc[last, cur.index])
         tbl["tov"] = tbl["tov"] / 1e7           # Rs crore
